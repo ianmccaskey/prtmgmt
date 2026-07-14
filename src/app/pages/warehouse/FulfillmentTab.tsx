@@ -44,9 +44,26 @@ export function itemRemaining(it: QueueItem): number {
   return Math.max(0, Number(it.quantity) - Number(it.allocated_qty));
 }
 
-/** Kits this order can actually pull for a line: free stock + its own reservations. */
-export function itemShippable(it: QueueItem): number {
-  return Number(it.stock_available) + Number(it.order_reserved_qty);
+/**
+ * Gap detection must be PER PRODUCT within an order: stock_available and
+ * order_reserved_qty are product-level figures, so two lines of the same
+ * product would otherwise each claim the full pool and hide a real shortage.
+ * Returns the set of product_ids whose combined remaining exceeds what the
+ * order can pull (free stock + its own reservations).
+ */
+export function gapProducts(o: QueueOrder): Set<number> {
+  const byProduct = new Map<number, { remaining: number; shippable: number }>();
+  for (const it of o.items) {
+    const cur = byProduct.get(it.product_id) || {
+      remaining: 0,
+      shippable: Number(it.stock_available) + Number(it.order_reserved_qty),
+    };
+    cur.remaining += itemRemaining(it);
+    byProduct.set(it.product_id, cur);
+  }
+  const gaps = new Set<number>();
+  for (const [pid, v] of byProduct) if (v.shippable < v.remaining) gaps.add(pid);
+  return gaps;
 }
 
 export function FulfillmentTab() {
@@ -93,8 +110,9 @@ export function FulfillmentTab() {
               </thead>
               <tbody>
                 {orders.map(o => {
-                  const gapItems = o.items.filter(it => itemShippable(it) < itemRemaining(it));
-                  const hasGap = gapItems.length > 0;
+                  const gaps = gapProducts(o);
+                  const gapItems = o.items.filter(it => gaps.has(it.product_id));
+                  const hasGap = gaps.size > 0;
                   const blocked = hasGap && !o.partial_fulfillment_allowed;
                   const totalRemaining = o.items.reduce((s, it) => s + itemRemaining(it), 0);
                   const warehouses = [...new Set(o.items.flatMap(it => parseWarehouses(it.fulfill_warehouses)))];
@@ -115,12 +133,13 @@ export function FulfillmentTab() {
                         <div className="space-y-0.5">
                           {o.items.map(it => {
                             const rem = itemRemaining(it);
-                            const gap = itemShippable(it) < rem;
+                            const gap = gaps.has(it.product_id);
+                            const shippable = Number(it.stock_available) + Number(it.order_reserved_qty);
                             return (
                               <div key={it.item_id} className={`text-xs flex items-center gap-1 ${gap ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
                                 {gap && <AlertTriangle className="h-3 w-3" />}
                                 {rem}× {it.product_name}
-                                {gap && <span className="text-red-400">({itemShippable(it)} shippable)</span>}
+                                {gap && <span className="text-red-400">({shippable} shippable)</span>}
                               </div>
                             );
                           })}

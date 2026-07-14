@@ -4,9 +4,7 @@ import { useAppUser } from '@/app/AppContext';
 import getFifoStockAction from '@/actions/warehouse/getFifoStock';
 import getActiveRatePlanAction from '@/actions/warehouse/getActiveRatePlan';
 import createOutboundShipmentAction from '@/actions/warehouse/createOutboundShipment';
-import createAllocationWithShipmentItemAction from '@/actions/warehouse/createAllocationWithShipmentItem';
-import deductShippedInventoryAction from '@/actions/warehouse/deductShippedInventory';
-import logWarehouseActivityAction from '@/actions/warehouse/logWarehouseActivity';
+import shipAllocationAtomicAction from '@/actions/warehouse/shipAllocationAtomic';
 import markOrderShippedFromWarehouseAction from '@/actions/warehouse/markOrderShippedFromWarehouse';
 import createShipmentNotificationAction from '@/actions/orders/createShipmentNotification';
 import { Button } from '@/components/ui/button';
@@ -49,9 +47,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
   const [planRaw, planLoading] = useLoadAction(getActiveRatePlanAction, [], {});
 
   const [createShipment] = useMutateAction(createOutboundShipmentAction);
-  const [createAllocation] = useMutateAction(createAllocationWithShipmentItemAction);
-  const [deductInventory] = useMutateAction(deductShippedInventoryAction);
-  const [logActivity] = useMutateAction(logWarehouseActivityAction);
+  const [shipAllocation] = useMutateAction(shipAllocationAtomicAction);
   const [markShipped] = useMutateAction(markOrderShippedFromWarehouseAction);
   const [createNotification] = useMutateAction(createShipmentNotificationAction);
 
@@ -99,8 +95,13 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
     if (a.inventory_id != null) usedPerRow[a.inventory_id] = (usedPerRow[a.inventory_id] || 0) + a.qty;
   }
   const problems: string[] = [];
+  // Rows with a quantity but no batch/warehouse picked must not count toward
+  // line coverage (they never ship) — force the user to resolve them.
+  if (allocs.some(a => a.qty > 0 && a.inventory_id == null)) {
+    problems.push('Every allocation row with a quantity needs a batch/warehouse selected (or remove the row).');
+  }
   for (const it of order.items) {
-    const lineTotal = allocs.filter(a => a.item_id === it.item_id).reduce((s, a) => s + a.qty, 0);
+    const lineTotal = allocs.filter(a => a.item_id === it.item_id && a.inventory_id != null).reduce((s, a) => s + a.qty, 0);
     const rem = itemRemaining(it);
     if (lineTotal > rem) problems.push(`${it.product_name}: allocated ${lineTotal} exceeds the ${rem} remaining.`);
     if (lineTotal < rem && !order.partial_fulfillment_allowed) problems.push(`${it.product_name}: only ${lineTotal}/${rem} allocated and this order requires complete fulfillment.`);
@@ -152,15 +153,12 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
         if (!shipmentId) throw new Error(`Failed to create shipment for ${g.warehouse_name}`);
         for (const a of g.allocs) {
           const r = rowFor(a.inventory_id)!;
-          await createAllocation({
-            item_id: a.item_id, batch_id: r.batch_id, warehouse_id: r.warehouse_id,
+          // Single atomic statement: allocation + shipment item + ledger
+          // consumption + inventory decrement + activity log.
+          await shipAllocation({
+            order_id: order.order_id, item_id: a.item_id, inventory_id: r.inventory_id,
+            batch_id: r.batch_id, warehouse_id: r.warehouse_id, product_id: a.product_id,
             quantity: a.qty, user_id: profileId, shipment_id: shipmentId,
-          });
-          await deductInventory({ order_id: order.order_id, inventory_id: r.inventory_id, quantity: a.qty });
-          await logActivity({
-            warehouse_id: r.warehouse_id, user_id: profileId, event_type: 'outbound_pick',
-            product_id: a.product_id, batch_id: r.batch_id, quantity_delta: -a.qty,
-            source_record_type: 'shipments_outbound', source_record_id: shipmentId,
             notes: `Picked for ${order.order_number} (batch ${r.batch_number})`,
           });
         }
