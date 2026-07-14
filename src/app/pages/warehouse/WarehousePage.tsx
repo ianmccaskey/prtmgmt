@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Package, AlertTriangle, TrendingDown, Truck, ArrowLeftRight, DollarSign } from 'lucide-react';
 import { InventoryTab } from '@/app/pages/warehouse/InventoryTab';
+import { FulfillmentTab } from '@/app/pages/warehouse/FulfillmentTab';
 import { ReorderTab } from '@/app/pages/warehouse/ReorderTab';
 import { InTransitTab } from '@/app/pages/warehouse/InTransitTab';
 import { TransfersTab } from '@/app/pages/warehouse/TransfersTab';
@@ -121,6 +122,7 @@ export function WarehousePage() {
       <Tabs defaultValue="inventory">
         <TabsList className="flex flex-wrap h-auto gap-1 w-full max-w-3xl justify-start">
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
+          {(isAdmin || isWarehouse) && <TabsTrigger value="fulfillment">Fulfillment</TabsTrigger>}
           {(isAdmin || isSalesRep) && <TabsTrigger value="reorder">Reorder</TabsTrigger>}
           <TabsTrigger value="intransit">In-Transit</TabsTrigger>
           {(isAdmin || isWarehouse) && <TabsTrigger value="transfers">Transfers</TabsTrigger>}
@@ -131,6 +133,11 @@ export function WarehousePage() {
         <TabsContent value="inventory" className="mt-4">
           <InventoryTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
         </TabsContent>
+        {(isAdmin || isWarehouse) && (
+          <TabsContent value="fulfillment" className="mt-4">
+            <FulfillmentTab />
+          </TabsContent>
+        )}
         {(isAdmin || isSalesRep) && (
           <TabsContent value="reorder" className="mt-4">
             <ReorderTab />

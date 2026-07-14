@@ -13,19 +13,12 @@ import { Separator } from '@/components/ui/separator';
 import { Plus, Calculator, Star } from 'lucide-react';
 import listRatePlans from '@/actions/settings/listRatePlans';
 import createRatePlan from '@/actions/settings/createRatePlan';
+import { calcShippingCost } from '@/lib/shippingCost';
 
 type RatePlan = {
   id: number; effective_date: string; base_kits: number; base_price_usd: number;
   tier_kits: number; tier_price_usd: number; notes: string; created_at: string; created_by_name: string;
 };
-
-function calcCost(plan: RatePlan, kits: number): number {
-  if (kits <= 0) return 0;
-  if (kits <= plan.base_kits) return Number(plan.base_price_usd);
-  const extraKits = kits - plan.base_kits;
-  const extraTiers = Math.ceil(extraKits / plan.tier_kits);
-  return Number(plan.base_price_usd) + extraTiers * Number(plan.tier_price_usd);
-}
 
 export function RatePlansTab() {
   const { profileId } = useAppUser();
@@ -49,7 +42,7 @@ export function RatePlansTab() {
   // Active plan = most recent with effective_date <= today
   const activePlan = planList.find(p => p.effective_date.split('T')[0] <= today);
 
-  const calcResult = activePlan && calcKits ? calcCost(activePlan, Number(calcKits)) : null;
+  const calcResult = activePlan && calcKits ? calcShippingCost(activePlan, Number(calcKits)) : null;
 
   const handleAdd = async () => {
     if (!effectiveDate || !baseKits || !basePrice || !tierKits || !tierPrice) {
