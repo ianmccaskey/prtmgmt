@@ -104,8 +104,8 @@ export function ReorderUsersTab() {
   const handleSaveUser = async () => {
     if (!uDisplayName.trim()) { setUError('Display name is required.'); return; }
     if (!uEmail.trim() || !uEmail.includes('@')) { setUError('A valid email is required — it links this profile to the UI Bakery login.'); return; }
-    // Warehouse role requires an assignment; admins may optionally take one
-    // (admins can act as sales reps and warehouse operators too).
+    // Warehouse role requires an assignment; admins and sales reps may
+    // optionally take one (any role can also work a warehouse).
     if (uRole === 'warehouse' && !uWarehouse) { setUError('Warehouse users must be assigned to a warehouse.'); return; }
     setUSaving(true); setUError('');
     try {
@@ -113,7 +113,7 @@ export function ReorderUsersTab() {
         email: uEmail.trim(),
         display_name: uDisplayName.trim(),
         role: uRole,
-        assigned_warehouse_id: (uRole !== 'sales_rep' && uWarehouse) ? Number(uWarehouse) : null,
+        assigned_warehouse_id: uWarehouse ? Number(uWarehouse) : null,
       };
       if (editUser) {
         await doUpdateUser({ id: editUser.id, ...payload, avatar_file: uAvatar || null });
@@ -262,20 +262,18 @@ export function ReorderUsersTab() {
                 </div>
               </div>
             )}
-            {uRole !== 'sales_rep' && (
-              <div>
-                <Label>Assigned Warehouse {uRole === 'warehouse' ? '*' : '(optional for admins)'}</Label>
-                <Select value={uWarehouse || '_none'} onValueChange={v => setUWarehouse(v === '_none' ? '' : v)}>
-                  <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">None</SelectItem>
-                    {warehouseList.filter(w => w.is_active).map(w => (
-                      <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div>
+              <Label>Assigned Warehouse {uRole === 'warehouse' ? '*' : '(optional)'}</Label>
+              <Select value={uWarehouse || '_none'} onValueChange={v => setUWarehouse(v === '_none' ? '' : v)}>
+                <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">None</SelectItem>
+                  {warehouseList.filter(w => w.is_active).map(w => (
+                    <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             {uError && <p className="text-sm text-red-600">{uError}</p>}
           </div>
           <DialogFooter>
