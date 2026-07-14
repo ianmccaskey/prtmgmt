@@ -14,13 +14,18 @@ import { InTransitTab } from '@/app/pages/warehouse/InTransitTab';
 import { TransfersTab } from '@/app/pages/warehouse/TransfersTab';
 import { PayablesTab } from '@/app/pages/warehouse/PayablesTab';
 import { ActivityTab } from '@/app/pages/warehouse/ActivityTab';
+import { useAppUser } from '@/app/AppContext';
 
 type Warehouse = { id: number; name: string; city: string; is_active: boolean };
 type Stats = { total_skus: number; total_kits: number; total_retail_value: number; low_stock_count: number; kits_reserved: number; kits_in_transit_inbound: number; kits_in_transit_transfer: number };
 type WHBreakdown = { warehouse_id: number; warehouse_name: string; city: string; skus_count: number; total_kits: number; reserved_kits: number; available_kits: number; retail_value: number };
 
 export function WarehousePage() {
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
+  const { isAdmin, isSalesRep, isWarehouse, assignedWarehouseId } = useAppUser();
+  // Warehouse users are locked to their assigned warehouse (access matrix).
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState(
+    isWarehouse && assignedWarehouseId ? String(assignedWarehouseId) : ''
+  );
   const [warehouses] = useLoadAction(listWarehousesAction, [], {});
   const [stats, statsLoading] = useLoadAction(getWarehouseStatsAction, [], { warehouse_id: selectedWarehouseId });
   const [breakdown, breakdownLoading] = useLoadAction(getPerWarehouseBreakdownAction, [], {});
@@ -47,13 +52,13 @@ export function WarehousePage() {
           <h1 className="text-2xl font-bold text-slate-800">Warehouse</h1>
           <p className="text-sm text-slate-500">Inventory, fulfillment, transfers & payables</p>
         </div>
-        <Select value={selectedWarehouseId} onValueChange={setSelectedWarehouseId}>
+        <Select value={selectedWarehouseId} onValueChange={setSelectedWarehouseId} disabled={isWarehouse}>
           <SelectTrigger className="w-52">
             <SelectValue placeholder="All Warehouses" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Warehouses</SelectItem>
-            {warehouseList.filter(w => w.is_active).map(w => (
+            {!isWarehouse && <SelectItem value="">All Warehouses</SelectItem>}
+            {warehouseList.filter(w => w.is_active && (!isWarehouse || w.id === assignedWarehouseId)).map(w => (
               <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
             ))}
           </SelectContent>
@@ -111,35 +116,44 @@ export function WarehousePage() {
         </Card>
       )}
 
-      {/* Tabs */}
+      {/* Tabs — visibility per role access matrix:
+          Reorder: admin + sales_rep · Transfers/Activity: admin + warehouse · Payables: admin only */}
       <Tabs defaultValue="inventory">
-        <TabsList className="grid grid-cols-6 w-full max-w-3xl">
+        <TabsList className="flex flex-wrap h-auto gap-1 w-full max-w-3xl justify-start">
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
-          <TabsTrigger value="reorder">Reorder</TabsTrigger>
+          {(isAdmin || isSalesRep) && <TabsTrigger value="reorder">Reorder</TabsTrigger>}
           <TabsTrigger value="intransit">In-Transit</TabsTrigger>
-          <TabsTrigger value="transfers">Transfers</TabsTrigger>
-          <TabsTrigger value="payables">Payables</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
+          {(isAdmin || isWarehouse) && <TabsTrigger value="transfers">Transfers</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="payables">Payables</TabsTrigger>}
+          {(isAdmin || isWarehouse) && <TabsTrigger value="activity">Activity</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="inventory" className="mt-4">
           <InventoryTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
         </TabsContent>
-        <TabsContent value="reorder" className="mt-4">
-          <ReorderTab />
-        </TabsContent>
+        {(isAdmin || isSalesRep) && (
+          <TabsContent value="reorder" className="mt-4">
+            <ReorderTab />
+          </TabsContent>
+        )}
         <TabsContent value="intransit" className="mt-4">
           <InTransitTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
         </TabsContent>
-        <TabsContent value="transfers" className="mt-4">
-          <TransfersTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
-        </TabsContent>
-        <TabsContent value="payables" className="mt-4">
-          <PayablesTab />
-        </TabsContent>
-        <TabsContent value="activity" className="mt-4">
-          <ActivityTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
-        </TabsContent>
+        {(isAdmin || isWarehouse) && (
+          <TabsContent value="transfers" className="mt-4">
+            <TransfersTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
+          </TabsContent>
+        )}
+        {isAdmin && (
+          <TabsContent value="payables" className="mt-4">
+            <PayablesTab />
+          </TabsContent>
+        )}
+        {(isAdmin || isWarehouse) && (
+          <TabsContent value="activity" className="mt-4">
+            <ActivityTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

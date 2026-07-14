@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useUser, useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -230,8 +231,7 @@ interface NewOrderFormProps {
 }
 
 export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrderFormProps) {
-  const user = useUser();
-  const isAdmin = user.roles?.includes('admin') ?? false;
+  const { profileId, displayName, isAdmin } = useAppUser();
   const [wallets] = useLoadAction(getReceiveWallets, []);
   const [freeReasons] = useLoadAction(getFreeOrderReasons, []);
   const [salesReps] = useLoadAction(listSalesReps, []);
@@ -320,7 +320,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       freeOrderNote: isFree ? freeNote : null,
       partialFulfillmentAllowed: partial, status: s,
       subtotalUsd: subtotal, customerShippingChargeUsd: Number(shipping), discountUsd: Number(discount), totalUsd: total,
-      notes: notes || null, createdByUserId: user.email,
+      notes: notes || null, createdByUserId: profileId,
       salesRepUserProfileId: salesRepId ? Number(salesRepId) : null,
     }) as { id: number; order_number: string }[];
     if (!res?.[0]) return;
@@ -332,7 +332,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: Number(paySpot), amountAsset: Number(amountAsset), amountUsd: total, txHash: payTx || null });
     }
     if (s === 'confirmed' && customer?.is_blocked && overrideNote.trim()) {
-      await doAudit({ orderId, userId: user.email, changeType: 'blocked_override', fieldName: 'status', oldValue: null, newValue: 'confirmed', note: overrideNote });
+      await doAudit({ orderId, userId: profileId, changeType: 'blocked_override', fieldName: 'status', oldValue: null, newValue: 'confirmed', note: overrideNote });
     }
     onSaved(); onClose(); reset();
   };
@@ -354,7 +354,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
         <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6" side="right">
           <SheetHeader className="mb-4">
             <SheetTitle>New Order</SheetTitle>
-            <p className="text-sm text-muted-foreground">Order #: auto-generated · By: <span className="font-medium">{user.name || user.email}</span></p>
+            <p className="text-sm text-muted-foreground">Order #: auto-generated · By: <span className="font-medium">{displayName}</span></p>
           </SheetHeader>
 
           {errors.length > 0 && (

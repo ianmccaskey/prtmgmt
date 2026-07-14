@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLoadAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import getProductDetailAction from '@/actions/products/getProductDetail';
 import listFactoriesAction from '@/actions/products/listFactories';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -24,6 +25,7 @@ type Product = {
 };
 
 export function ProductDetailPage() {
+  const { isWarehouse } = useAppUser();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [product, loading] = useLoadAction(getProductDetailAction, [], { id });
@@ -62,9 +64,9 @@ export function ProductDetailPage() {
       </div>
 
       <Tabs defaultValue="details">
-        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
+        <TabsList className="flex flex-wrap h-auto gap-1 w-full max-w-2xl justify-start">
           <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="pricing">Pricing</TabsTrigger>
+          {!isWarehouse && <TabsTrigger value="pricing">Pricing</TabsTrigger>}
           <TabsTrigger value="batches">Batches</TabsTrigger>
           <TabsTrigger value="tests">Test Results</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
@@ -73,9 +75,11 @@ export function ProductDetailPage() {
         <TabsContent value="details" className="mt-4">
           <ProductDetailsTab product={p} factories={factoryList} />
         </TabsContent>
-        <TabsContent value="pricing" className="mt-4">
-          <ProductPricingTab productId={Number(id)} listPrice={p.list_price} standardCost={p.standard_cost} />
-        </TabsContent>
+        {!isWarehouse && (
+          <TabsContent value="pricing" className="mt-4">
+            <ProductPricingTab productId={Number(id)} listPrice={p.list_price} standardCost={p.standard_cost} />
+          </TabsContent>
+        )}
         <TabsContent value="batches" className="mt-4">
           <ProductBatchesTab productId={Number(id)} productName={p.name} hasExistingBatches={p.batch_count > 0} />
         </TabsContent>

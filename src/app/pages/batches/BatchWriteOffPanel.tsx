@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import getBatchInventoryAction from '@/actions/batches/getBatchInventory';
 import writeOffBatchAction from '@/actions/batches/writeOffBatch';
 import decrementInventoryAction from '@/actions/batches/decrementInventory';
@@ -18,6 +19,7 @@ type InventoryRow = { id: number; warehouse_name: string; warehouse_id: number; 
 const WRITEOFF_REASONS = ['damaged', 'expired', 'contaminated', 'lost', 'testing_consumption', 'other'];
 
 export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefresh: () => void }) {
+  const { profileId } = useAppUser();
   const [inventory] = useLoadAction(getBatchInventoryAction, [], { batch_id: batch.id });
   const [writeOff] = useMutateAction(writeOffBatchAction);
   const [decrement] = useMutateAction(decrementInventoryAction);
@@ -55,7 +57,7 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
       reason: form.reason,
       notes: form.notes || null,
       evidence_url: form.evidence_url || null,
-      user_id: 1, // placeholder — replace with real user context
+      user_id: profileId,
     });
     await decrement({ batch_id: batch.id, warehouse_id: parseInt(form.warehouse_id), quantity: qty });
     setSaving(false);

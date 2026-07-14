@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import listBatchesAction from '@/actions/batches/listBatches';
 import createBatchAction from '@/actions/batches/createBatch';
 import listFactoriesAction from '@/actions/products/listFactories';
@@ -30,6 +31,7 @@ const QC_STATUS_COLORS: Record<string, string> = {
 type Props = { productId: number; productName: string; hasExistingBatches: boolean };
 
 export function ProductBatchesTab({ productId, productName, hasExistingBatches }: Props) {
+  const { isAdmin } = useAppUser();
   const navigate = useNavigate();
   const [batches, loading, , reload] = useLoadAction(listBatchesAction, [], { product_id: String(productId) });
   const [factories] = useLoadAction(listFactoriesAction, [], {});
@@ -83,7 +85,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Mfg Date</th>
                   <th className="text-right px-4 py-2 font-medium text-slate-600">Produced</th>
                   <th className="text-right px-4 py-2 font-medium text-slate-600">Remaining</th>
-                  <th className="text-right px-4 py-2 font-medium text-slate-600">Cost</th>
+                  {isAdmin && <th className="text-right px-4 py-2 font-medium text-slate-600">Cost</th>}
                   <th className="text-left px-4 py-2 font-medium text-slate-600">QC</th>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Purity</th>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">CoA</th>
@@ -97,7 +99,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
                     <td className="px-4 py-2 text-slate-600">{b.manufacture_date ? new Date(b.manufacture_date).toLocaleDateString() : '—'}</td>
                     <td className="px-4 py-2 text-right">{b.quantity_produced}</td>
                     <td className="px-4 py-2 text-right">{b.qty_remaining}</td>
-                    <td className="px-4 py-2 text-right">${Number(b.cost_override ?? b.standard_cost).toFixed(2)}</td>
+                    {isAdmin && <td className="px-4 py-2 text-right">${Number(b.cost_override ?? b.standard_cost).toFixed(2)}</td>}
                     <td className="px-4 py-2"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${QC_STATUS_COLORS[b.qc_status] || 'bg-slate-100 text-slate-600'}`}>{b.qc_status}</span></td>
                     <td className="px-4 py-2 text-slate-600">{b.overall_purity_pct != null ? `${b.overall_purity_pct}%` : '—'}</td>
                     <td className="px-4 py-2" onClick={e => e.stopPropagation()}>
@@ -145,7 +147,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
               <div><Label>Overall Purity %</Label><Input type="number" step="0.01" value={form.overall_purity_pct} onChange={e => set('overall_purity_pct', e.target.value)} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Cost Override (USD)</Label><Input type="number" step="0.01" placeholder="Leave blank = standard cost" value={form.cost_override} onChange={e => set('cost_override', e.target.value)} /></div>
+              {isAdmin && <div><Label>Cost Override (USD)</Label><Input type="number" step="0.01" placeholder="Leave blank = standard cost" value={form.cost_override} onChange={e => set('cost_override', e.target.value)} /></div>}
               <div><Label>CoA URL</Label><Input type="url" placeholder="https://…" value={form.coa_url} onChange={e => set('coa_url', e.target.value)} /></div>
             </div>
             <div><Label>Notes</Label><Input value={form.notes} onChange={e => set('notes', e.target.value)} /></div>

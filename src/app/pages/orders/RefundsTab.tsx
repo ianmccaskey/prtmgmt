@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useUser, useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -125,7 +126,7 @@ function dueDateClass(task: RefundTask): string {
 const STATUS_OPTIONS = ['', 'owed', 'sent', 'verified'];
 
 export function RefundsTab() {
-  const user = useUser();
+  const { profileId } = useAppUser();
   const [statusFilter, setStatusFilter] = useState('owed');
   const [tasks, loading, , reload] = useLoadAction(getRefundTasks, [statusFilter], { status: statusFilter || null });
   const [stats] = useLoadAction(getRefundStats, []);
@@ -136,7 +137,7 @@ export function RefundsTab() {
   const statRow = (stats as Stats[])[0];
 
   const handleVerify = async (task: RefundTask) => {
-    await doVerify({ taskId: task.id, userId: user.email });
+    await doVerify({ taskId: task.id, userId: profileId });
     reload();
   };
 

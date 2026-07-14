@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useUser, useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,7 +32,7 @@ type Note = { id: number; customer_id: number; note_text: string; created_at: st
 const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'other'];
 
 function NotesPanel({ customerId }: { customerId: number }) {
-  const user = useUser();
+  const { profileId } = useAppUser();
   const [notes, loading, , reload] = useLoadAction(getCustomerNotes, [customerId], { customerId });
   const [newText, setNewText] = useState('');
   const [editId, setEditId] = useState<number | null>(null);
@@ -42,17 +43,17 @@ function NotesPanel({ customerId }: { customerId: number }) {
 
   const addNote = async () => {
     if (!newText.trim()) return;
-    await doCreate({ customerId, userId: user.email, noteText: newText });
+    await doCreate({ customerId, userId: profileId, noteText: newText });
     setNewText(''); reload();
   };
 
   const saveEdit = async (note: Note) => {
-    await doUpdate({ noteId: note.id, userId: user.email, noteText: editText, oldText: note.note_text });
+    await doUpdate({ noteId: note.id, userId: profileId, noteText: editText, oldText: note.note_text });
     setEditId(null); reload();
   };
 
   const deleteNote = async (note: Note) => {
-    await doDelete({ noteId: note.id, userId: user.email });
+    await doDelete({ noteId: note.id, userId: profileId });
     reload();
   };
 
@@ -110,11 +111,11 @@ function NotesPanel({ customerId }: { customerId: number }) {
 function BlockDialog({ customer, open, onClose, onDone }: {
   customer: CustomerDetail; open: boolean; onClose: () => void; onDone: () => void;
 }) {
-  const user = useUser();
+  const { profileId } = useAppUser();
   const [reason, setReason] = useState('');
   const [doBlock, blocking] = useMutateAction(blockCustomer);
   const submit = async () => {
-    await doBlock({ customerId: customer.id, reason: reason || null, userId: user.email });
+    await doBlock({ customerId: customer.id, reason: reason || null, userId: profileId });
     onDone(); onClose(); setReason('');
   };
   return (
@@ -137,9 +138,7 @@ function BlockDialog({ customer, open, onClose, onDone }: {
 export function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const user = useUser();
-  const isAdmin = user.roles?.includes('admin') ?? false;
-  const isSalesRep = user.roles?.includes('sales_rep') ?? false;
+  const { isAdmin, isSalesRep } = useAppUser();
   const canSeeInternalNotes = isAdmin || isSalesRep;
   const customerId = Number(id);
 

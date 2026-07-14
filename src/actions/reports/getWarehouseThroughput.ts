@@ -8,15 +8,19 @@ function getWarehouseThroughput() {
         w.id AS warehouse_id,
         w.name AS warehouse_name,
         TO_CHAR(DATE_TRUNC('month', so.shipped_date), 'YYYY-MM') AS month,
-        SUM(soi.quantity_shipped) AS kits_shipped,
+        SUM(soi.total_qty) AS kits_shipped,
         COALESCE(SUM(so.internal_shipping_cost_usd), 0) AS shipping_cost
       FROM shipments_outbound so
-      JOIN shipments_outbound_items soi ON soi.shipment_id = so.id
+      JOIN (
+        SELECT shipment_id, SUM(quantity_shipped) AS total_qty
+        FROM shipments_outbound_items GROUP BY shipment_id
+      ) soi ON soi.shipment_id = so.id
       JOIN warehouses w ON w.id = so.origin_warehouse_id
       WHERE so.origin = 'warehouse'
         AND so.shipped_date IS NOT NULL
         AND ({{params.date_from}} IS NULL OR so.shipped_date >= {{params.date_from}}::date)
         AND ({{params.date_to}} IS NULL OR so.shipped_date <= {{params.date_to}}::date)
+        AND ({{params.warehouse_id}} IS NULL OR so.origin_warehouse_id = {{params.warehouse_id}}::bigint)
       GROUP BY w.id, w.name, DATE_TRUNC('month', so.shipped_date)
       ORDER BY DATE_TRUNC('month', so.shipped_date) ASC, w.name ASC
     `,

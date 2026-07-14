@@ -13,10 +13,11 @@ import getAppSetting from '@/actions/settings/getAppSetting';
 import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 import listUserProfiles from '@/actions/settings/listUserProfiles';
 import upsertUserProfile from '@/actions/settings/upsertUserProfile';
+import updateUserProfileById from '@/actions/settings/updateUserProfileById';
 import listWarehouses from '@/actions/settings/listWarehouses';
 
 type UserProfile = {
-  id: number; user_id: number; role: string; assigned_warehouse_id: number | null;
+  id: number; user_id: number | null; email: string | null; role: string; assigned_warehouse_id: number | null;
   display_name: string; avatar_file: string | null; created_at: string;
   assigned_warehouse_name: string | null;
 };
@@ -42,7 +43,7 @@ export function ReorderUsersTab() {
 
   const [showAddUser, setShowAddUser] = useState(false);
   const [editUser, setEditUser] = useState<UserProfile | null>(null);
-  const [uUserId, setUUserId] = useState('');
+  const [uEmail, setUEmail] = useState('');
   const [uDisplayName, setUDisplayName] = useState('');
   const [uRole, setURole] = useState('sales_rep');
   const [uWarehouse, setUWarehouse] = useState('');
@@ -54,6 +55,7 @@ export function ReorderUsersTab() {
   const [warehouses] = useLoadAction(listWarehouses, [], {});
   const [doUpsertSetting] = useMutateAction(upsertAppSetting);
   const [doUpsertUser] = useMutateAction(upsertUserProfile);
+  const [doUpdateUser] = useMutateAction(updateUserProfileById);
 
   const settingRow = ((setting as AppSetting[]) || [])[0];
   const userList = (users as UserProfile[]) || [];
@@ -73,28 +75,34 @@ export function ReorderUsersTab() {
   };
 
   const openAdd = () => {
-    setEditUser(null); setUUserId(''); setUDisplayName(''); setURole('sales_rep'); setUWarehouse(''); setUError('');
+    setEditUser(null); setUEmail(''); setUDisplayName(''); setURole('sales_rep'); setUWarehouse(''); setUError('');
     setShowAddUser(true);
   };
 
   const openEdit = (u: UserProfile) => {
     setEditUser(u);
-    setUUserId(String(u.user_id)); setUDisplayName(u.display_name); setURole(u.role);
+    setUEmail(u.email || ''); setUDisplayName(u.display_name); setURole(u.role);
     setUWarehouse(u.assigned_warehouse_id ? String(u.assigned_warehouse_id) : '');
     setUError(''); setShowAddUser(true);
   };
 
   const handleSaveUser = async () => {
     if (!uDisplayName.trim()) { setUError('Display name is required.'); return; }
-    if (!editUser && !uUserId) { setUError('User ID is required.'); return; }
+    if (!uEmail.trim() || !uEmail.includes('@')) { setUError('A valid email is required — it links this profile to the UI Bakery login.'); return; }
+    if (uRole === 'warehouse' && !uWarehouse) { setUError('Warehouse users must be assigned to a warehouse.'); return; }
     setUSaving(true); setUError('');
     try {
-      await doUpsertUser({
-        user_id: editUser ? editUser.user_id : Number(uUserId),
+      const payload = {
+        email: uEmail.trim(),
         display_name: uDisplayName.trim(),
         role: uRole,
         assigned_warehouse_id: (uRole === 'warehouse' && uWarehouse) ? Number(uWarehouse) : null,
-      });
+      };
+      if (editUser) {
+        await doUpdateUser({ id: editUser.id, ...payload, avatar_file: null });
+      } else {
+        await doUpsertUser({ user_id: null, ...payload });
+      }
       setShowAddUser(false);
       reloadUsers();
     } catch (e: unknown) {
@@ -166,7 +174,7 @@ export function ReorderUsersTab() {
                         : <Initials name={u.display_name} />}
                       <div>
                         <div className="font-medium text-sm">{u.display_name}</div>
-                        <div className="text-xs text-gray-400">ID: {u.user_id}</div>
+                        <div className="text-xs text-gray-400">{u.email || `ID: ${u.user_id ?? '—'}`}</div>
                       </div>
                     </div>
                   </TableCell>
@@ -193,13 +201,11 @@ export function ReorderUsersTab() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editUser ? 'Edit User' : 'Add User'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            {!editUser && (
-              <div>
-                <Label>UI Bakery User ID *</Label>
-                <Input type="number" value={uUserId} onChange={e => setUUserId(e.target.value)} placeholder="User ID from UI Bakery" />
-                <p className="text-xs text-gray-400 mt-0.5">Enter the numeric ID of an existing UI Bakery platform user</p>
-              </div>
-            )}
+            <div>
+              <Label>Login Email *</Label>
+              <Input type="email" value={uEmail} onChange={e => setUEmail(e.target.value)} placeholder="user@example.com" />
+              <p className="text-xs text-gray-400 mt-0.5">Must match the email this person signs in to UI Bakery with — it links their login to this role</p>
+            </div>
             <div><Label>Display Name *</Label><Input value={uDisplayName} onChange={e => setUDisplayName(e.target.value)} placeholder="e.g. Jane Smith" /></div>
             <div>
               <Label>Role *</Label>

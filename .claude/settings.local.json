@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh auth *)",
+      "Bash(cmd //c \"git config --system --get credential.helper\")",
+      "Bash(codex --version)",
+      "Bash(where.exe codex *)"
+    ]
+  }
+}

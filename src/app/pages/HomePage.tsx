@@ -28,6 +28,7 @@ import getRevenueByMonth from '@/actions/revenueByMonth';
 import getOrderStatusBreakdown from '@/actions/orderStatusBreakdown';
 import getOrdersByChannel from '@/actions/ordersByChannel';
 import getRecentActivity from '@/actions/recentActivity';
+import { useAppUser } from '@/app/AppContext';
 import {
   BarChart,
   Bar,
@@ -142,15 +143,15 @@ function StatCard({
 
 const QUICK_LINKS = [
   { label: 'Sales Orders', href: '/orders', icon: ShoppingCart, desc: 'Manage and create orders' },
-  { label: 'Customers', href: '/customers', icon: Users, desc: 'Customer database' },
+  { label: 'Customers', href: '/customers', icon: Users, desc: 'Customer database', roles: ['admin', 'sales_rep'] },
   { label: 'Products', href: '/products', icon: Package, desc: 'Peptide catalog' },
   { label: 'Batches', href: '/batches', icon: FlaskConical, desc: 'QC & batch tracking' },
   { label: 'Warehouse', href: '/warehouse', icon: Warehouse, desc: 'Inventory & fulfillment' },
   { label: 'Logistics', href: '/logistics', icon: Truck, desc: 'Inbound shipments' },
   { label: 'Reports', href: '/reports', icon: BarChart3, desc: 'Analytics & exports' },
-  { label: 'Commissions', href: '/commissions', icon: HandCoins, desc: 'Rep & warehouse payouts' },
-  { label: 'Settings', href: '/settings', icon: Settings, desc: 'System configuration' },
-];
+  { label: 'Commissions', href: '/commissions', icon: HandCoins, desc: 'Rep & warehouse payouts', roles: ['admin'] },
+  { label: 'Settings', href: '/settings', icon: Settings, desc: 'System configuration', roles: ['admin'] },
+] as { label: string; href: string; icon: React.ComponentType<{ className?: string }>; desc: string; roles?: string[] }[];
 
 function ActivityIcon({ type }: { type: string }) {
   if (type === 'order') return <ShoppingCart className="w-3.5 h-3.5" />;
@@ -172,8 +173,9 @@ function ActivityTypeBadge({ type }: { type: string }) {
 }
 
 export function HomePage() {
+  const { role, isWarehouse } = useAppUser();
   const [statsRaw, statsLoading] = useLoadAction(getDashboardStats, []);
-  const [revenueRaw, revenueLoading] = useLoadAction(getRevenueByMonth, []);
+  const [revenueRaw, revenueLoading] = useLoadAction(getRevenueByMonth, [], {}, { enabled: !isWarehouse });
   const [statusRaw] = useLoadAction(getOrderStatusBreakdown, []);
   const [channelRaw] = useLoadAction(getOrdersByChannel, []);
   const [activityRaw, activityLoading] = useLoadAction(getRecentActivity, []);
@@ -214,7 +216,7 @@ export function HomePage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7 gap-3">
           <StatCard label="Open Orders" value={fmt(stats.open_orders)} icon={ShoppingCart} href="/orders" />
           <StatCard label="Shipped This Month" value={fmt(stats.shipped_this_month)} icon={Truck} href="/orders" />
-          <StatCard label="Revenue This Month" value={fmtUSD(stats.revenue_this_month)} icon={DollarSign} href="/reports" />
+          {!isWarehouse && <StatCard label="Revenue This Month" value={fmtUSD(stats.revenue_this_month)} icon={DollarSign} href="/reports" />}
           <StatCard label="Inbound In-Transit" value={fmt(stats.inbound_in_transit)} icon={Package} href="/logistics" />
           <StatCard
             label="Low Stock Alerts"
@@ -223,42 +225,42 @@ export function HomePage() {
             alert={parseInt(stats.low_stock_alerts) > 0}
             href="/warehouse"
           />
-          <StatCard
+          {!isWarehouse && <StatCard
             label="Unpaid Balance"
             value={fmtUSD(stats.unpaid_balance_usd)}
             icon={DollarSign}
             alert={parseFloat(stats.unpaid_balance_usd) > 0}
             href="/orders"
-          />
-          <StatCard
+          />}
+          {!isWarehouse && <StatCard
             label="Unverified Payments"
             value={fmt(stats.unverified_payments)}
             icon={Clock}
             alert={parseInt(stats.unverified_payments) > 0}
             href="/orders"
-          />
-          <StatCard
+          />}
+          {!isWarehouse && <StatCard
             label="Payments w/ Issues"
             value={fmt(stats.payments_with_issues)}
             icon={XCircle}
             alert={parseInt(stats.payments_with_issues) > 0}
             href="/orders"
-          />
-          <StatCard
+          />}
+          {!isWarehouse && <StatCard
             label="Refunds Owed"
             value={fmt(stats.refunds_owed_count)}
             sub={fmtUSD(stats.refunds_owed_usd)}
             icon={RefreshCw}
             alert={parseInt(stats.refunds_owed_count) > 0}
             href="/orders"
-          />
-          <StatCard
+          />}
+          {!isWarehouse && <StatCard
             label="Overdue Refunds"
             value={fmt(stats.overdue_refunds)}
             icon={AlertTriangle}
             alert={parseInt(stats.overdue_refunds) > 0}
             href="/orders"
-          />
+          />}
           <StatCard
             label="Shipment Issues"
             value={fmt(stats.outbound_issues)}
@@ -266,26 +268,26 @@ export function HomePage() {
             alert={parseInt(stats.outbound_issues) > 0}
             href="/orders"
           />
-          <StatCard
+          {!isWarehouse && <StatCard
             label="Warehouse Payables"
             value={fmtUSD(stats.warehouse_payables_usd)}
             icon={Warehouse}
             alert={parseFloat(stats.warehouse_payables_usd) > 0}
             href="/warehouse"
-          />
-          <StatCard
+          />}
+          {!isWarehouse && <StatCard
             label="China-Direct Awaiting"
             value={fmt(stats.china_direct_awaiting)}
             icon={Globe}
             href="/orders"
-          />
+          />}
         </div>
       )}
 
-      {/* Charts Row */}
+      {/* Charts Row (revenue chart is hidden for warehouse role) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Revenue Bar Chart */}
-        <Card className="lg:col-span-2 shadow-xs">
+        {!isWarehouse && <Card className="lg:col-span-2 shadow-xs">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium">Revenue — Last 6 Months (USD)</CardTitle>
           </CardHeader>
@@ -310,7 +312,7 @@ export function HomePage() {
               </ResponsiveContainer>
             )}
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Status + Channel donuts */}
         <div className="flex flex-col gap-4">
@@ -441,7 +443,7 @@ export function HomePage() {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="grid grid-cols-2 gap-2">
-              {QUICK_LINKS.map((link) => (
+              {QUICK_LINKS.filter(link => !link.roles || link.roles.includes(role)).map((link) => (
                 <Link
                   key={link.href}
                   to={link.href}

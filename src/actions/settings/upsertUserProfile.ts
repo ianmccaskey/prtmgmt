@@ -3,9 +3,10 @@ function upsertUserProfile() {
   return action('upsertUserProfile', 'SQL', {
     datasourceName: 'Peptide Ops DB',
     query: `
-      INSERT INTO user_profiles (user_id, display_name, role, assigned_warehouse_id, updated_at)
-      VALUES ({{params.user_id}}, {{params.display_name}}, {{params.role}}, {{params.assigned_warehouse_id}}, NOW())
-      ON CONFLICT (user_id) DO UPDATE SET
+      INSERT INTO user_profiles (user_id, email, display_name, role, assigned_warehouse_id, updated_at)
+      VALUES ({{params.user_id}}, {{params.email}}, {{params.display_name}}, {{params.role}}, {{params.assigned_warehouse_id}}, NOW())
+      ON CONFLICT (LOWER(email)) WHERE email IS NOT NULL DO UPDATE SET
+        user_id = COALESCE(EXCLUDED.user_id, user_profiles.user_id),
         display_name = EXCLUDED.display_name,
         role = EXCLUDED.role,
         assigned_warehouse_id = EXCLUDED.assigned_warehouse_id,

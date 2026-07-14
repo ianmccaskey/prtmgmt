@@ -3,6 +3,7 @@
 import '@/index.css';
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AppUserProvider, RequireRole } from '@/app/AppContext';
 import { AppLayout } from '@/app/layout/AppLayout';
 import { HomePage } from '@/app/pages/HomePage';
 import { OrdersPage } from '@/app/pages/orders/OrdersPage';
@@ -22,24 +23,26 @@ import { SettingsPage } from '@/app/pages/settings/SettingsPage';
 function App() {
   return (
     <BrowserRouter>
-      <AppLayout userRole="admin">
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/orders" element={<OrdersPage />} />
-          <Route path="/customers" element={<CustomersPage />} />
-          <Route path="/customers/:id" element={<CustomerDetailPage />} />
-          <Route path="/products" element={<ProductsPage />} />
-          <Route path="/products/:id" element={<ProductDetailPage />} />
-          <Route path="/batches" element={<BatchesPage />} />
-          <Route path="/batches/:id" element={<BatchDetailPage />} />
-          <Route path="/warehouse" element={<WarehousePage />} />
-          <Route path="/logistics" element={<LogisticsPage />} />
-          <Route path="/logistics/:id" element={<ShipmentDetailPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/commissions" element={<CommissionsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
-      </AppLayout>
+      <AppUserProvider>
+        <AppLayout>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/customers" element={<RequireRole roles={['admin', 'sales_rep']}><CustomersPage /></RequireRole>} />
+            <Route path="/customers/:id" element={<RequireRole roles={['admin', 'sales_rep']}><CustomerDetailPage /></RequireRole>} />
+            <Route path="/products" element={<ProductsPage />} />
+            <Route path="/products/:id" element={<ProductDetailPage />} />
+            <Route path="/batches" element={<BatchesPage />} />
+            <Route path="/batches/:id" element={<BatchDetailPage />} />
+            <Route path="/warehouse" element={<WarehousePage />} />
+            <Route path="/logistics" element={<LogisticsPage />} />
+            <Route path="/logistics/:id" element={<ShipmentDetailPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/commissions" element={<RequireRole roles={['admin']}><CommissionsPage /></RequireRole>} />
+            <Route path="/settings" element={<RequireRole roles={['admin']}><SettingsPage /></RequireRole>} />
+          </Routes>
+        </AppLayout>
+      </AppUserProvider>
     </BrowserRouter>
   );
 }

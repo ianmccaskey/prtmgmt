@@ -10,6 +10,7 @@ import { Download } from 'lucide-react';
 import { DateRange, exportCSV } from './dateRangeUtils';
 import getWarehouseThroughput from '@/actions/reports/getWarehouseThroughput';
 import getWarehouseThroughputSummary from '@/actions/reports/getWarehouseThroughputSummary';
+import { useAppUser } from '@/app/AppContext';
 
 type ThroughputRow = { warehouse_id: number; warehouse_name: string; month: string; kits_shipped: number; shipping_cost: number };
 type SummaryRow = { warehouse_id: number; warehouse_name: string; total_kits_shipped: number; avg_kits_per_month: number; total_shipping_cost: number; avg_cost_per_kit: number };
@@ -19,12 +20,18 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'
 interface Props { range: DateRange }
 
 export function WarehouseThroughputSection({ range }: Props) {
-  const params = { date_from: range.from || null, date_to: range.to || null };
-  const [throughput] = useLoadAction(getWarehouseThroughput, [], params);
-  const [summary] = useLoadAction(getWarehouseThroughputSummary, [], params);
+  const { isAdmin, isWarehouse, assignedWarehouseId } = useAppUser();
+  // Warehouse role only sees its own warehouse; internal costs are admin-only.
+  const scopedWarehouseId = isWarehouse ? assignedWarehouseId : null;
+  const params = { date_from: range.from || null, date_to: range.to || null, warehouse_id: scopedWarehouseId };
+  const [throughput] = useLoadAction(getWarehouseThroughput, [range.from, range.to, scopedWarehouseId], params);
+  const [summary] = useLoadAction(getWarehouseThroughputSummary, [range.from, range.to, scopedWarehouseId], params);
 
   const rows = (throughput as ThroughputRow[]) || [];
   const summaryRows = (summary as SummaryRow[]) || [];
+  const exportRows = isAdmin
+    ? summaryRows
+    : summaryRows.map(({ total_shipping_cost: _c, avg_cost_per_kit: _a, ...rest }) => rest);
 
   // Pivot data: { month, [warehouse]: kits }
   const warehouses = [...new Set(rows.map(r => r.warehouse_name))];
@@ -64,7 +71,7 @@ export function WarehouseThroughputSection({ range }: Props) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm">Warehouse Summary</CardTitle>
-            <Button variant="outline" size="sm" onClick={() => exportCSV('warehouse_throughput.csv', summaryRows as unknown as Record<string, unknown>[])}>
+            <Button variant="outline" size="sm" onClick={() => exportCSV('warehouse_throughput.csv', exportRows as unknown as Record<string, unknown>[])}>
               <Download className="h-3 w-3 mr-1" /> Export CSV
             </Button>
           </div>
@@ -76,8 +83,8 @@ export function WarehouseThroughputSection({ range }: Props) {
                 <TableHead>Warehouse</TableHead>
                 <TableHead className="text-right">Total Kits Shipped</TableHead>
                 <TableHead className="text-right">Avg Kits/Month</TableHead>
-                <TableHead className="text-right">Total Shipping Cost</TableHead>
-                <TableHead className="text-right">Avg Cost/Kit</TableHead>
+                {isAdmin && <TableHead className="text-right">Total Shipping Cost</TableHead>}
+                {isAdmin && <TableHead className="text-right">Avg Cost/Kit</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -86,12 +93,12 @@ export function WarehouseThroughputSection({ range }: Props) {
                   <TableCell className="font-medium text-sm">{r.warehouse_name}</TableCell>
                   <TableCell className="text-right">{Number(r.total_kits_shipped).toLocaleString()}</TableCell>
                   <TableCell className="text-right">{Number(r.avg_kits_per_month).toLocaleString(undefined, { maximumFractionDigits: 1 })}</TableCell>
-                  <TableCell className="text-right">${Number(r.total_shipping_cost).toLocaleString()}</TableCell>
-                  <TableCell className="text-right">${Number(r.avg_cost_per_kit).toFixed(2)}</TableCell>
+                  {isAdmin && <TableCell className="text-right">${Number(r.total_shipping_cost).toLocaleString()}</TableCell>}
+                  {isAdmin && <TableCell className="text-right">${Number(r.avg_cost_per_kit).toFixed(2)}</TableCell>}
                 </TableRow>
               ))}
               {summaryRows.length === 0 && (
-                <TableRow><TableCell colSpan={5} className="text-center py-6 text-gray-400">No data</TableCell></TableRow>
+                <TableRow><TableCell colSpan={isAdmin ? 5 : 3} className="text-center py-6 text-gray-400">No data</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

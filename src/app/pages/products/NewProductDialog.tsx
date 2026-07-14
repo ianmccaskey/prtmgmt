@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import createProductAction from '@/actions/products/createProduct';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ type Props = {
 };
 
 export function NewProductDialog({ open, onClose, factories, onCreated }: Props) {
+  const { isAdmin } = useAppUser();
   const [form, setForm] = useState({
     sku: '', name: '', description: '', category: '', vial_size_ml: '', vials_per_unit: '1',
     list_price: '', standard_cost: '', available_warehouse: true, available_china_direct: false,
@@ -109,10 +111,12 @@ export function NewProductDialog({ open, onClose, factories, onCreated }: Props)
               <Label>List Price (USD)</Label>
               <Input type="number" step="0.01" value={form.list_price} onChange={e => set('list_price', e.target.value)} placeholder="0.00" />
             </div>
-            <div>
-              <Label>Standard Cost (USD)</Label>
-              <Input type="number" step="0.01" value={form.standard_cost} onChange={e => set('standard_cost', e.target.value)} placeholder="0.00" />
-            </div>
+            {isAdmin && (
+              <div>
+                <Label>Standard Cost (USD)</Label>
+                <Input type="number" step="0.01" value={form.standard_cost} onChange={e => set('standard_cost', e.target.value)} placeholder="0.00" />
+              </div>
+            )}
           </div>
 
           <Separator />

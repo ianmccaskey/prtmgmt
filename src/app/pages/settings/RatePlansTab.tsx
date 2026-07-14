@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,7 @@ function calcCost(plan: RatePlan, kits: number): number {
 }
 
 export function RatePlansTab() {
+  const { profileId } = useAppUser();
   const [showAdd, setShowAdd] = useState(false);
   const [effectiveDate, setEffectiveDate] = useState('');
   const [baseKits, setBaseKits] = useState('');
@@ -63,7 +65,7 @@ export function RatePlansTab() {
       await doCreate({
         effective_date: effectiveDate, base_kits: Number(baseKits),
         base_price_usd: Number(basePrice), tier_kits: Number(tierKits),
-        tier_price_usd: Number(tierPrice), notes: planNotes || null, user_id: 1,
+        tier_price_usd: Number(tierPrice), notes: planNotes || null, user_id: profileId,
       });
       setShowAdd(false);
       setEffectiveDate(''); setBaseKits(''); setBasePrice(''); setTierKits(''); setTierPrice(''); setPlanNotes('');

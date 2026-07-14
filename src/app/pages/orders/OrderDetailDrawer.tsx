@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useUser, useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,7 +45,7 @@ type AuditEntry = Record<string, string | number | null>;
 const ISSUE_TYPES = ['lost', 'damaged', 'returned', 'stuck', 'other'];
 
 function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; reload: () => void }) {
-  const user = useUser();
+  const { profileId } = useAppUser();
   const [payments, loading, , reloadPay] = useLoadAction(getOrderPayments, [orderId], { orderId });
   const [verifyPayment, verifying] = useMutateAction(markPaymentVerified);
   const [flagPayment, flagging] = useMutateAction(flagPaymentIssue);
@@ -53,7 +54,7 @@ function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; rel
   const [issueNotes, setIssueNotes] = useState('');
 
   const doVerify = async (payId: number) => {
-    await verifyPayment({ paymentId: payId, userId: user.email });
+    await verifyPayment({ paymentId: payId, userId: profileId });
     reloadPay();
     parentReload();
   };
@@ -127,13 +128,13 @@ function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; rel
 }
 
 function RefundTaskForm({ orderId, onCreated }: { orderId: number; onCreated: () => void }) {
-  const user = useUser();
+  const { profileId } = useAppUser();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ amount: '', reason: '', dueDate: '', assignee: '' });
   const [doCreate, creating] = useMutateAction(createRefundTask);
 
   const submit = async () => {
-    await doCreate({ orderId, userId: user.email, amountUsdOwed: Number(form.amount), reason: form.reason, assigneeUserId: form.assignee || null, dueDate: form.dueDate || null });
+    await doCreate({ orderId, userId: profileId, amountUsdOwed: Number(form.amount), reason: form.reason, assigneeUserId: form.assignee || null, dueDate: form.dueDate || null });
     setOpen(false); setForm({ amount: '', reason: '', dueDate: '', assignee: '' }); onCreated();
   };
 
@@ -162,14 +163,14 @@ function RefundTaskForm({ orderId, onCreated }: { orderId: number; onCreated: ()
 }
 
 function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: () => void }) {
-  const user = useUser();
+  const { profileId } = useAppUser();
   const [flagOpen, setFlagOpen] = useState(false);
   const [issueFlag, setIssueFlag] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
   const [doFlag, flagging] = useMutateAction(flagShipmentIssue);
 
   const doFlagSubmit = async () => {
-    await doFlag({ shipmentId: shipment.id, issueFlag, issueNotes, userId: user.email });
+    await doFlag({ shipmentId: shipment.id, issueFlag, issueNotes, userId: profileId });
     setFlagOpen(false); onRefresh();
   };
 
@@ -212,14 +213,14 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
 }
 
 function CancelOrderDialog({ orderId, open, onClose, onDone }: { orderId: number; open: boolean; onClose: () => void; onDone: () => void }) {
-  const user = useUser();
+  const { profileId } = useAppUser();
   const [reason, setReason] = useState('');
   const [doUpdate, updating] = useMutateAction(updateOrderStatus);
   const [doAudit] = useMutateAction(insertAuditLog);
 
   const submit = async () => {
     await doUpdate({ orderId, status: 'cancelled', cancellationReason: reason || null });
-    await doAudit({ orderId, userId: user.email, changeType: 'status_change', fieldName: 'status', oldValue: null, newValue: 'cancelled', note: reason || null });
+    await doAudit({ orderId, userId: profileId, changeType: 'status_change', fieldName: 'status', oldValue: null, newValue: 'cancelled', note: reason || null });
     onDone(); onClose();
   };
 
@@ -241,8 +242,7 @@ function CancelOrderDialog({ orderId, open, onClose, onDone }: { orderId: number
 }
 
 export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDetailDrawerProps) {
-  const user = useUser();
-  const isAdmin = user.roles?.includes('admin') ?? false;
+  const { profileId, isAdmin } = useAppUser();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [doUpdateStatus, updatingStatus] = useMutateAction(updateOrderStatus);
   const [doAudit] = useMutateAction(insertAuditLog);

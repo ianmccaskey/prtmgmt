@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import listTransfersAction from '@/actions/warehouse/listTransfers';
 import createTransferAction from '@/actions/warehouse/createTransfer';
 import deductSourceInventoryAction from '@/actions/warehouse/deductSourceInventory';
@@ -33,6 +34,7 @@ const STATUS_COLORS: Record<string, string> = {
 type Props = { warehouseId: string; warehouseList: { id: number; name: string; is_active?: boolean }[] };
 
 export function TransfersTab({ warehouseId, warehouseList }: Props) {
+  const { profileId } = useAppUser();
   const [statusFilter, setStatusFilter] = useState('initiated');
   const [transfers, loading, , reload] = useLoadAction(listTransfersAction, [], { status: statusFilter, warehouse_id: warehouseId });
   const rows: Transfer[] = Array.isArray(transfers) ? transfers : [];
@@ -66,7 +68,7 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
       source_warehouse_id: parseInt(newForm.source_warehouse_id),
       destination_warehouse_id: parseInt(newForm.destination_warehouse_id),
       notes: newForm.notes || null,
-      user_id: 1,
+      user_id: profileId,
     });
     await deductSource({ product_id: selectedInventoryRow.product_id, batch_id: selectedInventoryRow.batch_id, warehouse_id: parseInt(newForm.source_warehouse_id), quantity: parseInt(newForm.quantity) });
     setNewSaving(false);
@@ -77,7 +79,7 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
 
   const handleMarkReceived = async (t: Transfer) => {
     setReceiveSaving(true);
-    await markReceived({ id: t.id, user_id: 1, notes: receiveNote || null });
+    await markReceived({ id: t.id, user_id: profileId, notes: receiveNote || null });
     const inv = sourceRows.find(r => r.batch_number === t.batch_number);
     if (inv) {
       await upsertDest({ product_id: inv.product_id, batch_id: inv.batch_id, warehouse_id: inv.warehouse_id, quantity: t.quantity });

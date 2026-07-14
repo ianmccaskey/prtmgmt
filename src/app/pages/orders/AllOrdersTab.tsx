@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLoadAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -25,6 +26,7 @@ const PAYMENT_OPTIONS = ['', 'unpaid', 'partial_paid', 'paid', 'refunded'];
 const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'other'];
 
 export function AllOrdersTab() {
+  const { isWarehouse } = useAppUser();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
@@ -73,9 +75,11 @@ export function AllOrdersTab() {
         </Select>
         <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-[140px]" />
         <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-[140px]" />
-        <Button onClick={() => setNewOrderOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" /> New Order
-        </Button>
+        {!isWarehouse && (
+          <Button onClick={() => setNewOrderOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> New Order
+          </Button>
+        )}
       </div>
 
       {/* Table */}

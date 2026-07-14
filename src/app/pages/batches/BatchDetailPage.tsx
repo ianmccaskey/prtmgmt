@@ -13,6 +13,7 @@ import { BatchQcPanel } from '@/app/pages/batches/BatchQcPanel';
 import { BatchInventoryPanel } from '@/app/pages/batches/BatchInventoryPanel';
 import { BatchLinkedDataPanel } from '@/app/pages/batches/BatchLinkedDataPanel';
 import { BatchWriteOffPanel } from '@/app/pages/batches/BatchWriteOffPanel';
+import { useAppUser } from '@/app/AppContext';
 
 type Batch = {
   id: number; batch_number: string; product_id: number; product_name: string; sku: string;
@@ -31,6 +32,7 @@ const QC_STATUS_COLORS: Record<string, string> = {
 export function BatchDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { isAdmin, isWarehouse } = useAppUser();
   const [batch, loading, , reload] = useLoadAction(getBatchDetailAction, [], { id });
   const b: Batch | null = Array.isArray(batch) && batch.length > 0 ? batch[0] : null;
 
@@ -64,12 +66,12 @@ export function BatchDetailPage() {
         </div>
       </div>
 
-      {/* Quick metadata strip */}
+      {/* Quick metadata strip (cost is admin-only) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: 'Manufacture Date', val: b.manufacture_date ? new Date(b.manufacture_date).toLocaleDateString() : '—' },
           { label: 'Overall Purity', val: b.overall_purity_pct != null ? `${b.overall_purity_pct}%` : '—' },
-          { label: 'Effective Cost', val: `$${effectiveCost.toFixed(2)} ${b.cost_override != null ? '(override)' : '(standard)'}` },
+          ...(isAdmin ? [{ label: 'Effective Cost', val: `$${effectiveCost.toFixed(2)} ${b.cost_override != null ? '(override)' : '(standard)'}` }] : []),
           { label: 'Notes', val: b.notes || '—' },
         ].map(({ label, val }) => (
           <Card key={label} className="p-3">
@@ -80,29 +82,33 @@ export function BatchDetailPage() {
       </div>
 
       <Tabs defaultValue="tests">
-        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
+        <TabsList className="flex flex-wrap h-auto gap-1 w-full max-w-2xl justify-start">
           <TabsTrigger value="tests">Test Results</TabsTrigger>
-          <TabsTrigger value="qc">QC Controls</TabsTrigger>
+          {(isAdmin || isWarehouse) && <TabsTrigger value="qc">QC Controls</TabsTrigger>}
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="linked">Linked Data</TabsTrigger>
-          <TabsTrigger value="writeoff">Write-off</TabsTrigger>
+          {(isAdmin || isWarehouse) && <TabsTrigger value="writeoff">Write-off</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="tests" className="mt-4">
           <BatchTestsPanel batchId={Number(id)} />
         </TabsContent>
-        <TabsContent value="qc" className="mt-4">
-          <BatchQcPanel batch={b} onRefresh={reload} />
-        </TabsContent>
+        {(isAdmin || isWarehouse) && (
+          <TabsContent value="qc" className="mt-4">
+            <BatchQcPanel batch={b} onRefresh={reload} />
+          </TabsContent>
+        )}
         <TabsContent value="inventory" className="mt-4">
           <BatchInventoryPanel batchId={Number(id)} />
         </TabsContent>
         <TabsContent value="linked" className="mt-4">
           <BatchLinkedDataPanel batchId={Number(id)} />
         </TabsContent>
-        <TabsContent value="writeoff" className="mt-4">
-          <BatchWriteOffPanel batch={b} onRefresh={reload} />
-        </TabsContent>
+        {(isAdmin || isWarehouse) && (
+          <TabsContent value="writeoff" className="mt-4">
+            <BatchWriteOffPanel batch={b} onRefresh={reload} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

@@ -26,6 +26,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
+import { useAppUser } from '@/app/AppContext';
 
 type NavItem = {
   label: string;
@@ -42,19 +43,18 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Batches', href: '/batches', icon: FlaskConical },
   { label: 'Warehouse', href: '/warehouse', icon: Warehouse },
   { label: 'Logistics', href: '/logistics', icon: Truck },
-  { label: 'Reports', href: '/reports', icon: BarChart3, roles: ['admin', 'sales_rep'] },
+  { label: 'Reports', href: '/reports', icon: BarChart3 },
   { label: 'Commissions', href: '/commissions', icon: HandCoins, roles: ['admin'] },
   { label: 'Settings', href: '/settings', icon: Settings, roles: ['admin'] },
 ];
 
 interface AppLayoutProps {
   children: React.ReactNode;
-  userRole?: string;
 }
 
-function AppSidebar({ userRole }: { userRole?: string }) {
+function AppSidebar() {
   const location = useLocation();
-  const role = userRole || 'admin';
+  const { role } = useAppUser();
 
   const visibleItems = NAV_ITEMS.filter(item => {
     if (!item.roles) return true;
@@ -105,16 +105,27 @@ function AppSidebar({ userRole }: { userRole?: string }) {
   );
 }
 
-export function AppLayout({ children, userRole }: AppLayoutProps) {
+export function AppLayout({ children }: AppLayoutProps) {
+  const { profileMissing, displayName, role } = useAppUser();
   return (
     <SidebarProvider defaultOpen={true}>
       <div className="flex h-screen w-full overflow-hidden bg-background">
-        <AppSidebar userRole={userRole} />
+        <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <header className="h-10 border-b border-border/60 flex items-center px-4 flex-shrink-0 bg-background">
             <SidebarTrigger className="w-6 h-6 text-muted-foreground hover:text-foreground" />
             <Separator orientation="vertical" className="mx-3 h-4" />
+            <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{displayName}</span>
+              <span className="capitalize rounded bg-muted px-1.5 py-0.5">{role.replace('_', ' ')}</span>
+            </div>
           </header>
+          {profileMissing && (
+            <div className="bg-amber-50 border-b border-amber-200 text-amber-800 text-xs px-4 py-1.5">
+              No user profile is configured for your account — running with temporary admin access.
+              Add your email under Settings → Users to assign a proper role.
+            </div>
+          )}
           <main className="flex-1 overflow-y-auto">
             {children}
           </main>

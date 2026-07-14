@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import listWarehouseActivityAction from '@/actions/warehouse/listWarehouseActivity';
 import createInventoryCorrectionAction from '@/actions/warehouse/createInventoryCorrection';
 import applyInventoryCorrectionAction from '@/actions/warehouse/applyInventoryCorrection';
@@ -30,6 +31,7 @@ const WRITEOFF_REASONS = ['damaged', 'expired', 'contaminated', 'lost', 'testing
 type Props = { warehouseId: string; warehouseList: { id: number; name: string }[] };
 
 export function ActivityTab({ warehouseId, warehouseList }: Props) {
+  const { profileId } = useAppUser();
   const [eventType, setEventType] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -67,7 +69,7 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
     e.preventDefault();
     if (!selectedCorrRow) return;
     setCorrSaving(true);
-    await createCorrection({ product_id: selectedCorrRow.product_id, batch_id: selectedCorrRow.batch_id, warehouse_id: selectedCorrRow.warehouse_id, new_quantity: parseInt(corrForm.new_quantity), reason: corrForm.reason, user_id: 1 });
+    await createCorrection({ product_id: selectedCorrRow.product_id, batch_id: selectedCorrRow.batch_id, warehouse_id: selectedCorrRow.warehouse_id, new_quantity: parseInt(corrForm.new_quantity), reason: corrForm.reason, user_id: profileId });
     await applyCorrection({ product_id: selectedCorrRow.product_id, batch_id: selectedCorrRow.batch_id, warehouse_id: selectedCorrRow.warehouse_id, new_quantity: parseInt(corrForm.new_quantity) });
     setCorrSaving(false);
     setShowCorrection(false);
@@ -79,7 +81,7 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
     if (woForm.reason === 'other' && !woForm.notes.trim()) { alert('Notes required for "other" reason'); return; }
     setWoSaving(true);
     const newQty = selectedWoRow.quantity_on_hand - parseInt(woForm.quantity);
-    await createWriteoff({ product_id: selectedWoRow.product_id, batch_id: selectedWoRow.batch_id, warehouse_id: selectedWoRow.warehouse_id, quantity: parseInt(woForm.quantity), reason: woForm.reason, notes: woForm.notes || null, evidence_url: woForm.evidence_url || null, user_id: 1 });
+    await createWriteoff({ product_id: selectedWoRow.product_id, batch_id: selectedWoRow.batch_id, warehouse_id: selectedWoRow.warehouse_id, quantity: parseInt(woForm.quantity), reason: woForm.reason, notes: woForm.notes || null, evidence_url: woForm.evidence_url || null, user_id: profileId });
     await applyCorrection({ product_id: selectedWoRow.product_id, batch_id: selectedWoRow.batch_id, warehouse_id: selectedWoRow.warehouse_id, new_quantity: Math.max(0, newQty) });
     setWoSaving(false);
     setShowWriteoff(false);

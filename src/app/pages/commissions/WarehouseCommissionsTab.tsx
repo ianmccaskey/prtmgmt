@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,7 @@ type WarehouseShipment = {
 const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
 
 export function WarehouseCommissionsTab() {
+  const { profileId } = useAppUser();
   const [payDialogWh, setPayDialogWh] = useState<WarehouseBalance | null>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -64,7 +66,7 @@ export function WarehouseCommissionsTab() {
         sales_rep_user_profile_id: null,
         warehouse_id: payDialogWh.warehouse_id,
         amount_usd: amt,
-        paid_by_user_id: 1,
+        paid_by_user_id: profileId,
         note: note || null,
       });
       setPayDialogWh(null);

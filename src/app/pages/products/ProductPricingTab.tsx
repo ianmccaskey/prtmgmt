@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Plus, Trash2, Edit2, Save, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { useAppUser } from '@/app/AppContext';
 
 type PriceTier = { id: number; product_id: number; min_quantity: number; unit_price: number };
 type PriceHistory = { id: number; field: string; old_value: number; new_value: number; changed_at: string; changed_by_name: string };
@@ -19,8 +20,11 @@ type PriceHistory = { id: number; field: string; old_value: number; new_value: n
 type Props = { productId: number; listPrice: number; standardCost: number };
 
 export function ProductPricingTab({ productId, listPrice, standardCost }: Props) {
+  // Cost data + price history (an audit surface) are admin-only; sales reps see
+  // list price and tiers read-only per the access matrix.
+  const { isAdmin } = useAppUser();
   const [tiers, tiersLoading, , reloadTiers] = useLoadAction(getProductPriceTiersAction, [], { product_id: productId });
-  const [history, histLoading] = useLoadAction(getProductPriceHistoryAction, [], { product_id: productId });
+  const [history, histLoading] = useLoadAction(getProductPriceHistoryAction, [], { product_id: productId }, { enabled: isAdmin });
   const [addTier] = useMutateAction(addPriceTierAction);
   const [updateTier] = useMutateAction(updatePriceTierAction);
   const [deleteTier] = useMutateAction(deletePriceTierAction);
@@ -73,7 +77,7 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Price Tiers</CardTitle>
-            <Button size="sm" variant="outline" onClick={() => setShowNew(true)}><Plus className="h-3 w-3 mr-1" />Add Tier</Button>
+            {isAdmin && <Button size="sm" variant="outline" onClick={() => setShowNew(true)}><Plus className="h-3 w-3 mr-1" />Add Tier</Button>}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -123,10 +127,12 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
                           <td className="px-4 py-2 text-right font-medium">${Number(t.unit_price).toFixed(2)}</td>
                           <td className="px-4 py-2 text-right"><Badge variant="outline" className="text-xs">{discount.toFixed(0)}% off</Badge></td>
                           <td className="px-4 py-2">
-                            <div className="flex gap-1 justify-end">
-                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditId(t.id); setEditForm({ min_quantity: String(t.min_quantity), unit_price: String(t.unit_price) }); }}><Edit2 className="h-3 w-3" /></Button>
-                              <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700" onClick={() => handleDeleteTier(t.id)}><Trash2 className="h-3 w-3" /></Button>
-                            </div>
+                            {isAdmin && (
+                              <div className="flex gap-1 justify-end">
+                                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditId(t.id); setEditForm({ min_quantity: String(t.min_quantity), unit_price: String(t.unit_price) }); }}><Edit2 className="h-3 w-3" /></Button>
+                                <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700" onClick={() => handleDeleteTier(t.id)}><Trash2 className="h-3 w-3" /></Button>
+                              </div>
+                            )}
                           </td>
                         </>
                       )}
@@ -142,8 +148,8 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
         </CardContent>
       </Card>
 
-      {/* Price History Chart */}
-      {chartData.length > 0 && (
+      {/* Price History Chart (admin only — exposes cost data) */}
+      {isAdmin && chartData.length > 0 && (
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-base">Price History</CardTitle></CardHeader>
           <CardContent>
@@ -161,7 +167,8 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
         </Card>
       )}
 
-      {/* Price Change Log */}
+      {/* Price Change Log (admin only — audit surface) */}
+      {isAdmin && (
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Price Change Log</CardTitle></CardHeader>
         <CardContent className="p-0">
@@ -192,6 +199,7 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

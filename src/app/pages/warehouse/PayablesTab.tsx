@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import listWarehousePayablesAction from '@/actions/warehouse/listWarehousePayables';
 import listOwedShipmentsAction from '@/actions/warehouse/listOwedShipments';
 import markShipmentsPaidAction from '@/actions/warehouse/markShipmentsPaid';
@@ -12,6 +13,7 @@ type Payable = { warehouse_id: number; warehouse_name: string; owed_shipments_co
 type OwedShipment = { id: number; order_number: string; shipped_date: string; internal_shipping_cost_usd: number; total_kits: number; carrier: string; tracking_number: string };
 
 export function PayablesTab() {
+  const { profileId } = useAppUser();
   const [payables, loading, , reload] = useLoadAction(listWarehousePayablesAction, [], {});
   const rows: Payable[] = Array.isArray(payables) ? payables : [];
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -27,7 +29,7 @@ export function PayablesTab() {
   const handleMarkPaid = async () => {
     if (selected.size === 0) return;
     setPaying(true);
-    await markPaid({ shipment_ids: `{${Array.from(selected).join(',')}}`, user_id: 1 });
+    await markPaid({ shipment_ids: `{${Array.from(selected).join(',')}}`, user_id: profileId });
     setSelected(new Set());
     setPaying(false);
     await reload();

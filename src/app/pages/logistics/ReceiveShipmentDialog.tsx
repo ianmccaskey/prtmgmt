@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +40,7 @@ interface Props {
 }
 
 export function ReceiveShipmentDialog({ open, onClose, shipmentId, items, onDone }: Props) {
+  const { profileId } = useAppUser();
   const [lineStates, setLineStates] = useState<Record<number, LineReceiveState>>(() => {
     const init: Record<number, LineReceiveState> = {};
     for (const item of items) {
@@ -114,14 +116,14 @@ export function ReceiveShipmentDialog({ open, onClose, shipmentId, items, onDone
             quantity: discrepancyQty,
             notes: s.discrepancy_notes || null,
             receipt_item_id: item.id,
-            user_id: 1,
+            user_id: profileId,
           });
         }
 
         // Log receipt activity
         await doLogActivity({
           warehouse_id: item.destination_warehouse_id,
-          user_id: 1,
+          user_id: profileId,
           event_type: isDiscrepancy ? 'receipt_discrepancy' : 'receipt_delivered',
           product_id: item.product_id,
           batch_id: item.batch_id,

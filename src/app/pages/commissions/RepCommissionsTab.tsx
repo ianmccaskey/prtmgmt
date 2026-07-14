@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,7 @@ type RepOrder = {
 const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
 
 export function RepCommissionsTab() {
+  const { profileId } = useAppUser();
   const [payDialogRep, setPayDialogRep] = useState<RepBalance | null>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -64,7 +66,7 @@ export function RepCommissionsTab() {
         sales_rep_user_profile_id: payDialogRep.sales_rep_user_profile_id,
         warehouse_id: null,
         amount_usd: amt,
-        paid_by_user_id: 1,
+        paid_by_user_id: profileId,
         note: note || null,
       });
       setPayDialogRep(null);

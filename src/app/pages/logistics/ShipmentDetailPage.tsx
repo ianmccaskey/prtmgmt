@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -67,6 +68,7 @@ function ModeIcon({ mode }: { mode: string }) {
 }
 
 export function ShipmentDetailPage() {
+  const { profileId } = useAppUser();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [showAddDoc, setShowAddDoc] = useState(false);
@@ -92,7 +94,7 @@ export function ShipmentDetailPage() {
     if (!docType || !docUrl) return;
     setSavingDoc(true);
     try {
-      await createDoc({ shipment_id: Number(id), doc_type: docType, label: docLabel || docType, doc_url: docUrl, user_id: 1 });
+      await createDoc({ shipment_id: Number(id), doc_type: docType, label: docLabel || docType, doc_url: docUrl, user_id: profileId });
       setShowAddDoc(false);
       setDocType(''); setDocLabel(''); setDocUrl('');
       reloadDocs();

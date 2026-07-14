@@ -7,8 +7,10 @@ import { WarehouseThroughputSection } from './WarehouseThroughputSection';
 import { MarginPaymentSection } from './MarginPaymentSection';
 import { DateRange, getPresetRange } from './dateRangeUtils';
 import { BarChart2 } from 'lucide-react';
+import { useAppUser } from '@/app/AppContext';
 
 export function ReportsPage() {
+  const { isAdmin, isWarehouse } = useAppUser();
   const [preset, setPreset] = useState('this_year');
   const [range, setRange] = useState<DateRange>(() => getPresetRange('this_year'));
 
@@ -36,30 +38,36 @@ export function ReportsPage() {
         />
       </div>
 
-      {/* Sections */}
-      <Tabs defaultValue="revenue">
+      {/* Warehouse role only sees throughput (scoped to their warehouse) */}
+      <Tabs defaultValue={isWarehouse ? 'throughput' : 'revenue'}>
         <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="revenue">Revenue Trends</TabsTrigger>
-          <TabsTrigger value="tables">Top Customers & Products</TabsTrigger>
+          {!isWarehouse && <TabsTrigger value="revenue">Revenue Trends</TabsTrigger>}
+          {!isWarehouse && <TabsTrigger value="tables">Top Customers & Products</TabsTrigger>}
           <TabsTrigger value="throughput">Warehouse Throughput</TabsTrigger>
-          <TabsTrigger value="margin">Margin & Payments</TabsTrigger>
+          {isAdmin && <TabsTrigger value="margin">Margin & Payments</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="revenue" className="mt-6">
-          <RevenueTrendsSection range={range} />
-        </TabsContent>
+        {!isWarehouse && (
+          <TabsContent value="revenue" className="mt-6">
+            <RevenueTrendsSection range={range} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="tables" className="mt-6">
-          <TopTablesSection range={range} />
-        </TabsContent>
+        {!isWarehouse && (
+          <TabsContent value="tables" className="mt-6">
+            <TopTablesSection range={range} />
+          </TabsContent>
+        )}
 
         <TabsContent value="throughput" className="mt-6">
           <WarehouseThroughputSection range={range} />
         </TabsContent>
 
-        <TabsContent value="margin" className="mt-6">
-          <MarginPaymentSection range={range} />
-        </TabsContent>
+        {isAdmin && (
+          <TabsContent value="margin" className="mt-6">
+            <MarginPaymentSection range={range} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
