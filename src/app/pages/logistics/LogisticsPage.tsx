@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLoadAction } from '@uibakery/data';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Plane, Ship, Package, AlertTriangle, CheckCircle2, Clock, Plus, Search 
 import listInboundShipments from '@/actions/logistics/listInboundShipments';
 import getShipmentStats from '@/actions/logistics/getShipmentStats';
 import listFactories from '@/actions/logistics/listFactories';
-import { NewShipmentDialog } from './NewShipmentDialog';
+import { NewShipmentDialog, ShipmentPrefillItem } from './NewShipmentDialog';
 
 type Shipment = {
   id: number; reference_number: string; factory_name: string; mode: string;
@@ -24,16 +24,15 @@ type Stats = {
   delivered_this_month: number; discrepancies_this_month: number;
 };
 
-const STATUS_STEPS = ['pending', 'with_freight_forwarder', 'in_transit', 'delivered'];
+// Must match the shipments_inbound.status CHECK constraint.
+const STATUS_STEPS = ['freight_forwarder', 'in_transit', 'delivered'];
 const STATUS_LABELS: Record<string, string> = {
-  pending: 'Pending', with_freight_forwarder: 'With FF', in_transit: 'In Transit', delivered: 'Delivered',
+  freight_forwarder: 'With FF', in_transit: 'In Transit', delivered: 'Delivered',
 };
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-gray-100 text-gray-700',
-  with_freight_forwarder: 'bg-blue-100 text-blue-700',
+  freight_forwarder: 'bg-blue-100 text-blue-700',
   in_transit: 'bg-amber-100 text-amber-700',
   delivered: 'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-700',
 };
 
 function StatusPipeline({ status }: { status: string }) {
@@ -63,12 +62,15 @@ function ModeIcon({ mode }: { mode: string }) {
 
 export function LogisticsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Reorder quick-action lands here with pre-populated line items.
+  const prefillItems = (location.state as { prefillItems?: ShipmentPrefillItem[] } | null)?.prefillItems;
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [factoryFilter, setFactoryFilter] = useState('');
   const [modeFilter, setModeFilter] = useState('');
   const [searchVal, setSearchVal] = useState('');
-  const [showNewDialog, setShowNewDialog] = useState(false);
+  const [showNewDialog, setShowNewDialog] = useState(!!prefillItems?.length);
 
   const [shipments, shipmentsLoading] = useLoadAction(listInboundShipments, [], {
     search, status: statusFilter, factory_id: factoryFilter, mode: modeFilter,
@@ -158,11 +160,9 @@ export function LogisticsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="with_freight_forwarder">With FF</SelectItem>
+                <SelectItem value="freight_forwarder">With FF</SelectItem>
                 <SelectItem value="in_transit">In Transit</SelectItem>
                 <SelectItem value="delivered">Delivered</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
             <Select value={factoryFilter || 'all'} onValueChange={v => setFactoryFilter(v === 'all' ? '' : v)}>
@@ -252,8 +252,9 @@ export function LogisticsPage() {
       {showNewDialog && (
         <NewShipmentDialog
           open={showNewDialog}
-          onClose={() => setShowNewDialog(false)}
+          onClose={() => { setShowNewDialog(false); navigate(location.pathname, { replace: true, state: null }); }}
           onCreated={(id) => navigate(`/logistics/${id}`)}
+          prefillItems={prefillItems}
         />
       )}
     </div>

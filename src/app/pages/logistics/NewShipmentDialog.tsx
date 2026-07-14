@@ -30,13 +30,17 @@ type Warehouse = { id: number; name: string };
 
 function newLineKey() { return `line-${Date.now()}-${Math.random()}`; }
 
+export type ShipmentPrefillItem = { product_id: number; product_name: string; sku: string; quantity: number };
+
 interface Props {
   open: boolean;
   onClose: () => void;
   onCreated: (id: number) => void;
+  /** Pre-populated lines from the Warehouse Reorder quick-action. */
+  prefillItems?: ShipmentPrefillItem[];
 }
 
-export function NewShipmentDialog({ open, onClose, onCreated }: Props) {
+export function NewShipmentDialog({ open, onClose, onCreated, prefillItems }: Props) {
   const [refNumber, setRefNumber] = useState('');
   const [factoryId, setFactoryId] = useState('');
   const [freightForwarder, setFreightForwarder] = useState('');
@@ -48,10 +52,17 @@ export function NewShipmentDialog({ open, onClose, onCreated }: Props) {
   const [htsCode, setHtsCode] = useState('');
   const [declaredValue, setDeclaredValue] = useState('');
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<LineItem[]>([{
-    key: newLineKey(), product_id: '', batch_id: '',
-    destination_warehouse_id: '', quantity_shipped: '', expected_arrival_date: '',
-  }]);
+  const [lines, setLines] = useState<LineItem[]>(() =>
+    prefillItems && prefillItems.length > 0
+      ? prefillItems.map(p => ({
+          key: newLineKey(), product_id: String(p.product_id), batch_id: '',
+          destination_warehouse_id: '', quantity_shipped: String(p.quantity), expected_arrival_date: '',
+        }))
+      : [{
+          key: newLineKey(), product_id: '', batch_id: '',
+          destination_warehouse_id: '', quantity_shipped: '', expected_arrival_date: '',
+        }]
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 

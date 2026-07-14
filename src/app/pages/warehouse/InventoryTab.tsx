@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useLoadAction } from '@uibakery/data';
 import listInventoryAction from '@/actions/warehouse/listInventory';
+import listProductsAction from '@/actions/products/listProducts';
+import listBatchesAction from '@/actions/batches/listBatches';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -22,7 +24,8 @@ const QC_COLORS: Record<string, string> = {
   quarantine: 'bg-orange-100 text-orange-700',
 };
 
-const CATEGORIES = ['GLP-1', 'Growth Hormone', 'PT-141', 'BPC-157', 'Research Peptide', 'Other'];
+// Must match the products.category CHECK constraint.
+const CATEGORIES = ['research peptide', 'cosmetic peptide', 'blend', 'accessory'];
 
 type Props = { warehouseId: string; warehouseList: { id: number; name: string }[] };
 
@@ -30,11 +33,18 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [qcStatus, setQcStatus] = useState('');
+  const [productId, setProductId] = useState('');
+  const [batchId, setBatchId] = useState('');
 
-  const [inventory, loading] = useLoadAction(listInventoryAction, [], {
-    warehouse_id: warehouseId, search, category, qc_status: qcStatus,
+  const [inventory, loading] = useLoadAction(listInventoryAction, [warehouseId, search, category, qcStatus, productId, batchId], {
+    warehouse_id: warehouseId, search, category, qc_status: qcStatus, product_id: productId, batch_id: batchId,
   });
   const rows: InventoryRow[] = Array.isArray(inventory) ? inventory : [];
+
+  const [products] = useLoadAction(listProductsAction, [], {});
+  const productList = (products as { id: number; name: string; sku: string }[]) || [];
+  const [batches] = useLoadAction(listBatchesAction, [productId], { product_id: productId || null });
+  const batchList = (batches as { id: number; batch_number: string }[]) || [];
 
   return (
     <Card>
@@ -45,11 +55,25 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
             <Input placeholder="Search product, SKU, batch…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8" />
           </div>
+          <Select value={productId} onValueChange={v => { setProductId(v); setBatchId(''); }}>
+            <SelectTrigger className="w-44 h-8"><SelectValue placeholder="All products" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All products</SelectItem>
+              {productList.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={batchId} onValueChange={setBatchId} disabled={!productId}>
+            <SelectTrigger className="w-36 h-8"><SelectValue placeholder="All batches" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All batches</SelectItem>
+              {batchList.map(b => <SelectItem key={b.id} value={String(b.id)}>{b.batch_number}</SelectItem>)}
+            </SelectContent>
+          </Select>
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger className="w-40 h-8"><SelectValue placeholder="All categories" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="">All categories</SelectItem>
-              {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              {CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={qcStatus} onValueChange={setQcStatus}>

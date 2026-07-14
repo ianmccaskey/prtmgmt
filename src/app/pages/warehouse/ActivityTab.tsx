@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import listWarehouseActivityAction from '@/actions/warehouse/listWarehouseActivity';
-import createInventoryCorrectionAction from '@/actions/warehouse/createInventoryCorrection';
-import applyInventoryCorrectionAction from '@/actions/warehouse/applyInventoryCorrection';
-import createWarehouseWriteoffAction from '@/actions/warehouse/createWarehouseWriteoff';
+import applyCorrectionAtomicAction from '@/actions/warehouse/applyCorrectionAtomic';
+import warehouseWriteoffAtomicAction from '@/actions/warehouse/warehouseWriteoffAtomic';
+import listReservationsForInventoryRowAction from '@/actions/warehouse/listReservationsForInventoryRow';
 import listInventoryAction from '@/actions/warehouse/listInventory';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,8 @@ type InventoryRow = { id: number; product_name: string; sku: string; batch_numbe
 
 const EVENT_TYPES = ['outbound_pick', 'receipt_delivered', 'receipt_discrepancy', 'transfer_out_initiated', 'transfer_in_received', 'transfer_cancelled', 'count_correction', 'writeoff'];
 
-const WRITEOFF_REASONS = ['damaged', 'expired', 'contaminated', 'lost', 'testing_consumption', 'other'];
+// Must match the inventory_writeoffs.reason CHECK constraint.
+const WRITEOFF_REASONS = ['damaged', 'expired', 'lost', 'qc_hold', 'customer_replacement', 'other'];
 
 type Props = { warehouseId: string; warehouseList: { id: number; name: string }[] };
 
@@ -36,7 +37,7 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  const [activity, loading] = useLoadAction(listWarehouseActivityAction, [], {
+  const [activity, loading, , reloadActivity] = useLoadAction(listWarehouseActivityAction, [], {
     warehouse_id: warehouseId, event_type: eventType,
     date_from: dateFrom ? `${dateFrom}T00:00:00Z` : null,
     date_to: dateTo ? `${dateTo}T23:59:59Z` : null,
@@ -50,8 +51,7 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
   const [corrInventory] = useLoadAction(listInventoryAction, [], { warehouse_id: corrForm.warehouse_id });
   const corrRows: InventoryRow[] = Array.isArray(corrInventory) ? corrInventory : [];
   const selectedCorrRow = corrRows.find(r => `${r.product_id}-${r.batch_id}` === corrForm.product_batch_key);
-  const [createCorrection] = useMutateAction(createInventoryCorrectionAction);
-  const [applyCorrection] = useMutateAction(applyInventoryCorrectionAction);
+  const [applyCorrection] = useMutateAction(applyCorrectionAtomicAction);
 
   // Writeoff form
   const [showWriteoff, setShowWriteoff] = useState(false);
@@ -60,31 +60,43 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
   const [woInventory] = useLoadAction(listInventoryAction, [], { warehouse_id: woForm.warehouse_id });
   const woRows: InventoryRow[] = Array.isArray(woInventory) ? woInventory : [];
   const selectedWoRow = woRows.find(r => `${r.product_id}-${r.batch_id}` === woForm.product_batch_key);
-  const [createWriteoff] = useMutateAction(createWarehouseWriteoffAction);
-  const [applyDecrement] = useMutateAction(applyInventoryCorrectionAction);
-
-  const [, reloadActivity] = [activity, loading, null, () => {}];
+  const [doWriteoff] = useMutateAction(warehouseWriteoffAtomicAction);
+  const [listRowReservations] = useMutateAction(listReservationsForInventoryRowAction);
+  const [woBlocked, setWoBlocked] = useState<{ order_number: string; customer_name: string; reserved_qty: number }[] | null>(null);
 
   const handleCorrection = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCorrRow) return;
     setCorrSaving(true);
-    await createCorrection({ product_id: selectedCorrRow.product_id, batch_id: selectedCorrRow.batch_id, warehouse_id: selectedCorrRow.warehouse_id, new_quantity: parseInt(corrForm.new_quantity), reason: corrForm.reason, user_id: profileId });
-    await applyCorrection({ product_id: selectedCorrRow.product_id, batch_id: selectedCorrRow.batch_id, warehouse_id: selectedCorrRow.warehouse_id, new_quantity: parseInt(corrForm.new_quantity) });
+    // Atomic: correction record + on-hand set + count_correction log.
+    await applyCorrection({ product_id: selectedCorrRow.product_id, batch_id: selectedCorrRow.batch_id, warehouse_id: selectedCorrRow.warehouse_id, new_quantity: parseInt(corrForm.new_quantity), reason: corrForm.reason, user_id: profileId });
     setCorrSaving(false);
     setShowCorrection(false);
+    await reloadActivity();
   };
 
   const handleWriteoff = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedWoRow || !woForm.quantity) return;
-    if (woForm.reason === 'other' && !woForm.notes.trim()) { alert('Notes required for "other" reason'); return; }
+    if (woForm.reason === 'other' && !woForm.notes.trim()) { setWoBlocked(null); return; }
     setWoSaving(true);
-    const newQty = selectedWoRow.quantity_on_hand - parseInt(woForm.quantity);
-    await createWriteoff({ product_id: selectedWoRow.product_id, batch_id: selectedWoRow.batch_id, warehouse_id: selectedWoRow.warehouse_id, quantity: parseInt(woForm.quantity), reason: woForm.reason, notes: woForm.notes || null, evidence_url: woForm.evidence_url || null, user_id: profileId });
-    await applyCorrection({ product_id: selectedWoRow.product_id, batch_id: selectedWoRow.batch_id, warehouse_id: selectedWoRow.warehouse_id, new_quantity: Math.max(0, newQty) });
+    setWoBlocked(null);
+    // Atomic + guarded: no rows returned means the write-off would cut into
+    // reserved stock — surface which orders hold those reservations.
+    const res = await doWriteoff({
+      product_id: selectedWoRow.product_id, batch_id: selectedWoRow.batch_id, warehouse_id: selectedWoRow.warehouse_id,
+      quantity: parseInt(woForm.quantity), reason: woForm.reason, notes: woForm.notes || null,
+      evidence_url: woForm.evidence_url || null, evidence_file: null, user_id: profileId,
+    }) as unknown[];
+    if (!res || res.length === 0) {
+      const impacted = await listRowReservations({ product_id: selectedWoRow.product_id, batch_id: selectedWoRow.batch_id, warehouse_id: selectedWoRow.warehouse_id }) as { order_number: string; customer_name: string; reserved_qty: number }[];
+      setWoBlocked(impacted || []);
+      setWoSaving(false);
+      return;
+    }
     setWoSaving(false);
     setShowWriteoff(false);
+    await reloadActivity();
   };
 
   return (
@@ -215,6 +227,14 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
             </div>
             {woForm.reason === 'other' && <div><Label>Notes (required)</Label><Textarea value={woForm.notes} onChange={e => setWoForm(f => ({ ...f, notes: e.target.value }))} rows={2} required /></div>}
             <div><Label>Evidence URL</Label><Input type="url" placeholder="https://…" value={woForm.evidence_url} onChange={e => setWoForm(f => ({ ...f, evidence_url: e.target.value }))} /></div>
+            {woBlocked && (
+              <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-700 space-y-1">
+                <p className="font-medium">Blocked: this write-off would cut into reserved stock. Release these orders first:</p>
+                {woBlocked.length === 0
+                  ? <p>Reserved stock exists but no ledgered orders were found (likely seed data) — adjust via a count correction instead.</p>
+                  : woBlocked.map(o => <p key={o.order_number}>• {o.order_number} — {o.customer_name} ({o.reserved_qty} kits reserved)</p>)}
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setShowWriteoff(false)}>Cancel</Button>
               <Button type="submit" variant="destructive" disabled={woSaving || !woForm.product_batch_key || !woForm.quantity || !woForm.reason}>{woSaving ? 'Processing…' : 'Write-off'}</Button>

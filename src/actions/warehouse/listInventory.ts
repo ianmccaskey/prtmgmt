@@ -36,6 +36,7 @@ function listInventory() {
       WHERE
         (COALESCE({{params.warehouse_id}}, '') = '' OR i.warehouse_id::text = {{params.warehouse_id}})
         AND (COALESCE({{params.product_id}}, '') = '' OR i.product_id::text = {{params.product_id}})
+        AND (COALESCE({{params.batch_id}}, '') = '' OR i.batch_id::text = {{params.batch_id}})
         AND (COALESCE({{params.category}}, '') = '' OR p.category = {{params.category}})
         AND (COALESCE({{params.qc_status}}, '') = '' OR pb.qc_status = {{params.qc_status}})
         AND (COALESCE({{params.search}}, '') = '' OR p.name ILIKE {{ '%' + params.search + '%' }} OR p.sku ILIKE {{ '%' + params.search + '%' }} OR pb.batch_number ILIKE {{ '%' + params.search + '%' }})
