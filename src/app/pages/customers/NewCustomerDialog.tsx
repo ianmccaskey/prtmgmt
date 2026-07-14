@@ -117,7 +117,7 @@ export function NewCustomerDialog({ open, onClose, onCreated }: NewCustomerDialo
                 <p className="text-xs text-muted-foreground">
                   {d.email as string} · {d.ship_address_line1 as string}, {d.ship_city as string}
                 </p>
-                {d.last_order_date && <p className="text-xs text-muted-foreground">Last order: {new Date(d.last_order_date as string).toLocaleDateString()}</p>}
+                {d.last_order_date ? <p className="text-xs text-muted-foreground">Last order: {new Date(d.last_order_date as string).toLocaleDateString()}</p> : null}
                 <Button size="sm" variant="outline" className="mt-1" onClick={() => { onCreated(d); setDupOpen(false); handleClose(); }}>
                   Use This Customer
                 </Button>

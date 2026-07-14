@@ -89,7 +89,7 @@ export function PayablesTab() {
                                 <td className="px-6 py-2">
                                   <input type="checkbox" className="mr-2" checked={selected.has(o.id)} onChange={e => {
                                     const next = new Set(selected);
-                                    e.target.checked ? next.add(o.id) : next.delete(o.id);
+                                    if (e.target.checked) next.add(o.id); else next.delete(o.id);
                                     setSelected(next);
                                   }} />
                                   <span className="font-mono text-blue-600">{o.order_number || `#${o.id}`}</span>
