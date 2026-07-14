@@ -19,7 +19,7 @@ const QC_COLORS: Record<string, string> = {
   passed: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-700',
   pending: 'bg-yellow-100 text-yellow-700',
-  quarantined: 'bg-orange-100 text-orange-700',
+  quarantine: 'bg-orange-100 text-orange-700',
 };
 
 const CATEGORIES = ['GLP-1', 'Growth Hormone', 'PT-141', 'BPC-157', 'Research Peptide', 'Other'];
@@ -58,7 +58,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
               <SelectItem value="">All QC</SelectItem>
               <SelectItem value="passed">Passed</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="quarantined">Quarantined</SelectItem>
+              <SelectItem value="quarantine">Quarantined</SelectItem>
               <SelectItem value="failed">Failed</SelectItem>
             </SelectContent>
           </Select>

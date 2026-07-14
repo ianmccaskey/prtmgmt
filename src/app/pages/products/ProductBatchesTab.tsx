@@ -25,7 +25,7 @@ const QC_STATUS_COLORS: Record<string, string> = {
   passed: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-700',
   pending: 'bg-yellow-100 text-yellow-700',
-  quarantined: 'bg-orange-100 text-orange-700',
+  quarantine: 'bg-orange-100 text-orange-700',
 };
 
 type Props = { productId: number; productName: string; hasExistingBatches: boolean };
@@ -140,7 +140,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="passed">Passed</SelectItem>
                     <SelectItem value="failed">Failed</SelectItem>
-                    <SelectItem value="quarantined">Quarantined</SelectItem>
+                    <SelectItem value="quarantine">Quarantined</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

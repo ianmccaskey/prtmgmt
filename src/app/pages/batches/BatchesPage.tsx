@@ -22,7 +22,7 @@ const QC_STATUS_COLORS: Record<string, string> = {
   passed: 'bg-green-100 text-green-700 border-green-200',
   failed: 'bg-red-100 text-red-700 border-red-200',
   pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  quarantined: 'bg-orange-100 text-orange-700 border-orange-200',
+  quarantine: 'bg-orange-100 text-orange-700 border-orange-200',
 };
 
 export function BatchesPage() {
@@ -45,7 +45,7 @@ export function BatchesPage() {
   const statCounts = {
     passed: rows.filter(r => r.qc_status === 'passed').length,
     pending: rows.filter(r => r.qc_status === 'pending').length,
-    quarantined: rows.filter(r => r.qc_status === 'quarantined').length,
+    quarantine: rows.filter(r => r.qc_status === 'quarantine').length,
     failed: rows.filter(r => r.qc_status === 'failed').length,
   };
 
@@ -59,7 +59,7 @@ export function BatchesPage() {
         <div className="flex gap-4 text-sm">
           <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 font-medium">{statCounts.passed} Passed</span>
           <span className="px-3 py-1 rounded-full bg-yellow-100 text-yellow-700 font-medium">{statCounts.pending} Pending</span>
-          <span className="px-3 py-1 rounded-full bg-orange-100 text-orange-700 font-medium">{statCounts.quarantined} Quarantined</span>
+          <span className="px-3 py-1 rounded-full bg-orange-100 text-orange-700 font-medium">{statCounts.quarantine} Quarantined</span>
           <span className="px-3 py-1 rounded-full bg-red-100 text-red-700 font-medium">{statCounts.failed} Failed</span>
         </div>
       </div>
@@ -92,7 +92,7 @@ export function BatchesPage() {
                 <SelectItem value="">All statuses</SelectItem>
                 <SelectItem value="passed">Passed</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="quarantined">Quarantined</SelectItem>
+                <SelectItem value="quarantine">Quarantined</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
               </SelectContent>
             </Select>

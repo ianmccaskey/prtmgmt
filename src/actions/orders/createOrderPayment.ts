@@ -1,4 +1,5 @@
 import { action } from '@uibakery/data';
+import { paymentRollupSql } from './paymentRollupSql';
 
 export function createOrderPayment() {
   return action('createOrderPayment', 'SQL', {
@@ -20,7 +21,8 @@ export function createOrderPayment() {
         {{params.amountUsd}}::numeric,
         {{params.txHash}},
         'pending'
-      )
+      );
+${paymentRollupSql('{{params.orderId}}::bigint')};
     `,
   });
 }

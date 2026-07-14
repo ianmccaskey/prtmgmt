@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge, PaymentBadge, SourceBadges, ChannelBadge } from './OrderBadges';
 import { AlertTriangle, Check, Crown, Flag, Plus, RefreshCw, Package, Truck } from 'lucide-react';
 import listUserProfiles from '@/actions/settings/listUserProfiles';
+import releaseProductReservation from '@/actions/warehouse/releaseProductReservation';
 import getOrderDetail from '@/actions/orders/getOrderDetail';
 import getOrderItems from '@/actions/orders/getOrderItems';
 import getOrderPayments from '@/actions/orders/getOrderPayments';
@@ -224,15 +225,25 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
   );
 }
 
-function CancelOrderDialog({ orderId, open, onClose, onDone }: { orderId: number; open: boolean; onClose: () => void; onDone: () => void }) {
+function CancelOrderDialog({ orderId, orderStatus, items, open, onClose, onDone }: {
+  orderId: number; orderStatus: string; items: OrderItem[]; open: boolean; onClose: () => void; onDone: () => void;
+}) {
   const { profileId } = useAppUser();
   const [reason, setReason] = useState('');
   const [doUpdate, updating] = useMutateAction(updateOrderStatus);
   const [doAudit] = useMutateAction(insertAuditLog);
+  const [doRelease] = useMutateAction(releaseProductReservation);
 
   const submit = async () => {
     await doUpdate({ orderId, status: 'cancelled', cancellationReason: reason || null });
-    await doAudit({ orderId, userId: profileId, changeType: 'status_change', fieldName: 'status', oldValue: null, newValue: 'cancelled', note: reason || null });
+    // Cancellation releases the stock reserved at confirm time for warehouse
+    // lines. Draft orders never reserved, so skip them.
+    if (['confirmed', 'in_production', 'partially_shipped'].includes(orderStatus)) {
+      for (const it of items.filter(i => i.fulfillment_source === 'warehouse')) {
+        await doRelease({ product_id: it.product_id, quantity: it.quantity });
+      }
+    }
+    await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: orderStatus, newValue: 'cancelled', note: reason || null });
     onDone(); onClose();
   };
 
@@ -411,7 +422,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
         </SheetContent>
       </Sheet>
 
-      <CancelOrderDialog orderId={Number(orderId)} open={cancelOpen} onClose={() => setCancelOpen(false)} onDone={reloadAll} />
+      <CancelOrderDialog orderId={Number(orderId)} orderStatus={String(order?.status ?? '')} items={(items as OrderItem[]) || []} open={cancelOpen} onClose={() => setCancelOpen(false)} onDone={reloadAll} />
     </>
   );
 }

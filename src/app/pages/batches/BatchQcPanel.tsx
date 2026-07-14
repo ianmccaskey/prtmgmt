@@ -1,27 +1,50 @@
 import React, { useState } from 'react';
 import { useMutateAction } from '@uibakery/data';
 import updateBatchQcStatusAction from '@/actions/batches/updateBatchQcStatus';
+import rollupBatchQcAction from '@/actions/batches/rollupBatchQc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Shield, ShieldAlert, ShieldCheck, ShieldX } from 'lucide-react';
+import { RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 type Batch = { id: number; qc_status: string; notes: string };
 
+/**
+ * QC status is derived automatically from the newest HPLC + mass-spec tests
+ * (rollupBatchQc). The only manual controls are quarantine (overrides the
+ * roll-up, requires a note) and release (re-runs the roll-up).
+ */
 export function BatchQcPanel({ batch, onRefresh }: { batch: Batch; onRefresh: () => void }) {
   const [updateQc] = useMutateAction(updateBatchQcStatusAction);
+  const [rollup] = useMutateAction(rollupBatchQcAction);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState<string | null>(null);
 
-  const handleAction = async (status: string) => {
-    if ((status === 'quarantined') && !note.trim()) {
-      alert('A note is required to send to quarantine.');
-      return;
-    }
-    setSaving(status);
-    await updateQc({ id: batch.id, qc_status: status, notes: note || null });
+  const isQuarantined = batch.qc_status === 'quarantine';
+
+  const quarantine = async () => {
+    if (!note.trim()) return;
+    setSaving('quarantine');
+    await updateQc({ id: batch.id, qc_status: 'quarantine', notes: note });
     setNote('');
+    setSaving(null);
+    onRefresh();
+  };
+
+  const release = async () => {
+    setSaving('release');
+    // First drop the quarantine override, then let the test roll-up decide.
+    await updateQc({ id: batch.id, qc_status: 'pending', notes: note || null });
+    await rollup({ batch_id: batch.id });
+    setNote('');
+    setSaving(null);
+    onRefresh();
+  };
+
+  const recompute = async () => {
+    setSaving('recompute');
+    await rollup({ batch_id: batch.id });
     setSaving(null);
     onRefresh();
   };
@@ -35,9 +58,13 @@ export function BatchQcPanel({ batch, onRefresh }: { batch: Batch; onRefresh: ()
           <span className={`text-sm px-3 py-1 rounded-full font-medium ${
             batch.qc_status === 'passed' ? 'bg-green-100 text-green-700' :
             batch.qc_status === 'failed' ? 'bg-red-100 text-red-700' :
-            batch.qc_status === 'quarantined' ? 'bg-orange-100 text-orange-700' :
+            isQuarantined ? 'bg-orange-100 text-orange-700' :
             'bg-yellow-100 text-yellow-700'
           }`}>{batch.qc_status}</span>
+          <p className="text-xs text-slate-400 mt-1.5">
+            Passed / failed / pending are derived from the newest HPLC purity and mass-spec results.
+            Quarantine is a manual override and blocks the batch from fulfillment until released.
+          </p>
         </div>
 
         <div>
@@ -46,37 +73,27 @@ export function BatchQcPanel({ batch, onRefresh }: { batch: Batch; onRefresh: ()
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            className="border-green-300 text-green-700 hover:bg-green-50"
-            disabled={batch.qc_status === 'passed' || saving !== null}
-            onClick={() => handleAction('passed')}
-          >
-            <ShieldCheck className="h-4 w-4 mr-1" />{saving === 'passed' ? 'Updating…' : 'Mark Passed'}
-          </Button>
-          <Button
-            variant="outline"
-            className="border-orange-300 text-orange-700 hover:bg-orange-50"
-            disabled={batch.qc_status === 'quarantined' || saving !== null}
-            onClick={() => handleAction('quarantined')}
-          >
-            <ShieldAlert className="h-4 w-4 mr-1" />{saving === 'quarantined' ? 'Updating…' : 'Send to Quarantine'}
-          </Button>
-          <Button
-            variant="outline"
-            className="border-blue-300 text-blue-700 hover:bg-blue-50"
-            disabled={batch.qc_status === 'pending' || saving !== null}
-            onClick={() => handleAction('pending')}
-          >
-            <Shield className="h-4 w-4 mr-1" />{saving === 'pending' ? 'Updating…' : 'Reset to Pending'}
-          </Button>
-          <Button
-            variant="outline"
-            className="border-red-300 text-red-700 hover:bg-red-50"
-            disabled={batch.qc_status === 'failed' || saving !== null}
-            onClick={() => handleAction('failed')}
-          >
-            <ShieldX className="h-4 w-4 mr-1" />{saving === 'failed' ? 'Updating…' : 'Mark Failed'}
+          {!isQuarantined ? (
+            <Button
+              variant="outline"
+              className="border-orange-300 text-orange-700 hover:bg-orange-50"
+              disabled={saving !== null || !note.trim()}
+              onClick={quarantine}
+            >
+              <ShieldAlert className="h-4 w-4 mr-1" />{saving === 'quarantine' ? 'Updating…' : 'Send to Quarantine'}
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              className="border-green-300 text-green-700 hover:bg-green-50"
+              disabled={saving !== null}
+              onClick={release}
+            >
+              <ShieldCheck className="h-4 w-4 mr-1" />{saving === 'release' ? 'Releasing…' : 'Release from Quarantine'}
+            </Button>
+          )}
+          <Button variant="outline" disabled={saving !== null || isQuarantined} onClick={recompute}>
+            <RefreshCw className="h-4 w-4 mr-1" />{saving === 'recompute' ? 'Recomputing…' : 'Recompute from Tests'}
           </Button>
         </div>
 

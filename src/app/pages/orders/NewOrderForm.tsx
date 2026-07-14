@@ -26,6 +26,8 @@ import createOrderPayment from '@/actions/orders/createOrderPayment';
 import createCustomer from '@/actions/orders/createCustomer';
 import checkDuplicateCustomer from '@/actions/orders/checkDuplicateCustomer';
 import insertAuditLog from '@/actions/orders/insertAuditLog';
+import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
+import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo';
 
 type Customer = {
   id: number; full_name: string; email: string; phone: string;
@@ -263,6 +265,8 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [doItem] = useMutateAction(createOrderItem);
   const [doPayment] = useMutateAction(createOrderPayment);
   const [doAudit] = useMutateAction(insertAuditLog);
+  const [doReserve] = useMutateAction(reserveProductStockFifo);
+  const [doRecomputePayment] = useMutateAction(recomputePaymentStatus);
 
   useEffect(() => { if (prefillCustomer) pickCustomer(prefillCustomer); }, [prefillCustomer]);
 
@@ -328,11 +332,22 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     for (const l of lines.filter(x => x.product)) {
       await doItem({ orderId, productId: l.product!.id, quantity: l.quantity, unitPriceUsd: l.unit_price, lineTotalUsd: l.quantity * l.unit_price, fulfillmentSource: l.fulfillment_source });
     }
+    if (s === 'confirmed') {
+      // Confirming reserves stock for warehouse-sourced lines (FIFO across
+      // passed-QC batches). A short reservation is a backorder — the
+      // fulfillment queue surfaces the gap.
+      for (const l of lines.filter(x => x.product && x.fulfillment_source === 'warehouse')) {
+        await doReserve({ product_id: l.product!.id, quantity: l.quantity });
+      }
+    }
     if (addPay && total > 0 && paySpot && selectedWallet) {
       await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: Number(paySpot), amountAsset: Number(amountAsset), amountUsd: total, txHash: payTx || null });
+    } else {
+      // Derive payment_status (free $0 orders roll straight to 'paid').
+      await doRecomputePayment({ orderId });
     }
     if (s === 'confirmed' && customer?.is_blocked && overrideNote.trim()) {
-      await doAudit({ orderId, userId: profileId, changeType: 'blocked_override', fieldName: 'status', oldValue: null, newValue: 'confirmed', note: overrideNote });
+      await doAudit({ orderId, userId: profileId, changeType: 'other', fieldName: 'blocked_override', oldValue: null, newValue: 'confirmed', note: overrideNote });
     }
     onSaved(); onClose(); reset();
   };

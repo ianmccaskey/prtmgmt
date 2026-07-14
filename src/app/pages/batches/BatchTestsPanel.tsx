@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import listBatchTestsAction from '@/actions/batches/listBatchTests';
 import createBatchTestsBulkAction from '@/actions/batches/createBatchTestsBulk';
+import rollupBatchQcAction from '@/actions/batches/rollupBatchQc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,6 +62,7 @@ export function BatchTestsPanel({ batchId }: { batchId: number }) {
   const [filterType, setFilterType] = useState('');
   const [tests, loading, , reload] = useLoadAction(listBatchTestsAction, [], { batch_id: batchId, test_type: filterType });
   const [createTestsBulk] = useMutateAction(createBatchTestsBulkAction);
+  const [rollupQc] = useMutateAction(rollupBatchQcAction);
   const rows: Test[] = Array.isArray(tests) ? tests : [];
 
   const [showNew, setShowNew] = useState(false);
@@ -104,6 +106,8 @@ export function BatchTestsPanel({ batchId }: { batchId: number }) {
       };
     });
     await createTestsBulk({ batch_id: batchId, rows: JSON.stringify(payload) });
+    // New results drive the automatic QC status + purity roll-up.
+    await rollupQc({ batch_id: batchId });
     setSaving(false);
     setShowNew(false);
     resetForm();
