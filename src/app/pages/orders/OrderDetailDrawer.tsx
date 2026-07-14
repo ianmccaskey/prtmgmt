@@ -17,6 +17,7 @@ import { StatusBadge, PaymentBadge, SourceBadges, ChannelBadge } from './OrderBa
 import { AlertTriangle, Check, Crown, Flag, Plus, RefreshCw, Package, Truck } from 'lucide-react';
 import listUserProfiles from '@/actions/settings/listUserProfiles';
 import releaseProductReservation from '@/actions/warehouse/releaseProductReservation';
+import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo';
 import getOrderItemAllocations from '@/actions/orders/getOrderItemAllocations';
 import getOrderNotifications from '@/actions/orders/getOrderNotifications';
 import updateOrderNotes from '@/actions/orders/updateOrderNotes';
@@ -241,11 +242,15 @@ function CancelOrderDialog({ orderId, orderStatus, open, onClose, onDone }: {
   const [doRelease] = useMutateAction(releaseProductReservation);
 
   const submit = async () => {
-    await doUpdate({ orderId, status: 'cancelled', cancellationReason: reason || null });
-    // Cancellation releases everything still in this order's reservation
-    // ledger — exactly the rows it reserved, nobody else's.
-    await doRelease({ order_id: orderId, product_id: null });
-    await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: orderStatus, newValue: 'cancelled', note: reason || null });
+    const res = await doUpdate({ orderId, status: 'cancelled', cancellationReason: reason || null }) as unknown[];
+    // Transition guard returned zero rows → stale drawer (order already moved
+    // on); don't release reservations or write a false cancel audit.
+    if (res && res.length > 0) {
+      // Cancellation releases everything still in this order's reservation
+      // ledger — exactly the rows it reserved, nobody else's.
+      await doRelease({ order_id: orderId, product_id: null });
+      await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: orderStatus, newValue: 'cancelled', note: reason || null });
+    }
     onDone(); onClose();
   };
 
@@ -281,6 +286,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [salesReps] = useLoadAction(listSalesReps, []);
   const [doUpdateRep] = useMutateAction(updateOrderSalesRep);
   const [doSaveNotes] = useMutateAction(updateOrderNotes);
+  const [doReserveDraft] = useMutateAction(reserveProductStockFifo);
   const [editingRep, setEditingRep] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
   const [savingNotes, setSavingNotes] = useState(false);
@@ -302,6 +308,13 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const handleStatusAction = async (next: string) => {
     const res = await doUpdateStatus({ orderId, status: next, cancellationReason: null }) as unknown[];
     if (res && res.length > 0) {
+      if (next === 'confirmed') {
+        // Confirming a draft starts the reservation lifecycle for its
+        // warehouse lines, same as confirming at creation time.
+        for (const it of (items as OrderItemRow[]).filter(i => i.fulfillment_source === 'warehouse')) {
+          await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity) });
+        }
+      }
       await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: status, newValue: next, note: null });
     }
     reloadAll();
@@ -396,6 +409,9 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                   )}
 
                   <div className="flex gap-2 flex-wrap">
+                    {status === 'draft' && (
+                      <Button size="sm" className="h-7 text-xs" disabled={updatingStatus} onClick={() => handleStatusAction('confirmed')}>Confirm Order</Button>
+                    )}
                     {status === 'confirmed' && !isReadOnly && (
                       <Button size="sm" variant="outline" className="h-7 text-xs" disabled={updatingStatus} onClick={() => handleStatusAction('in_production')}>Start Production</Button>
                     )}

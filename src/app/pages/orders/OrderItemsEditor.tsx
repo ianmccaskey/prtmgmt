@@ -81,6 +81,21 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
 
   const orderStatusConfirmedPlus = ['confirmed', 'in_production', 'partially_shipped'].includes(String(order.status));
 
+  // Reservations are ledgered per (order, product) — a release wipes EVERY
+  // line's reservation for that product. So any resync must re-reserve the
+  // combined quantity of all still-open warehouse lines of the product.
+  const siblingWarehouseQty = (productId: number, excludeItemId: number) =>
+    items
+      .filter(i => i.product_id === productId && i.id !== excludeItemId
+        && i.fulfillment_source === 'warehouse' && !i.is_shipped
+        && !allocations.some(a => a.sales_order_item_id === i.id))
+      .reduce((s, i) => s + Number(i.quantity), 0);
+
+  const resyncProductReservation = async (productId: number, totalQty: number) => {
+    await doRelease({ order_id: orderId, product_id: productId });
+    if (totalQty > 0) await doReserve({ order_id: orderId, product_id: productId, quantity: totalQty });
+  };
+
   const recalc = async (discountUsd?: number, shippingUsd?: number) => {
     await doRecalc({
       orderId,
@@ -103,11 +118,9 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
       setBusy(false); setEditId(null); onChanged();
       return;
     }
-    // Re-sync reservations for warehouse lines: release this product's
-    // ledger rows for the order, then re-reserve at the new quantity.
+    // Re-sync reservations at the new quantity plus any sibling lines'.
     if (it.fulfillment_source === 'warehouse' && orderStatusConfirmedPlus) {
-      await doRelease({ order_id: orderId, product_id: it.product_id });
-      await doReserve({ order_id: orderId, product_id: it.product_id, quantity: qty });
+      await resyncProductReservation(it.product_id, qty + siblingWarehouseQty(it.product_id, it.id));
     }
     if (qty !== Number(it.quantity)) {
       await doAudit({ orderId, userId: profileId, changeType: 'line_item_qty', fieldName: `line.${it.product_sku}.quantity`, oldValue: String(it.quantity), newValue: String(qty), note: null });
@@ -128,8 +141,8 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
       setBusy(false); onChanged();
       return;
     }
-    if (it.fulfillment_source === 'warehouse') {
-      await doRelease({ order_id: orderId, product_id: it.product_id });
+    if (it.fulfillment_source === 'warehouse' && orderStatusConfirmedPlus) {
+      await resyncProductReservation(it.product_id, siblingWarehouseQty(it.product_id, it.id));
     }
     await doAudit({ orderId, userId: profileId, changeType: 'line_item_removed', fieldName: `line.${it.product_sku}`, oldValue: `${it.quantity} @ $${Number(it.unit_price_usd).toFixed(2)}`, newValue: null, note: null });
     await recalc();
@@ -154,15 +167,18 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     }
     const res = await doSwitchSource({ itemId: it.id, source: target }) as unknown[];
     if (!res || res.length === 0) {
-      // Locked line — undo any reservation we just made.
-      if (target === 'warehouse' && orderStatusConfirmedPlus) await doRelease({ order_id: orderId, product_id: it.product_id });
+      // Locked line — undo the reservation we just added by resyncing back to
+      // the sibling lines' total (line itself stays on its original source).
+      if (target === 'warehouse' && orderStatusConfirmedPlus) {
+        await resyncProductReservation(it.product_id, siblingWarehouseQty(it.product_id, it.id));
+      }
       setError(`${it.product_name}: line is locked (already allocated/shipped).`);
       setBusy(false); onChanged();
       return;
     }
     if (target === 'china_direct' && orderStatusConfirmedPlus) {
-      // Switching away from warehouse releases the line's reservation.
-      await doRelease({ order_id: orderId, product_id: it.product_id });
+      // Switching away from warehouse: keep only the sibling lines reserved.
+      await resyncProductReservation(it.product_id, siblingWarehouseQty(it.product_id, it.id));
     }
     await doAudit({ orderId, userId: profileId, changeType: 'other', fieldName: `line.${it.product_sku}.fulfillment_source`, oldValue: it.fulfillment_source, newValue: target, note: null });
     setBusy(false);
