@@ -6,7 +6,7 @@ function listSalesReps() {
     query: `
       SELECT id, display_name
       FROM user_profiles
-      WHERE role = 'sales_rep'
+      WHERE role IN ('sales_rep', 'admin')
       ORDER BY display_name ASC
     `,
   });
