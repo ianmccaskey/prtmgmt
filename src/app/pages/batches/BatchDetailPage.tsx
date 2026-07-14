@@ -7,12 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, ExternalLink, FlaskConical } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FileText, FlaskConical } from 'lucide-react';
 import { BatchTestsPanel } from '@/app/pages/batches/BatchTestsPanel';
 import { BatchQcPanel } from '@/app/pages/batches/BatchQcPanel';
 import { BatchInventoryPanel } from '@/app/pages/batches/BatchInventoryPanel';
 import { BatchLinkedDataPanel } from '@/app/pages/batches/BatchLinkedDataPanel';
 import { BatchWriteOffPanel } from '@/app/pages/batches/BatchWriteOffPanel';
+import { BatchTraceabilityReport } from '@/app/pages/batches/BatchTraceabilityReport';
 import { useAppUser } from '@/app/AppContext';
 
 type Batch = {
@@ -33,6 +34,7 @@ export function BatchDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { isAdmin, isWarehouse } = useAppUser();
+  const [showReport, setShowReport] = useState(false);
   const [batch, loading, , reload] = useLoadAction(getBatchDetailAction, [], { id });
   const b: Batch | null = Array.isArray(batch) && batch.length > 0 ? batch[0] : null;
 
@@ -64,7 +66,12 @@ export function BatchDetailPage() {
           <div className="text-lg font-bold text-slate-800">{b.qty_remaining} kits</div>
           <div className="text-xs text-slate-400">{b.qty_reserved} reserved · {b.quantity_produced} produced</div>
         </div>
+        <Button variant="outline" size="sm" onClick={() => setShowReport(true)}>
+          <FileText className="h-3 w-3 mr-1" /> Traceability Report
+        </Button>
       </div>
+
+      {showReport && <BatchTraceabilityReport batch={b} onClose={() => setShowReport(false)} />}
 
       {/* Quick metadata strip (cost is admin-only) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

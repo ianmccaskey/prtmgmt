@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useMutateAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import updateProductAction from '@/actions/products/updateProduct';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,7 +26,9 @@ type Product = {
 type Props = { product: Product; factories: { id: number; name: string }[] };
 
 export function ProductDetailsTab({ product, factories }: Props) {
+  const { profileId, isAdmin } = useAppUser();
   const [editing, setEditing] = useState(false);
+  const factoryLocked = Number(product.batch_count) > 0; // immutable once batches exist (prompt rule)
   const [form, setForm] = useState({
     name: product.name, description: product.description || '',
     category: product.category || '', vial_size_ml: String(product.vial_size_ml),
@@ -33,19 +36,26 @@ export function ProductDetailsTab({ product, factories }: Props) {
     available_warehouse: product.available_warehouse,
     available_china_direct: product.available_china_direct,
     is_active: product.is_active, low_stock_threshold: String(product.low_stock_threshold),
+    list_price: String(Number(product.list_price)),
+    standard_cost: String(Number(product.standard_cost ?? 0)),
+    factory_id: product.factory_id ? String(product.factory_id) : '',
   });
   const [mutate, saving] = useMutateAction(updateProductAction);
   const set = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
+    // updateProduct auto-inserts product_price_history rows on price change
+    // and ignores factory_id once batches exist.
     await mutate({
       id: product.id,
       ...form,
       vial_size_ml: parseFloat(form.vial_size_ml),
       vials_per_unit: parseInt(form.vials_per_unit),
-      list_price: product.list_price,
-      standard_cost: product.standard_cost,
+      list_price: parseFloat(form.list_price) || 0,
+      standard_cost: isAdmin ? (parseFloat(form.standard_cost) || 0) : product.standard_cost,
       low_stock_threshold: parseInt(form.low_stock_threshold),
+      factory_id: !factoryLocked && form.factory_id ? Number(form.factory_id) : null,
+      user_id: profileId,
     });
     setEditing(false);
   };
@@ -90,6 +100,26 @@ export function ProductDetailsTab({ product, factories }: Props) {
                 <div><Label>Vial Size (mL)</Label><Input type="number" step="0.01" value={form.vial_size_ml} onChange={e => set('vial_size_ml', e.target.value)} /></div>
                 <div><Label>Vials per Kit</Label><Input type="number" value={form.vials_per_unit} onChange={e => set('vials_per_unit', e.target.value)} /></div>
                 <div><Label>Low Stock Threshold</Label><Input type="number" value={form.low_stock_threshold} onChange={e => set('low_stock_threshold', e.target.value)} /></div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label>List Price (USD)</Label>
+                  <Input type="number" step="0.01" min={0} value={form.list_price} onChange={e => set('list_price', e.target.value)} />
+                  <p className="text-xs text-slate-400 mt-0.5">Changes are logged to price history</p>
+                </div>
+                {isAdmin && (
+                  <div>
+                    <Label>Standard Cost (USD)</Label>
+                    <Input type="number" step="0.01" min={0} value={form.standard_cost} onChange={e => set('standard_cost', e.target.value)} />
+                  </div>
+                )}
+                <div>
+                  <Label>Factory {factoryLocked && <span className="text-xs text-slate-400">(locked — batches exist)</span>}</Label>
+                  <Select value={form.factory_id} onValueChange={v => set('factory_id', v)} disabled={factoryLocked}>
+                    <SelectTrigger><SelectValue placeholder="Select factory…" /></SelectTrigger>
+                    <SelectContent>{factories.map(f => <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
               </div>
               <Separator />
               <div>

@@ -4,6 +4,7 @@ import { useLoadAction } from '@uibakery/data';
 import listBatchesAction from '@/actions/batches/listBatches';
 import listFactoriesAction from '@/actions/products/listFactories';
 import listProductsAction from '@/actions/products/listProducts';
+import { usePagination, PaginationFooter } from '@/components/Paginated';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,6 +40,7 @@ export function BatchesPage() {
   const [products] = useLoadAction(listProductsAction, [], {});
 
   const rows: Batch[] = Array.isArray(batches) ? batches : [];
+  const pgBatch = usePagination(rows);
   const factoryList: { id: number; name: string }[] = Array.isArray(factories) ? factories : [];
   const productList: { id: number; name: string; sku: string }[] = Array.isArray(products) ? products : [];
 
@@ -123,7 +125,7 @@ export function BatchesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(b => (
+                  {pgBatch.pageRows.map(b => (
                     <tr key={b.id} className="border-b hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/batches/${b.id}`)}>
                       <td className="px-4 py-3 font-mono font-medium text-blue-600">{b.batch_number}</td>
                       <td className="px-4 py-3">
@@ -147,6 +149,7 @@ export function BatchesPage() {
                 </tbody>
               </table>
             )}
+            <PaginationFooter {...pgBatch} />
           </div>
         </CardContent>
       </Card>

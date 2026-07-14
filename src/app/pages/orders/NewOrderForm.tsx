@@ -261,6 +261,15 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [newCustOpen, setNewCustOpen] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [blanketPct, setBlanketPct] = useState('');
+
+  const applyBlanketDiscount = () => {
+    const pct = Math.min(100, Math.max(0, parseFloat(blanketPct) || 0));
+    if (!pct) return;
+    setLines(prev => prev.map(l => l.product
+      ? { ...l, unit_price: Number((Number(l.product.list_price) * (1 - pct / 100)).toFixed(2)), price_mode: 'manual' as const }
+      : l));
+  };
 
   const [doCreate, creating] = useMutateAction(createOrder);
   const [doItem] = useMutateAction(createOrderItem);
@@ -546,6 +555,14 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               ))}
             </div>
             <ProductCombo onAdd={addLine} isFree={isFree} />
+            {/* Order-level blanket price adjustment across all lines (prompt rule) */}
+            {lines.filter(l => l.product).length > 1 && (
+              <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                <span>Apply % off list to all lines:</span>
+                <Input type="number" min={0} max={100} value={blanketPct} onChange={e => setBlanketPct(e.target.value)} className="h-7 w-20" placeholder="10" />
+                <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={!blanketPct} onClick={applyBlanketDiscount}>Apply to all</Button>
+              </div>
+            )}
           </div>
 
           {/* Totals */}

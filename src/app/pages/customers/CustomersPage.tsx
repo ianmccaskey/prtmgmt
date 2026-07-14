@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Crown, Ban, Search, Plus, Download } from 'lucide-react';
 import listCustomers from '@/actions/customers/listCustomers';
+import { usePagination, PaginationFooter } from '@/components/Paginated';
 import { NewCustomerDialog } from './NewCustomerDialog';
 
 type Customer = {
@@ -36,6 +37,7 @@ export function CustomersPage() {
   };
 
   const [customers, loading, , reload] = useLoadAction(listCustomers, [search, channel, isVip, isBlocked], params);
+  const pgCust = usePagination((customers as Customer[]) || []);
 
   const exportCSV = () => {
     const rows = customers as Customer[];
@@ -121,7 +123,7 @@ export function CustomersPage() {
               ) : (customers as Customer[]).length === 0 ? (
                 <tr><td colSpan={7} className="text-center p-8 text-muted-foreground">No customers found</td></tr>
               ) : (
-                (customers as Customer[]).map(c => (
+                pgCust.pageRows.map(c => (
                   <tr
                     key={c.id}
                     className="border-b hover:bg-muted/30 cursor-pointer transition-colors"
@@ -168,6 +170,7 @@ export function CustomersPage() {
             </tbody>
           </table>
         </div>
+        <PaginationFooter {...pgCust} />
       </div>
 
       <NewCustomerDialog open={newOpen} onClose={() => setNewOpen(false)} onCreated={c => { setNewOpen(false); navigate(`/customers/${c.id}`); }} />

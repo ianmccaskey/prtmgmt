@@ -186,3 +186,22 @@ body {
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 }
+
+/* Batch Traceability Report print isolation: only .print-area reaches paper */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area, .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 24px;
+  }
+  .print-hidden {
+    display: none !important;
+  }
+}

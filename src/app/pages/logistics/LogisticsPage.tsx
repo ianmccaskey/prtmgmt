@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Plane, Ship, Package, AlertTriangle, CheckCircle2, Clock, Plus, Search } from 'lucide-react';
 import listInboundShipments from '@/actions/logistics/listInboundShipments';
 import getShipmentStats from '@/actions/logistics/getShipmentStats';
+import { usePagination, PaginationFooter } from '@/components/Paginated';
 import listFactories from '@/actions/logistics/listFactories';
 import { NewShipmentDialog, ShipmentPrefillItem } from './NewShipmentDialog';
 
@@ -91,6 +92,7 @@ export function LogisticsPage() {
 
   const statsRow = (stats as Stats[])?.[0] || {} as Stats;
   const shipmentsList = (shipments as Shipment[]) || [];
+  const pgShip = usePagination(shipmentsList);
 
   const handleSearch = () => setSearch(searchVal);
 
@@ -221,7 +223,7 @@ export function LogisticsPage() {
                 <TableRow><TableCell colSpan={11} className="text-center py-8 text-gray-400">Loading…</TableCell></TableRow>
               ) : shipmentsList.length === 0 ? (
                 <TableRow><TableCell colSpan={11} className="text-center py-8 text-gray-400">No shipments found</TableCell></TableRow>
-              ) : shipmentsList.map(s => (
+              ) : pgShip.pageRows.map(s => (
                 <TableRow
                   key={s.id}
                   className="cursor-pointer hover:bg-gray-50"
@@ -257,6 +259,7 @@ export function LogisticsPage() {
               ))}
             </TableBody>
           </Table>
+          <PaginationFooter {...pgShip} />
         </CardContent>
       </Card>
 

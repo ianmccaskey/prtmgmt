@@ -4,6 +4,8 @@ import { useLoadAction, useMutateAction } from '@uibakery/data';
 import listProductsAction from '@/actions/products/listProducts';
 import listFactoriesAction from '@/actions/products/listFactories';
 import createProductAction from '@/actions/products/createProduct';
+import bulkUpdateListPriceAction from '@/actions/products/bulkUpdateListPrice';
+import { useAppUser } from '@/app/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LayoutGrid, LayoutList, Plus, Search, Package } from 'lucide-react';
+import { usePagination, PaginationFooter } from '@/components/Paginated';
 import { NewProductDialog } from '@/app/pages/products/NewProductDialog';
 
 type Product = {
@@ -28,6 +31,7 @@ const CATEGORIES = ['research peptide', 'cosmetic peptide', 'blend', 'accessory'
 
 export function ProductsPage() {
   const navigate = useNavigate();
+  const { profileId, isAdmin } = useAppUser();
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
@@ -35,11 +39,33 @@ export function ProductsPage() {
   const [channel, setChannel] = useState('');
   const [isActive, setIsActive] = useState('');
   const [showNew, setShowNew] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkDelta, setBulkDelta] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [doBulkPrice] = useMutateAction(bulkUpdateListPriceAction);
 
-  const [products, loading] = useLoadAction(listProductsAction, [], { search, category, factory_id: factoryId, channel, is_active: isActive });
+  const [products, loading, , reload] = useLoadAction(listProductsAction, [], { search, category, factory_id: factoryId, channel, is_active: isActive });
   const [factories] = useLoadAction(listFactoriesAction, [], {});
   const rows: Product[] = Array.isArray(products) ? products : [];
   const factoryList: { id: number; name: string }[] = Array.isArray(factories) ? factories : [];
+  const pgProd = usePagination(rows);
+
+  const toggleSelect = (id: number) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const applyBulkPrice = async () => {
+    const delta = parseFloat(bulkDelta);
+    if (!delta || selected.size === 0) return;
+    setBulkSaving(true);
+    await doBulkPrice({ ids: `{${Array.from(selected).join(',')}}`, delta, user_id: profileId });
+    setBulkSaving(false);
+    setSelected(new Set());
+    setBulkDelta('');
+    reload();
+  };
 
   return (
     <div className="p-6 space-y-4">
@@ -97,6 +123,21 @@ export function ProductsPage() {
         </CardContent>
       </Card>
 
+      {/* Bulk price toolbar (flat $ change only — prompt rule) */}
+      {isAdmin && selected.size > 0 && (
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardContent className="py-2.5 flex items-center gap-3 flex-wrap">
+            <span className="text-sm font-medium">{selected.size} selected</span>
+            <Label className="text-xs">Flat $ change to list price</Label>
+            <Input type="number" step="0.01" placeholder="+5.00 or -2.50" value={bulkDelta} onChange={e => setBulkDelta(e.target.value)} className="w-36 h-8" />
+            <Button size="sm" onClick={applyBulkPrice} disabled={bulkSaving || !parseFloat(bulkDelta)}>
+              {bulkSaving ? 'Applying…' : 'Apply'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Content */}
       {loading ? (
         <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-14 w-full" />)}</div>
@@ -107,6 +148,13 @@ export function ProductsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b">
                   <tr>
+                    {isAdmin && (
+                      <th className="px-3 py-3 w-8">
+                        <input type="checkbox"
+                          checked={rows.length > 0 && selected.size === rows.length}
+                          onChange={e => setSelected(e.target.checked ? new Set(rows.map(r => r.id)) : new Set())} />
+                      </th>
+                    )}
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Product</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Category</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Vial/Kit</th>
@@ -120,6 +168,11 @@ export function ProductsPage() {
                 <tbody>
                   {rows.map(p => (
                     <tr key={p.id} className="border-b hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/products/${p.id}`)}>
+                      {isAdmin && (
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} />
+                        </td>
+                      )}
                       <td className="px-4 py-3">
                         <div className="font-medium text-slate-800">{p.name}</div>
                         <div className="text-xs text-slate-400">{p.sku}</div>
@@ -150,6 +203,7 @@ export function ProductsPage() {
                 </tbody>
               </table>
             </div>
+            <PaginationFooter {...pgProd} />
           </CardContent>
         </Card>
       ) : (

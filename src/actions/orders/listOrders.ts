@@ -42,7 +42,7 @@ export function listOrders() {
         AND ({{params.dateFrom}} IS NULL OR so.order_date >= {{params.dateFrom}}::date)
         AND ({{params.dateTo}} IS NULL OR so.order_date <= {{params.dateTo}}::date)
       ORDER BY so.order_date DESC, so.id DESC
-      LIMIT 100
+      LIMIT 1000
     `,
   });
 }

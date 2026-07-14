@@ -12,6 +12,7 @@ import listOrders from '@/actions/orders/listOrders';
 import updateOrderStatus from '@/actions/orders/updateOrderStatus';
 import insertAuditLog from '@/actions/orders/insertAuditLog';
 import { useMutateAction } from '@uibakery/data';
+import { usePagination, PaginationFooter } from '@/components/Paginated';
 import { NewOrderForm } from './NewOrderForm';
 import { OrderDetailDrawer } from './OrderDetailDrawer';
 
@@ -64,6 +65,7 @@ export function AllOrdersTab() {
 
   const [orders, loading, , reload] = useLoadAction(listOrders, [search, statusFilter, paymentFilter, channelFilter, dateFrom, dateTo], params);
 
+  const pg = usePagination((orders as Order[]) || []);
   const openDetail = (id: number) => { setSelectedOrderId(id); setDrawerOpen(true); };
 
   return (
@@ -127,7 +129,7 @@ export function AllOrdersTab() {
               ) : (orders as Order[]).length === 0 ? (
                 <tr><td colSpan={8} className="text-center p-8 text-muted-foreground">No orders found</td></tr>
               ) : (
-                (orders as Order[]).map(order => (
+                pg.pageRows.map(order => (
                   <tr key={order.id} className="border-b hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => openDetail(order.id)}>
                     <td className="p-3">
                       <span className="font-mono text-xs font-medium">{order.order_number}</span>
@@ -173,6 +175,7 @@ export function AllOrdersTab() {
             </tbody>
           </table>
         </div>
+        <PaginationFooter {...pg} />
       </div>
 
       <NewOrderForm open={newOrderOpen} onClose={() => setNewOrderOpen(false)} onSaved={() => { reload(); }} />

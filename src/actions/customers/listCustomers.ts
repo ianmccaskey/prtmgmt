@@ -32,7 +32,7 @@ export function listCustomers() {
         AND ({{params.isBlocked}} IS NULL OR c.is_blocked = {{params.isBlocked}}::boolean)
       GROUP BY c.id
       ORDER BY c.full_name
-      LIMIT 200
+      LIMIT 1000
     `,
   });
 }

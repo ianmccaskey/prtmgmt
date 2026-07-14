@@ -22,7 +22,7 @@ function listWarehouseActivity() {
         AND ({{params.date_from}} IS NULL OR wal.event_at >= {{params.date_from}}::timestamptz)
         AND ({{params.date_to}} IS NULL OR wal.event_at <= {{params.date_to}}::timestamptz)
       ORDER BY wal.event_at DESC
-      LIMIT 200
+      LIMIT 1000
     `,
   });
 }
