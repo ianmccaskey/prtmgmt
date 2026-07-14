@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import listTransfersAction from '@/actions/warehouse/listTransfers';
@@ -38,7 +39,7 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
   const { profileId } = useAppUser();
   const [statusFilter, setStatusFilter] = useState('initiated');
   const [transfers, loading, , reload] = useLoadAction(listTransfersAction, [], { status: statusFilter, warehouse_id: warehouseId });
-  const rows: Transfer[] = Array.isArray(transfers) ? transfers : [];
+  const rows: Transfer[] = asRows(transfers);
 
   const [showNew, setShowNew] = useState(false);
   const [showReceive, setShowReceive] = useState<Transfer | null>(null);
@@ -54,7 +55,7 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
   const [newError, setNewError] = useState('');
 
   const [sourceInventory] = useLoadAction(listInventoryAction, [newForm.source_warehouse_id], { warehouse_id: newForm.source_warehouse_id });
-  const sourceRows: InventoryRow[] = Array.isArray(sourceInventory) ? sourceInventory : [];
+  const sourceRows: InventoryRow[] = asRows(sourceInventory);
 
   const [createTransfer] = useMutateAction(createTransferAtomicAction);
   const [receiveTransfer] = useMutateAction(receiveTransferAtomicAction);

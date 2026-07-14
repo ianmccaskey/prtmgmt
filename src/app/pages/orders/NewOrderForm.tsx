@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { rows, firstRow } from '@/lib/rows';
 import { useAppUser } from '@/app/AppContext';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -77,7 +78,7 @@ function CustomerCombo({ onSelect }: { onSelect: (c: Customer) => void }) {
           <CommandList>
             <CommandEmpty>No customers found.</CommandEmpty>
             <CommandGroup>
-              {(res as Customer[]).map(c => (
+              {rows<Customer>(res).map(c => (
                 <CommandItem key={c.id} onSelect={() => { onSelect(c); setOpen(false); setQ(''); }}>
                   <div className="flex flex-col">
                     <span className="font-medium">{c.full_name}</span>
@@ -112,7 +113,7 @@ function ProductCombo({ onAdd, isFree }: { onAdd: (p: Product) => void; isFree: 
           <CommandList>
             <CommandEmpty>No products found.</CommandEmpty>
             <CommandGroup>
-              {(res as Product[]).map(p => (
+              {rows<Product>(res).map(p => (
                 <CommandItem key={p.id} onSelect={() => { onAdd(p); setOpen(false); setQ(''); }}>
                   <div className="flex items-center justify-between w-full gap-2">
                     <div>
@@ -297,7 +298,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const subtotal = lines.reduce((s, l) => s + (l.product ? l.quantity * l.unit_price : 0), 0);
   const total = Math.max(0, subtotal - Number(discount) + Number(shipping));
 
-  const selectedWallet = (wallets as Wallet[]).find(w => w.asset === payAsset && w.network === payNetwork);
+  const selectedWallet = rows<Wallet>(wallets).find(w => w.asset === payAsset && w.network === payNetwork);
   const amountAsset = paySpot && Number(paySpot) > 0 ? (total / Number(paySpot)).toFixed(6) : '—';
 
   const copyWallet = () => {
@@ -448,7 +449,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               <Select value={salesRepId} onValueChange={setSalesRepId}>
                 <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
-                  {((salesReps as { id: number; display_name: string }[]) || []).map(r => (
+                  {rows<{ id: number; display_name: string }>(salesReps).map(r => (
                     <SelectItem key={r.id} value={String(r.id)}>{r.display_name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -475,7 +476,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                   <Label className="text-xs">Reason *</Label>
                   <Select value={freeReasonId} onValueChange={setFreeReasonId}>
                     <SelectTrigger><SelectValue placeholder="Select reason…" /></SelectTrigger>
-                    <SelectContent>{(freeReasons as FreeReason[]).map(r => <SelectItem key={r.id} value={String(r.id)}>{r.label}</SelectItem>)}</SelectContent>
+                    <SelectContent>{rows<FreeReason>(freeReasons).map(r => <SelectItem key={r.id} value={String(r.id)}>{r.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useNavigate } from 'react-router-dom';
 import { useLoadAction } from '@uibakery/data';
 import listReorderSuggestionsAction from '@/actions/warehouse/listReorderSuggestions';
@@ -21,7 +22,7 @@ export function ReorderTab() {
   const navigate = useNavigate();
   const [suggestions, loading] = useLoadAction(listReorderSuggestionsAction, [], {});
   const [setting] = useLoadAction(getAppSetting, [], { key: 'reorder_cover_days' });
-  const rows: ReorderRow[] = Array.isArray(suggestions) ? suggestions : [];
+  const rows: ReorderRow[] = asRows(suggestions);
   const coverDays = Number(((setting as { value: string }[]) || [])[0]?.value) || 60;
   const [selected, setSelected] = useState<Set<number>>(new Set());
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -35,9 +36,9 @@ export function RevenueTrendsSection({ range }: Props) {
   const [quarterly] = useLoadAction(getRevenueByQuarter, [], params);
   const [kpis] = useLoadAction(getRevenueKPIs, [], { ...params, prior_from: priorFrom, prior_to: priorTo });
 
-  const monthRows = (monthly as MonthRow[]) || [];
-  const quarterRows = (quarterly as MonthRow[]) || [];
-  const kpiRow = ((kpis as KPIRow[]) || [])[0] || {} as KPIRow;
+  const monthRows = asRows<MonthRow>(monthly);
+  const quarterRows = asRows<MonthRow>(quarterly);
+  const kpiRow = (asRows<KPIRow>(kpis))[0] || {} as KPIRow;
 
   const growthPct = kpiRow.growth_pct != null ? Number(kpiRow.growth_pct) : null;
 

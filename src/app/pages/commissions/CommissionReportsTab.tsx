@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -42,7 +43,7 @@ export function CommissionReportsTab() {
   });
 
   const summary = (Array.isArray(summaryRaw) ? summaryRaw[0] : summaryRaw) as Summary | undefined;
-  const paymentList = (paymentsRaw as Payment[]) || [];
+  const paymentList = asRows<Payment>(paymentsRaw);
 
   const totalEarned = Number(summary?.rep_commission_earned_usd || 0) + Number(summary?.warehouse_commission_earned_usd || 0);
   const totalPaid = Number(summary?.rep_commission_paid_usd || 0) + Number(summary?.warehouse_commission_paid_usd || 0);

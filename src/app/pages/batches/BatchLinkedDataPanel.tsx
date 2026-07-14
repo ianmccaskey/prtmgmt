@@ -1,4 +1,5 @@
 import React from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useNavigate } from 'react-router-dom';
 import { useLoadAction } from '@uibakery/data';
 import getBatchOrdersAction from '@/actions/batches/getBatchOrders';
@@ -22,10 +23,10 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
   type Shipment = { shipment_id: number; reference_number: string; status: string; tracking_number: string; arrival_date: string; factory_name: string; destination_warehouse: string; quantity_shipped: number; quantity_received: number };
   type Transfer = { id: number; quantity: number; status: string; source_warehouse_name: string; destination_warehouse_name: string; initiated_at: string; notes: string };
 
-  const orderRows: Order[] = Array.isArray(orders) ? orders : [];
-  const woRows: Writeoff[] = Array.isArray(writeoffs) ? writeoffs : [];
-  const shipRows: Shipment[] = Array.isArray(shipments) ? shipments : [];
-  const transRows: Transfer[] = Array.isArray(transfers) ? transfers : [];
+  const orderRows: Order[] = asRows(orders);
+  const woRows: Writeoff[] = asRows(writeoffs);
+  const shipRows: Shipment[] = asRows(shipments);
+  const transRows: Transfer[] = asRows(transfers);
 
   return (
     <div className="space-y-4">

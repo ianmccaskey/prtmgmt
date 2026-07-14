@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLoadAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
@@ -31,7 +32,7 @@ export function ProductDetailPage() {
   const [product, loading] = useLoadAction(getProductDetailAction, [], { id });
   const [factories] = useLoadAction(listFactoriesAction, [], {});
   const p: Product | null = Array.isArray(product) && product.length > 0 ? product[0] : null;
-  const factoryList: { id: number; name: string }[] = Array.isArray(factories) ? factories : [];
+  const factoryList: { id: number; name: string }[] = asRows(factories);
 
   if (loading) return (
     <div className="p-6 space-y-4">

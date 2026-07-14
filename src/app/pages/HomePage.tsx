@@ -1,4 +1,5 @@
 import React from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import { Link } from 'react-router-dom';
 import {
@@ -181,17 +182,17 @@ export function HomePage() {
   const [activityRaw, activityLoading] = useLoadAction(getRecentActivity, []);
 
   const stats: StatsRow = (statsRaw as StatsRow[])[0] ?? {} as StatsRow;
-  const revenue = (revenueRaw as RevenueRow[]).map(r => ({
+  const revenue = asRows<RevenueRow>(revenueRaw).map(r => ({
     month: r.month_label,
     warehouse: parseFloat(r.warehouse_revenue) || 0,
     china: parseFloat(r.china_revenue) || 0,
     total: parseFloat(r.total_revenue) || 0,
   }));
-  const statusData = (statusRaw as StatusRow[]).map(r => ({
+  const statusData = asRows<StatusRow>(statusRaw).map(r => ({
     name: r.status,
     value: parseInt(r.count) || 0,
   }));
-  const channelData = (channelRaw as ChannelRow[]).map(r => ({
+  const channelData = asRows<ChannelRow>(channelRaw).map(r => ({
     name: r.channel,
     value: parseInt(r.count) || 0,
   }));

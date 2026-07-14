@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,8 +31,8 @@ export function TopTablesSection({ range }: Props) {
   const [customers] = useLoadAction(getTopCustomers, [], params);
   const [products] = useLoadAction(getTopProducts, [], { ...params, sort_by: productSort });
 
-  const customerList = (customers as Customer[]) || [];
-  const productList = (products as Product[]) || [];
+  const customerList = asRows<Customer>(customers);
+  const productList = asRows<Product>(products);
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

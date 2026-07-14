@@ -1,4 +1,5 @@
 import React from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import listInTransitInboundAction from '@/actions/warehouse/listInTransitInbound';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +17,7 @@ type Props = { warehouseId: string; warehouseList: { id: number; name: string }[
 
 export function InTransitTab({ warehouseId }: Props) {
   const [items, loading] = useLoadAction(listInTransitInboundAction, [], { warehouse_id: warehouseId });
-  const rows: InTransitRow[] = Array.isArray(items) ? items : [];
+  const rows: InTransitRow[] = asRows(items);
 
   return (
     <Card>

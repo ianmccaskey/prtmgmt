@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useNavigate } from 'react-router-dom';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
@@ -36,8 +37,8 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
   const [batches, loading, , reload] = useLoadAction(listBatchesAction, [], { product_id: String(productId) });
   const [factories] = useLoadAction(listFactoriesAction, [], {});
   const [createBatch] = useMutateAction(createBatchAction);
-  const rows: Batch[] = Array.isArray(batches) ? batches : [];
-  const factoryList: { id: number; name: string }[] = Array.isArray(factories) ? factories : [];
+  const rows: Batch[] = asRows(batches);
+  const factoryList: { id: number; name: string }[] = asRows(factories);
 
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ batch_number: '', factory_id: '', manufacture_date: '', quantity_produced: '', cost_override: '', qc_status: 'pending', coa_url: '', overall_purity_pct: '', notes: '' });

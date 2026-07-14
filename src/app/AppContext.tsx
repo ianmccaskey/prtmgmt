@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useMemo } from 'react';
 import { useUser, useLoadAction } from '@uibakery/data';
 import getMyProfile from '@/actions/settings/getMyProfile';
+import { firstRow } from '@/lib/rows';
 import { Card, CardContent } from '@/components/ui/card';
 import { ShieldAlert, UserX } from 'lucide-react';
 
@@ -55,7 +56,7 @@ export function AppUserProvider({ children }: { children: React.ReactNode }) {
   const email = user.email || '';
   const [rows, loading] = useLoadAction(getMyProfile, [email], { email });
 
-  const row = ((rows as ProfileRow[]) || [])[0];
+  const row = firstRow<ProfileRow>(rows);
   const hasProfile = !!row?.id;
   const provisionedCount = Number(row?.provisioned_count ?? 0);
 

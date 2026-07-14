@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import listWarehousePayablesAction from '@/actions/warehouse/listWarehousePayables';
@@ -15,14 +16,14 @@ type OwedShipment = { id: number; order_number: string; shipped_date: string; in
 export function PayablesTab() {
   const { profileId } = useAppUser();
   const [payables, loading, , reload] = useLoadAction(listWarehousePayablesAction, [], {});
-  const rows: Payable[] = Array.isArray(payables) ? payables : [];
+  const rows: Payable[] = asRows(payables);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [markPaid] = useMutateAction(markShipmentsPaidAction);
   const [paying, setPaying] = useState(false);
 
   const [owed, owedLoading] = useLoadAction(listOwedShipmentsAction, [expanded], { warehouse_id: expanded }, { enabled: expanded !== null });
-  const owedRows: OwedShipment[] = Array.isArray(owed) ? owed : [];
+  const owedRows: OwedShipment[] = asRows(owed);
 
   const totalOwed = rows.reduce((s, r) => s + Number(r.owed_usd_total), 0);
 

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -37,7 +38,7 @@ export function WarehousesTab() {
   const [doCreate] = useMutateAction(createWarehouse);
   const [doToggle] = useMutateAction(updateWarehouseActive);
 
-  const list = (warehouses as Warehouse[]) || [];
+  const list = asRows<Warehouse>(warehouses);
 
   const handleAdd = async () => {
     if (!name.trim()) { setError('Name is required.'); return; }

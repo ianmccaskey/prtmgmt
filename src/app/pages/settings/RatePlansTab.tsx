@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,7 +37,7 @@ export function RatePlansTab() {
   const [plans, , , reload] = useLoadAction(listRatePlans, [], {});
   const [doCreate] = useMutateAction(createRatePlan);
 
-  const planList = (plans as RatePlan[]) || [];
+  const planList = asRows<RatePlan>(plans);
   const today = new Date().toISOString().split('T')[0];
 
   // Active plan = most recent with effective_date <= today

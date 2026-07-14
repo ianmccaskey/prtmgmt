@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -91,7 +92,7 @@ export function LogisticsPage() {
   const [factories] = useLoadAction(listFactories, [], {});
 
   const statsRow = (stats as Stats[])?.[0] || {} as Stats;
-  const shipmentsList = (shipments as Shipment[]) || [];
+  const shipmentsList = asRows<Shipment>(shipments);
   const pgShip = usePagination(shipmentsList);
 
   const handleSearch = () => setSearch(searchVal);
@@ -184,7 +185,7 @@ export function LogisticsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Factories</SelectItem>
-                {((factories as { id: number; name: string }[]) || []).map(f => (
+                {asRows<{ id: number; name: string }>(factories).map(f => (
                   <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
                 ))}
               </SelectContent>

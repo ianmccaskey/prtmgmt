@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -55,7 +56,7 @@ export function ReorderUsersTab() {
   const [s3Endpoint, setS3Endpoint] = useState('');
   const [s3Saved, setS3Saved] = useState(false);
   const [s3Setting] = useLoadAction(getAppSetting, [], { key: 's3_presign_endpoint' });
-  const s3Row = ((s3Setting as AppSetting[]) || [])[0];
+  const s3Row = (asRows<AppSetting>(s3Setting))[0];
   useEffect(() => { if (s3Row?.value != null) setS3Endpoint(s3Row.value); }, [s3Row?.value]);
 
   const [setting] = useLoadAction(getAppSetting, [], { key: 'reorder_cover_days' });
@@ -65,9 +66,9 @@ export function ReorderUsersTab() {
   const [doUpsertUser] = useMutateAction(upsertUserProfile);
   const [doUpdateUser] = useMutateAction(updateUserProfileById);
 
-  const settingRow = ((setting as AppSetting[]) || [])[0];
-  const userList = (users as UserProfile[]) || [];
-  const warehouseList = (warehouses as Warehouse[]) || [];
+  const settingRow = (asRows<AppSetting>(setting))[0];
+  const userList = asRows<UserProfile>(users);
+  const warehouseList = asRows<Warehouse>(warehouses);
 
   useEffect(() => {
     if (settingRow?.value) setCoverDays(settingRow.value);

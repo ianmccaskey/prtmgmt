@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import listInventoryAction from '@/actions/warehouse/listInventory';
 import listProductsAction from '@/actions/products/listProducts';
@@ -39,7 +40,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
   const [inventory, loading] = useLoadAction(listInventoryAction, [warehouseId, search, category, qcStatus, productId, batchId], {
     warehouse_id: warehouseId, search, category, qc_status: qcStatus, product_id: productId, batch_id: batchId,
   });
-  const rows: InventoryRow[] = Array.isArray(inventory) ? inventory : [];
+  const rows: InventoryRow[] = asRows(inventory);
 
   const [products] = useLoadAction(listProductsAction, [], {});
   const productList = (products as { id: number; name: string; sku: string }[]) || [];

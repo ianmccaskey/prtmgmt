@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import listBatchTestsAction from '@/actions/batches/listBatchTests';
 import createBatchTestsBulkAction from '@/actions/batches/createBatchTestsBulk';
@@ -63,7 +64,7 @@ export function BatchTestsPanel({ batchId }: { batchId: number }) {
   const [tests, loading, , reload] = useLoadAction(listBatchTestsAction, [], { batch_id: batchId, test_type: filterType });
   const [createTestsBulk] = useMutateAction(createBatchTestsBulkAction);
   const [rollupQc] = useMutateAction(rollupBatchQcAction);
-  const rows: Test[] = Array.isArray(tests) ? tests : [];
+  const rows: Test[] = asRows(tests);
 
   const [showNew, setShowNew] = useState(false);
   const [testDate, setTestDate] = useState('');

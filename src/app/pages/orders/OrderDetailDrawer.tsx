@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
+import { rows, firstRow } from '@/lib/rows';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -77,7 +78,7 @@ function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; rel
   };
 
   if (loading) return <Skeleton className="h-16 w-full" />;
-  const payList = payments as Payment[];
+  const payList = rows<Payment>(payments);
 
   return (
     <div className="space-y-2">
@@ -142,7 +143,7 @@ function RefundTaskForm({ orderId, onCreated }: { orderId: number; onCreated: ()
   const [form, setForm] = useState({ amount: '', reason: '', dueDate: '', assignee: '' });
   const [doCreate, creating] = useMutateAction(createRefundTask);
   const [profiles] = useLoadAction(listUserProfiles, [], {}, { enabled: open });
-  const profileOptions = ((profiles as { id: number; display_name: string }[]) || []);
+  const profileOptions = rows<{ id: number; display_name: string }>(profiles);
 
   const submit = async () => {
     await doCreate({ orderId, userId: profileId, amountUsdOwed: Number(form.amount), reason: form.reason, assigneeUserId: form.assignee ? Number(form.assignee) : null, dueDate: form.dueDate || null });
@@ -293,9 +294,9 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
 
   const reloadAll = () => { reloadDetail(); reloadItems(); reloadShipments(); reloadAllocations(); onRefresh(); };
 
-  const order = (detail as OrderDetail[])[0];
-  const allocations = (allocationsRaw as AllocationRow[]) || [];
-  const notifications = (notificationsRaw as { id: number; status: string }[]) || [];
+  const order = firstRow<OrderDetail>(detail);
+  const allocations = rows<AllocationRow>(allocationsRaw);
+  const notifications = rows<{ id: number; status: string }>(notificationsRaw);
   const pendingNotifications = notifications.filter(n => n.status === 'pending').length;
 
   if (!order && !detailLoading) return null;
@@ -303,7 +304,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const status = order ? String(order.status) : '';
   const isReadOnly = !!order && (status === 'cancelled' || status === 'delivered');
   const isShippedish = ['partially_shipped', 'shipped', 'delivered'].includes(status);
-  const shipmentList = (shipments as Shipment[]) || [];
+  const shipmentList = rows<Shipment>(shipments);
 
   const handleStatusAction = async (next: string) => {
     const res = await doUpdateStatus({ orderId, status: next, cancellationReason: null }) as unknown[];
@@ -311,7 +312,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
       if (next === 'confirmed') {
         // Confirming a draft starts the reservation lifecycle for its
         // warehouse lines, same as confirming at creation time.
-        for (const it of (items as OrderItemRow[]).filter(i => i.fulfillment_source === 'warehouse')) {
+        for (const it of rows<OrderItemRow>(items).filter(i => i.fulfillment_source === 'warehouse')) {
           await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity) });
         }
       }
@@ -367,7 +368,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                         >
                           <SelectTrigger className="h-7 w-44 text-xs"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                           <SelectContent>
-                            {((salesReps as { id: number; display_name: string }[]) || []).map(r => (
+                            {rows<{ id: number; display_name: string }>(salesReps).map(r => (
                               <SelectItem key={r.id} value={String(r.id)}>{r.display_name}</SelectItem>
                             ))}
                           </SelectContent>
@@ -439,7 +440,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                         <OrderItemsEditor
                           orderId={Number(orderId)}
                           order={order}
-                          items={(items as OrderItemRow[]) || []}
+                          items={rows<OrderItemRow>(items)}
                           allocations={allocations}
                           isReadOnly={isReadOnly}
                           onChanged={reloadAll}
@@ -453,10 +454,10 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                     </TabsContent>
 
                     <TabsContent value="shipments" className="pt-3 space-y-2">
-                      {shipmentsLoading ? <Skeleton className="h-20 w-full" /> : (shipments as Shipment[]).length === 0 ? (
+                      {shipmentsLoading ? <Skeleton className="h-20 w-full" /> : shipmentList.length === 0 ? (
                         <p className="text-sm text-muted-foreground">No shipments yet.</p>
                       ) : (
-                        (shipments as Shipment[]).map(s => <ShipmentCard key={String(s.id)} shipment={s} onRefresh={reloadShipments} />)
+                        shipmentList.map(s => <ShipmentCard key={String(s.id)} shipment={s} onRefresh={reloadShipments} />)
                       )}
                     </TabsContent>
 
@@ -479,8 +480,8 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       <TabsContent value="audit" className="pt-3">
                         {auditLoading ? <Skeleton className="h-20 w-full" /> : (
                           <div className="space-y-2">
-                            {(auditLog as AuditEntry[]).length === 0 && <p className="text-sm text-muted-foreground">No audit entries.</p>}
-                            {(auditLog as AuditEntry[]).map((entry, i) => (
+                            {rows<AuditEntry>(auditLog).length === 0 && <p className="text-sm text-muted-foreground">No audit entries.</p>}
+                            {rows<AuditEntry>(auditLog).map((entry, i) => (
                               <div key={i} className="border-l-2 border-border pl-3 py-1 text-sm">
                                 <div className="flex items-center justify-between">
                                   <span className="font-medium">{String(entry.actor_name || entry.changed_by_user_id)}</span>

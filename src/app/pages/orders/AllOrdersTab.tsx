@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { Button } from '@/components/ui/button';
@@ -65,7 +66,7 @@ export function AllOrdersTab() {
 
   const [orders, loading, , reload] = useLoadAction(listOrders, [search, statusFilter, paymentFilter, channelFilter, dateFrom, dateTo], params);
 
-  const pg = usePagination((orders as Order[]) || []);
+  const pg = usePagination(asRows<Order>(orders));
   const openDetail = (id: number) => { setSelectedOrderId(id); setDrawerOpen(true); };
 
   return (

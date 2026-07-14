@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useNavigate } from 'react-router-dom';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import listProductsAction from '@/actions/products/listProducts';
@@ -47,8 +48,8 @@ export function ProductsPage() {
 
   const [products, loading, , reload] = useLoadAction(listProductsAction, [], { search, category, factory_id: factoryId, channel, is_active: isActive });
   const [factories] = useLoadAction(listFactoriesAction, [], {});
-  const rows: Product[] = Array.isArray(products) ? products : [];
-  const factoryList: { id: number; name: string }[] = Array.isArray(factories) ? factories : [];
+  const rows: Product[] = asRows(products);
+  const factoryList: { id: number; name: string }[] = asRows(factories);
   const pgProd = usePagination(rows);
 
   const toggleSelect = (id: number) => setSelected(prev => {

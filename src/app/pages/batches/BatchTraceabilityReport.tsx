@@ -1,4 +1,5 @@
 import React from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import listBatchTestsAction from '@/actions/batches/listBatchTests';
 import getBatchInventoryAction from '@/actions/batches/getBatchInventory';
@@ -58,12 +59,12 @@ export function BatchTraceabilityReport({ batch, onClose }: { batch: Batch; onCl
   const [inbound] = useLoadAction(getBatchInboundShipmentsAction, [batchId], { batch_id: batchId });
   const [transfers] = useLoadAction(getBatchTransfersAction, [batchId], { batch_id: batchId });
 
-  const testRows = (tests as Row[]) || [];
-  const invRows = (inventory as Row[]) || [];
-  const orderRows = (orders as Row[]) || [];
-  const woRows = (writeoffs as Row[]) || [];
-  const inboundRows = (inbound as Row[]) || [];
-  const transferRows = (transfers as Row[]) || [];
+  const testRows = asRows<Row>(tests);
+  const invRows = asRows<Row>(inventory);
+  const orderRows = asRows<Row>(orders);
+  const woRows = asRows<Row>(writeoffs);
+  const inboundRows = asRows<Row>(inbound);
+  const transferRows = asRows<Row>(transfers);
 
   const fmtDate = (v: string | number | boolean | null) => (v ? new Date(String(v)).toLocaleDateString() : '—');
 

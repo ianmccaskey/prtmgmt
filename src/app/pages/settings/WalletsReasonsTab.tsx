@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -51,8 +52,8 @@ export function WalletsReasonsTab() {
   const [doCreateReason] = useMutateAction(createFreeOrderReason);
   const [doToggleReason] = useMutateAction(updateFreeOrderReasonActive);
 
-  const walletList = (wallets as Wallet[]) || [];
-  const reasonList = (reasons as FreeReason[]) || [];
+  const walletList = asRows<Wallet>(wallets);
+  const reasonList = asRows<FreeReason>(reasons);
 
   const handleAddWallet = async () => {
     if (!wCombo || !wAddress) { setWError('Asset/network and address are required.'); return; }

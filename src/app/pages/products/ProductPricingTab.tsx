@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import getProductPriceTiersAction from '@/actions/products/getProductPriceTiers';
 import addPriceTierAction from '@/actions/products/addPriceTier';
@@ -29,8 +30,8 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
   const [updateTier] = useMutateAction(updatePriceTierAction);
   const [deleteTier] = useMutateAction(deletePriceTierAction);
 
-  const tierRows: PriceTier[] = Array.isArray(tiers) ? tiers : [];
-  const histRows: PriceHistory[] = Array.isArray(history) ? history : [];
+  const tierRows: PriceTier[] = asRows(tiers);
+  const histRows: PriceHistory[] = asRows(history);
 
   const [editId, setEditId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ min_quantity: '', unit_price: '' });

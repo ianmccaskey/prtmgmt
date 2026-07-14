@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import listWarehouseActivityAction from '@/actions/warehouse/listWarehouseActivity';
@@ -43,14 +44,14 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
     date_from: dateFrom ? `${dateFrom}T00:00:00Z` : null,
     date_to: dateTo ? `${dateTo}T23:59:59Z` : null,
   });
-  const rows: ActivityRow[] = Array.isArray(activity) ? activity : [];
+  const rows: ActivityRow[] = asRows(activity);
 
   // Correction form
   const [showCorrection, setShowCorrection] = useState(false);
   const [corrForm, setCorrForm] = useState({ warehouse_id: warehouseId || '', product_batch_key: '', new_quantity: '', reason: '' });
   const [corrSaving, setCorrSaving] = useState(false);
   const [corrInventory] = useLoadAction(listInventoryAction, [], { warehouse_id: corrForm.warehouse_id });
-  const corrRows: InventoryRow[] = Array.isArray(corrInventory) ? corrInventory : [];
+  const corrRows: InventoryRow[] = asRows(corrInventory);
   const selectedCorrRow = corrRows.find(r => `${r.product_id}-${r.batch_id}` === corrForm.product_batch_key);
   const [applyCorrection] = useMutateAction(applyCorrectionAtomicAction);
 
@@ -59,7 +60,7 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
   const [woForm, setWoForm] = useState({ warehouse_id: warehouseId || '', product_batch_key: '', quantity: '', reason: '', notes: '', evidence_url: '', evidence_file: '' });
   const [woSaving, setWoSaving] = useState(false);
   const [woInventory] = useLoadAction(listInventoryAction, [], { warehouse_id: woForm.warehouse_id });
-  const woRows: InventoryRow[] = Array.isArray(woInventory) ? woInventory : [];
+  const woRows: InventoryRow[] = asRows(woInventory);
   const selectedWoRow = woRows.find(r => `${r.product_id}-${r.batch_id}` === woForm.product_batch_key);
   const [doWriteoff] = useMutateAction(warehouseWriteoffAtomicAction);
   const [listRowReservations] = useMutateAction(listReservationsForInventoryRowAction);

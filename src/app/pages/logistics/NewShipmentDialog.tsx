@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -74,10 +75,10 @@ export function NewShipmentDialog({ open, onClose, onCreated, prefillItems }: Pr
   const [createShipment] = useMutateAction(createInboundShipment);
   const [createItem] = useMutateAction(createInboundShipmentItem);
 
-  const factoryList = (factories as Factory[]) || [];
-  const productList = (products as Product[]) || [];
-  const batchList = (allBatches as Batch[]) || [];
-  const warehouseList = (warehouses as Warehouse[]) || [];
+  const factoryList = asRows<Factory>(factories);
+  const productList = asRows<Product>(products);
+  const batchList = asRows<Batch>(allBatches);
+  const warehouseList = asRows<Warehouse>(warehouses);
 
   const addLine = () => setLines(prev => [...prev, {
     key: newLineKey(), product_id: '', batch_id: '',

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
@@ -72,7 +73,7 @@ function NotesPanel({ customerId }: { customerId: number }) {
       {loading ? <Skeleton className="h-20 w-full" /> : (
         <div className="space-y-3">
           {(notes as Note[]).length === 0 && <p className="text-sm text-muted-foreground">No notes yet.</p>}
-          {(notes as Note[]).map(note => (
+          {asRows<Note>(notes).map(note => (
             <div key={note.id} className="border rounded p-3 space-y-2 text-sm">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -405,7 +406,7 @@ export function CustomerDetailPage() {
                   ) : (orders as Order[]).length === 0 ? (
                     <tr><td colSpan={7} className="text-center p-8 text-muted-foreground">No orders yet</td></tr>
                   ) : (
-                    (orders as Order[]).map(o => (
+                    asRows<Order>(orders).map(o => (
                       <tr
                         key={String(o.id)}
                         className="border-b hover:bg-muted/30 cursor-pointer transition-colors"

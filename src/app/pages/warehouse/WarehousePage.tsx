@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 import getWarehouseStatsAction from '@/actions/warehouse/getWarehouseStats';
@@ -31,9 +32,9 @@ export function WarehousePage() {
   const [stats, statsLoading] = useLoadAction(getWarehouseStatsAction, [], { warehouse_id: selectedWarehouseId });
   const [breakdown, breakdownLoading] = useLoadAction(getPerWarehouseBreakdownAction, [], {});
 
-  const warehouseList: Warehouse[] = Array.isArray(warehouses) ? warehouses : [];
+  const warehouseList: Warehouse[] = asRows(warehouses);
   const s: Stats | null = Array.isArray(stats) && stats.length > 0 ? stats[0] : null;
-  const breakdownRows: WHBreakdown[] = Array.isArray(breakdown) ? breakdown : [];
+  const breakdownRows: WHBreakdown[] = asRows(breakdown);
 
   const statCards = [
     { label: 'SKUs in Stock', val: s?.total_skus ?? 0, icon: Package, color: 'text-blue-500' },

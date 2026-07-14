@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useNavigate } from 'react-router-dom';
 import { useLoadAction } from '@uibakery/data';
 import listBatchesAction from '@/actions/batches/listBatches';
@@ -39,10 +40,10 @@ export function BatchesPage() {
   const [factories] = useLoadAction(listFactoriesAction, [], {});
   const [products] = useLoadAction(listProductsAction, [], {});
 
-  const rows: Batch[] = Array.isArray(batches) ? batches : [];
+  const rows: Batch[] = asRows(batches);
   const pgBatch = usePagination(rows);
-  const factoryList: { id: number; name: string }[] = Array.isArray(factories) ? factories : [];
-  const productList: { id: number; name: string; sku: string }[] = Array.isArray(products) ? products : [];
+  const factoryList: { id: number; name: string }[] = asRows(factories);
+  const productList: { id: number; name: string; sku: string }[] = asRows(products);
 
   const statCounts = {
     passed: rows.filter(r => r.qc_status === 'passed').length,

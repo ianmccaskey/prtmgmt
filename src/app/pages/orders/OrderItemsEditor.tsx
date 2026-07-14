@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { Button } from '@/components/ui/button';
@@ -70,7 +71,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [addQty, setAddQty] = useState('1');
   const [addPrice, setAddPrice] = useState('');
   const [products] = useLoadAction(searchProducts, [addOpen], { q: '' }, { enabled: addOpen });
-  const productOptions = (products as ProductOption[]) || [];
+  const productOptions = asRows<ProductOption>(products);
 
   const [shipToOpen, setShipToOpen] = useState(false);
   const [shipForm, setShipForm] = useState({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });

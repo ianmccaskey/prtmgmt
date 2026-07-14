@@ -1,4 +1,5 @@
 import React from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -30,9 +31,9 @@ export function MarginPaymentSection({ range }: Props) {
   const [marginTrend] = useLoadAction(getMarginTrend, [], params);
   const [payments] = useLoadAction(getPaymentMethodBreakdown, [], params);
 
-  const cogsList = (cogs as COGSRow[]) || [];
-  const trendList = (marginTrend as MarginTrendRow[]) || [];
-  const paymentList = (payments as PaymentRow[]) || [];
+  const cogsList = asRows<COGSRow>(cogs);
+  const trendList = asRows<MarginTrendRow>(marginTrend);
+  const paymentList = asRows<PaymentRow>(payments);
 
   const totalPayments = paymentList.reduce((sum, r) => sum + Number(r.total_usd), 0);
 

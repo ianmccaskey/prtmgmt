@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import getBatchInventoryAction from '@/actions/batches/getBatchInventory';
@@ -24,7 +25,7 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
   const [inventory, , , reloadInv] = useLoadAction(getBatchInventoryAction, [], { batch_id: batch.id });
   const [doWriteoff] = useMutateAction(warehouseWriteoffAtomicAction);
 
-  const invRows: InventoryRow[] = Array.isArray(inventory) ? inventory : [];
+  const invRows: InventoryRow[] = asRows(inventory);
 
   const [form, setForm] = useState({
     warehouse_id: '', quantity: '', reason: '', notes: '', evidence_url: '', evidence_file: '',

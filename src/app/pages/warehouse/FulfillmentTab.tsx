@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import listFulfillmentQueueAction from '@/actions/warehouse/listFulfillmentQueue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -68,7 +69,7 @@ export function gapProducts(o: QueueOrder): Set<number> {
 
 export function FulfillmentTab() {
   const [queue, loading, , reload] = useLoadAction(listFulfillmentQueueAction, [], {});
-  const rows: QueueItem[] = Array.isArray(queue) ? (queue as QueueItem[]) : [];
+  const rows: QueueItem[] = asRows(queue);
   const [shipOrder, setShipOrder] = useState<QueueOrder | null>(null);
 
   const orders: QueueOrder[] = [];

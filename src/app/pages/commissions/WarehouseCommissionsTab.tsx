@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,8 +43,8 @@ export function WarehouseCommissionsTab() {
   }, { enabled: selectedWhId !== null });
   const [doPay] = useMutateAction(recordCommissionPayment);
 
-  const balanceList = (balances as WarehouseBalance[]) || [];
-  const shipmentList = ((shipments as WarehouseShipment[]) || []).filter(Boolean);
+  const balanceList = asRows<WarehouseBalance>(balances);
+  const shipmentList = (asRows<WarehouseShipment>(shipments)).filter(Boolean);
 
   const openPay = (wh: WarehouseBalance) => {
     setPayDialogWh(wh);

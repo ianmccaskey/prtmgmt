@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,8 +43,8 @@ export function RepCommissionsTab() {
   }, { enabled: selectedRepId !== null });
   const [doPay] = useMutateAction(recordCommissionPayment);
 
-  const balanceList = (balances as RepBalance[]) || [];
-  const orderList = ((orders as RepOrder[]) || []).filter(Boolean);
+  const balanceList = asRows<RepBalance>(balances);
+  const orderList = (asRows<RepOrder>(orders)).filter(Boolean);
 
   const openPay = (rep: RepBalance) => {
     setPayDialogRep(rep);

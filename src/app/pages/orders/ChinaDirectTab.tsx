@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -113,7 +114,7 @@ export function ChinaDirectTab() {
               ) : (queue as ChinaOrder[]).length === 0 ? (
                 <tr><td colSpan={9} className="text-center p-8 text-muted-foreground">No orders in the China-Direct queue</td></tr>
               ) : (
-                (queue as ChinaOrder[]).map(order => (
+                asRows<ChinaOrder>(queue).map(order => (
                   <tr key={order.id} className="border-b hover:bg-muted/30 transition-colors">
                     <td className="p-3 font-mono text-xs font-medium">{order.order_number}</td>
                     <td className="p-3">{order.customer_name}</td>

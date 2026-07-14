@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { Button } from '@/components/ui/button';
@@ -186,7 +187,7 @@ export function RefundsTab() {
               ) : (tasks as RefundTask[]).length === 0 ? (
                 <tr><td colSpan={8} className="text-center p-8 text-muted-foreground">No refund tasks found</td></tr>
               ) : (
-                (tasks as RefundTask[]).map(task => (
+                asRows<RefundTask>(tasks).map(task => (
                   <tr key={task.id} className="border-b hover:bg-muted/30 transition-colors">
                     <td className="p-3 font-mono text-xs font-medium">{task.order_number}</td>
                     <td className="p-3">{task.customer_name}</td>

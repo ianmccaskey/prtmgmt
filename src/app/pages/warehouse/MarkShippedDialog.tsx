@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import getFifoStockAction from '@/actions/warehouse/getFifoStock';
@@ -53,8 +54,8 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
 
   // Warehouse users only allocate from their own warehouse (access matrix).
   const stock: FifoRow[] = useMemo(() => {
-    const rows = Array.isArray(stockRaw) ? (stockRaw as FifoRow[]) : [];
-    return isWarehouse ? rows.filter(r => r.warehouse_id === assignedWarehouseId) : rows;
+    const all = asRows<FifoRow>(stockRaw);
+    return isWarehouse ? all.filter(r => r.warehouse_id === assignedWarehouseId) : all;
   }, [stockRaw, isWarehouse, assignedWarehouseId]);
 
   const plan: RatePlan | null = Array.isArray(planRaw) && planRaw.length > 0 ? (planRaw[0] as RatePlan) : null;

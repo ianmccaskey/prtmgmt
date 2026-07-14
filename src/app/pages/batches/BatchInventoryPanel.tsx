@@ -1,4 +1,5 @@
 import React from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import getBatchInventoryAction from '@/actions/batches/getBatchInventory';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +12,7 @@ type InventoryRow = {
 
 export function BatchInventoryPanel({ batchId }: { batchId: number }) {
   const [inventory, loading] = useLoadAction(getBatchInventoryAction, [], { batch_id: batchId });
-  const rows: InventoryRow[] = Array.isArray(inventory) ? inventory : [];
+  const rows: InventoryRow[] = asRows(inventory);
   const totOnHand = rows.reduce((s, r) => s + Number(r.quantity_on_hand), 0);
   const totReserved = rows.reduce((s, r) => s + Number(r.quantity_reserved), 0);
   const totAvailable = rows.reduce((s, r) => s + Number(r.quantity_available), 0);

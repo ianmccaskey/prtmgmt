@@ -1,4 +1,5 @@
 import React from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import getProductInventoryAction from '@/actions/products/getProductInventory';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,7 +21,7 @@ const QC_STATUS_COLORS: Record<string, string> = {
 
 export function ProductInventoryTab({ productId }: { productId: number }) {
   const [inventory, loading] = useLoadAction(getProductInventoryAction, [], { product_id: productId });
-  const rows: InventoryRow[] = Array.isArray(inventory) ? inventory : [];
+  const rows: InventoryRow[] = asRows(inventory);
 
   const totalOnHand = rows.reduce((s, r) => s + Number(r.quantity_on_hand), 0);
   const totalReserved = rows.reduce((s, r) => s + Number(r.quantity_reserved), 0);

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useNavigate } from 'react-router-dom';
 import { useLoadAction } from '@uibakery/data';
 import { Button } from '@/components/ui/button';
@@ -37,7 +38,7 @@ export function CustomersPage() {
   };
 
   const [customers, loading, , reload] = useLoadAction(listCustomers, [search, channel, isVip, isBlocked], params);
-  const pgCust = usePagination((customers as Customer[]) || []);
+  const pgCust = usePagination(asRows<Customer>(customers));
 
   const exportCSV = () => {
     const rows = customers as Customer[];

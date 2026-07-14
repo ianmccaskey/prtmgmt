@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import listBatchTestsByProductAction from '@/actions/batches/listBatchTestsByProduct';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,7 +30,7 @@ const TEST_TYPE_LABEL: Record<string, string> = Object.fromEntries(TEST_TYPES.ma
 export function ProductTestResultsTab({ productId }: { productId: number }) {
   const [testType, setTestType] = useState('');
   const [tests, loading] = useLoadAction(listBatchTestsByProductAction, [], { product_id: productId, test_type: testType });
-  const rows: TestResult[] = Array.isArray(tests) ? tests : [];
+  const rows: TestResult[] = asRows(tests);
 
   // Build HPLC purity chart (line chart of result_value by batch manufacture_date)
   const hplcData = rows

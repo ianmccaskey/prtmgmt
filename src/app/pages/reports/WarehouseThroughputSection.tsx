@@ -1,4 +1,5 @@
 import React from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,8 +28,8 @@ export function WarehouseThroughputSection({ range }: Props) {
   const [throughput] = useLoadAction(getWarehouseThroughput, [range.from, range.to, scopedWarehouseId], params);
   const [summary] = useLoadAction(getWarehouseThroughputSummary, [range.from, range.to, scopedWarehouseId], params);
 
-  const rows = (throughput as ThroughputRow[]) || [];
-  const summaryRows = (summary as SummaryRow[]) || [];
+  const rows = asRows<ThroughputRow>(throughput);
+  const summaryRows = asRows<SummaryRow>(summary);
   const exportRows = isAdmin
     ? summaryRows
     : summaryRows.map(({ total_shipping_cost: _c, avg_cost_per_kit: _a, ...rest }) => rest);
