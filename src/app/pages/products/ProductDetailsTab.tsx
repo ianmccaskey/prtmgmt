@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import updateProductAction from '@/actions/products/updateProduct';
+import { FileUpload } from '@/components/FileUpload';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +22,7 @@ type Product = {
   standard_cost: number; available_warehouse: boolean; available_china_direct: boolean;
   factory_id: number; factory_name: string; is_active: boolean; low_stock_threshold: number;
   total_stock: number; total_available: number; batch_count: number; updated_at: string;
+  image_file?: string | null;
 };
 
 type Props = { product: Product; factories: { id: number; name: string }[] };
@@ -39,6 +41,7 @@ export function ProductDetailsTab({ product, factories }: Props) {
     list_price: String(Number(product.list_price)),
     standard_cost: String(Number(product.standard_cost ?? 0)),
     factory_id: product.factory_id ? String(product.factory_id) : '',
+    image_file: '',
   });
   const [mutate, saving] = useMutateAction(updateProductAction);
   const set = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }));
@@ -57,6 +60,7 @@ export function ProductDetailsTab({ product, factories }: Props) {
       standard_cost: isAdmin ? (parseFloat(form.standard_cost) || 0) : null,
       low_stock_threshold: parseInt(form.low_stock_threshold),
       factory_id: !factoryLocked && form.factory_id ? Number(form.factory_id) : null,
+      image_file: form.image_file || null,
       user_id: profileId,
     });
     setEditing(false);
@@ -134,6 +138,15 @@ export function ProductDetailsTab({ product, factories }: Props) {
               <div className="flex items-center gap-2">
                 <Switch checked={form.is_active} onCheckedChange={v => set('is_active', v)} id="active" />
                 <Label htmlFor="active">Active</Label>
+              </div>
+              <div>
+                <Label>Product Image</Label>
+                <div className="flex items-center gap-3 mt-1">
+                  {(form.image_file || product.image_file) && (
+                    <img src={form.image_file || product.image_file || ''} className="w-14 h-14 rounded object-cover border" alt={product.name} />
+                  )}
+                  <FileUpload accept="image/*" label={product.image_file || form.image_file ? 'Replace image' : 'Upload image'} onUploaded={url => set('image_file', url)} />
+                </div>
               </div>
             </>
           ) : (

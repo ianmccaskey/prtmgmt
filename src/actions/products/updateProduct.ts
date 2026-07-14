@@ -25,6 +25,7 @@ function updateProduct() {
           available_china_direct = {{params.available_china_direct}},
           is_active = {{params.is_active}},
           low_stock_threshold = {{params.low_stock_threshold}},
+          image_file = COALESCE({{params.image_file}}, image_file),
           factory_id = CASE
             WHEN NOT EXISTS (SELECT 1 FROM product_batches pb WHERE pb.product_id = {{params.id}}::bigint)
             THEN COALESCE({{params.factory_id}}::bigint, factory_id)

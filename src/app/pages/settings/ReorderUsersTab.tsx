@@ -15,6 +15,7 @@ import listUserProfiles from '@/actions/settings/listUserProfiles';
 import upsertUserProfile from '@/actions/settings/upsertUserProfile';
 import updateUserProfileById from '@/actions/settings/updateUserProfileById';
 import listWarehouses from '@/actions/settings/listWarehouses';
+import { FileUpload } from '@/components/FileUpload';
 
 type UserProfile = {
   id: number; user_id: number | null; email: string | null; role: string; assigned_warehouse_id: number | null;
@@ -49,6 +50,13 @@ export function ReorderUsersTab() {
   const [uWarehouse, setUWarehouse] = useState('');
   const [uSaving, setUSaving] = useState(false);
   const [uError, setUError] = useState('');
+  const [uAvatar, setUAvatar] = useState('');
+
+  const [s3Endpoint, setS3Endpoint] = useState('');
+  const [s3Saved, setS3Saved] = useState(false);
+  const [s3Setting] = useLoadAction(getAppSetting, [], { key: 's3_presign_endpoint' });
+  const s3Row = ((s3Setting as AppSetting[]) || [])[0];
+  useEffect(() => { if (s3Row?.value != null) setS3Endpoint(s3Row.value); }, [s3Row?.value]);
 
   const [setting] = useLoadAction(getAppSetting, [], { key: 'reorder_cover_days' });
   const [users, , , reloadUsers] = useLoadAction(listUserProfiles, [], {});
@@ -75,7 +83,7 @@ export function ReorderUsersTab() {
   };
 
   const openAdd = () => {
-    setEditUser(null); setUEmail(''); setUDisplayName(''); setURole('sales_rep'); setUWarehouse(''); setUError('');
+    setEditUser(null); setUEmail(''); setUDisplayName(''); setURole('sales_rep'); setUWarehouse(''); setUError(''); setUAvatar('');
     setShowAddUser(true);
   };
 
@@ -83,7 +91,13 @@ export function ReorderUsersTab() {
     setEditUser(u);
     setUEmail(u.email || ''); setUDisplayName(u.display_name); setURole(u.role);
     setUWarehouse(u.assigned_warehouse_id ? String(u.assigned_warehouse_id) : '');
-    setUError(''); setShowAddUser(true);
+    setUError(''); setUAvatar(''); setShowAddUser(true);
+  };
+
+  const saveS3Endpoint = async () => {
+    await doUpsertSetting({ key: 's3_presign_endpoint', value: s3Endpoint.trim() });
+    setS3Saved(true);
+    setTimeout(() => setS3Saved(false), 2000);
   };
 
   const handleSaveUser = async () => {
@@ -99,7 +113,7 @@ export function ReorderUsersTab() {
         assigned_warehouse_id: (uRole === 'warehouse' && uWarehouse) ? Number(uWarehouse) : null,
       };
       if (editUser) {
-        await doUpdateUser({ id: editUser.id, ...payload, avatar_file: null });
+        await doUpdateUser({ id: editUser.id, ...payload, avatar_file: uAvatar || null });
       } else {
         await doUpsertUser({ user_id: null, ...payload });
       }
@@ -139,6 +153,24 @@ export function ReorderUsersTab() {
                 </Button>
               </div>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Integrations */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2"><Settings className="h-4 w-4" /> Integrations</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Label>S3 Presign Endpoint</Label>
+          <p className="text-xs text-gray-400 mb-1">
+            URL of the presigned-upload endpoint for product images, avatars, and evidence files (see docs/S3_SETUP.md).
+            Leave blank to store small files inline.
+          </p>
+          <div className="flex items-center gap-2 max-w-xl">
+            <Input type="url" placeholder="https://xxxx.lambda-url.us-east-1.on.aws/" value={s3Endpoint} onChange={e => setS3Endpoint(e.target.value)} />
+            <Button size="sm" onClick={saveS3Endpoint}>{s3Saved ? '✓ Saved' : 'Save'}</Button>
           </div>
         </CardContent>
       </Card>
@@ -216,6 +248,17 @@ export function ReorderUsersTab() {
                 </SelectContent>
               </Select>
             </div>
+            {editUser && (
+              <div>
+                <Label>Avatar</Label>
+                <div className="flex items-center gap-3 mt-1">
+                  {(uAvatar || editUser.avatar_file)
+                    ? <img src={uAvatar || editUser.avatar_file || ''} className="w-10 h-10 rounded-full object-cover" alt="avatar preview" />
+                    : <Initials name={uDisplayName || editUser.display_name} />}
+                  <FileUpload accept="image/*" label="Upload avatar" onUploaded={setUAvatar} />
+                </div>
+              </div>
+            )}
             {uRole === 'warehouse' && (
               <div>
                 <Label>Assigned Warehouse</Label>

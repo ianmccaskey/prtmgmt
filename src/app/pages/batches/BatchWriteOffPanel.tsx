@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import getBatchInventoryAction from '@/actions/batches/getBatchInventory';
-import writeOffBatchAction from '@/actions/batches/writeOffBatch';
-import decrementInventoryAction from '@/actions/batches/decrementInventory';
+import warehouseWriteoffAtomicAction from '@/actions/warehouse/warehouseWriteoffAtomic';
+import { FileUpload } from '@/components/FileUpload';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,21 +16,22 @@ import { AlertTriangle } from 'lucide-react';
 type Batch = { id: number; product_id: number; batch_number: string; qty_remaining: number };
 type InventoryRow = { id: number; warehouse_name: string; warehouse_id: number; quantity_on_hand: number; quantity_reserved: number; quantity_available: number };
 
-const WRITEOFF_REASONS = ['damaged', 'expired', 'contaminated', 'lost', 'testing_consumption', 'other'];
+// Must match the inventory_writeoffs.reason CHECK constraint.
+const WRITEOFF_REASONS = ['damaged', 'expired', 'lost', 'qc_hold', 'customer_replacement', 'other'];
 
 export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefresh: () => void }) {
   const { profileId } = useAppUser();
-  const [inventory] = useLoadAction(getBatchInventoryAction, [], { batch_id: batch.id });
-  const [writeOff] = useMutateAction(writeOffBatchAction);
-  const [decrement] = useMutateAction(decrementInventoryAction);
+  const [inventory, , , reloadInv] = useLoadAction(getBatchInventoryAction, [], { batch_id: batch.id });
+  const [doWriteoff] = useMutateAction(warehouseWriteoffAtomicAction);
 
   const invRows: InventoryRow[] = Array.isArray(inventory) ? inventory : [];
 
   const [form, setForm] = useState({
-    warehouse_id: '', quantity: '', reason: '', notes: '', evidence_url: '',
+    warehouse_id: '', quantity: '', reason: '', notes: '', evidence_url: '', evidence_file: '',
   });
   const [showConfirm, setShowConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [blocked, setBlocked] = useState(false);
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -49,7 +50,10 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
 
   const handleConfirm = async () => {
     setSaving(true);
-    await writeOff({
+    setBlocked(false);
+    // Atomic + guarded: writeoff record + inventory decrement + activity log;
+    // zero rows means it would cut into reserved stock.
+    const res = await doWriteoff({
       product_id: batch.product_id,
       batch_id: batch.id,
       warehouse_id: parseInt(form.warehouse_id),
@@ -57,12 +61,17 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
       reason: form.reason,
       notes: form.notes || null,
       evidence_url: form.evidence_url || null,
+      evidence_file: form.evidence_file || null,
       user_id: profileId,
-    });
-    await decrement({ batch_id: batch.id, warehouse_id: parseInt(form.warehouse_id), quantity: qty });
+    }) as unknown[];
     setSaving(false);
+    if (!res || res.length === 0) {
+      setBlocked(true);
+      return;
+    }
     setShowConfirm(false);
-    setForm({ warehouse_id: '', quantity: '', reason: '', notes: '', evidence_url: '' });
+    setForm({ warehouse_id: '', quantity: '', reason: '', notes: '', evidence_url: '', evidence_file: '' });
+    reloadInv();
     onRefresh();
   };
 
@@ -122,9 +131,16 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
             </div>
           )}
 
-          <div>
-            <Label>Evidence URL (optional)</Label>
-            <Input type="url" placeholder="https://…" value={form.evidence_url} onChange={e => set('evidence_url', e.target.value)} />
+          <div className="grid grid-cols-2 gap-4 items-end">
+            <div>
+              <Label>Evidence URL (optional)</Label>
+              <Input type="url" placeholder="https://…" value={form.evidence_url} onChange={e => set('evidence_url', e.target.value)} />
+            </div>
+            <div>
+              <Label>Or upload evidence (photo/report)</Label>
+              <FileUpload accept="image/*,.pdf" label={form.evidence_file ? 'Replace evidence file' : 'Upload evidence'} onUploaded={url => set('evidence_file', url)} />
+              {form.evidence_file && <p className="text-xs text-green-600 mt-0.5">Evidence file attached ✓</p>}
+            </div>
           </div>
 
           <Button type="submit" variant="destructive" disabled={!form.warehouse_id || !qty || !form.reason}>
@@ -150,6 +166,11 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
               <p className="text-sm text-slate-600">
                 Inventory will be decremented: {selectedWarehouse?.quantity_on_hand} → {(selectedWarehouse?.quantity_on_hand ?? 0) - qty} on hand
               </p>
+              {blocked && (
+                <p className="text-xs text-red-600 bg-red-50 rounded p-2">
+                  Blocked: this write-off would cut into reserved stock (or stock changed). Release the impacted orders first — see the Warehouse Activity tab for details.
+                </p>
+              )}
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setShowConfirm(false)}>Cancel</Button>
                 <Button variant="destructive" disabled={saving} onClick={handleConfirm}>

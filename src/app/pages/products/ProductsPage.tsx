@@ -25,6 +25,7 @@ type Product = {
   currency: string; standard_cost: number; available_warehouse: boolean;
   available_china_direct: boolean; factory_id: number; is_active: boolean;
   low_stock_threshold: number; factory_name: string; total_stock: number; total_available: number;
+  image_file: string | null;
 };
 
 const CATEGORIES = ['research peptide', 'cosmetic peptide', 'blend', 'accessory'];
@@ -174,8 +175,17 @@ export function ProductsPage() {
                         </td>
                       )}
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-800">{p.name}</div>
-                        <div className="text-xs text-slate-400">{p.sku}</div>
+                        <div className="flex items-center gap-2">
+                          {p.image_file ? (
+                            <img src={p.image_file} className="w-8 h-8 rounded object-cover border shrink-0" alt="" />
+                          ) : (
+                            <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center shrink-0"><Package className="h-4 w-4 text-slate-400" /></div>
+                          )}
+                          <div>
+                            <div className="font-medium text-slate-800">{p.name}</div>
+                            <div className="text-xs text-slate-400">{p.sku}</div>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{p.category || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{p.vial_size_ml}mL × {p.vials_per_unit}</td>

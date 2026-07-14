@@ -6,6 +6,7 @@ import applyCorrectionAtomicAction from '@/actions/warehouse/applyCorrectionAtom
 import warehouseWriteoffAtomicAction from '@/actions/warehouse/warehouseWriteoffAtomic';
 import listReservationsForInventoryRowAction from '@/actions/warehouse/listReservationsForInventoryRow';
 import listInventoryAction from '@/actions/warehouse/listInventory';
+import { FileUpload } from '@/components/FileUpload';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,7 +56,7 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
 
   // Writeoff form
   const [showWriteoff, setShowWriteoff] = useState(false);
-  const [woForm, setWoForm] = useState({ warehouse_id: warehouseId || '', product_batch_key: '', quantity: '', reason: '', notes: '', evidence_url: '' });
+  const [woForm, setWoForm] = useState({ warehouse_id: warehouseId || '', product_batch_key: '', quantity: '', reason: '', notes: '', evidence_url: '', evidence_file: '' });
   const [woSaving, setWoSaving] = useState(false);
   const [woInventory] = useLoadAction(listInventoryAction, [], { warehouse_id: woForm.warehouse_id });
   const woRows: InventoryRow[] = Array.isArray(woInventory) ? woInventory : [];
@@ -86,7 +87,7 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
     const res = await doWriteoff({
       product_id: selectedWoRow.product_id, batch_id: selectedWoRow.batch_id, warehouse_id: selectedWoRow.warehouse_id,
       quantity: parseInt(woForm.quantity), reason: woForm.reason, notes: woForm.notes || null,
-      evidence_url: woForm.evidence_url || null, evidence_file: null, user_id: profileId,
+      evidence_url: woForm.evidence_url || null, evidence_file: woForm.evidence_file || null, user_id: profileId,
     }) as unknown[];
     if (!res || res.length === 0) {
       const impacted = await listRowReservations({ product_id: selectedWoRow.product_id, batch_id: selectedWoRow.batch_id, warehouse_id: selectedWoRow.warehouse_id }) as { order_number: string; customer_name: string; reserved_qty: number }[];
@@ -227,6 +228,11 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
             </div>
             {woForm.reason === 'other' && <div><Label>Notes (required)</Label><Textarea value={woForm.notes} onChange={e => setWoForm(f => ({ ...f, notes: e.target.value }))} rows={2} required /></div>}
             <div><Label>Evidence URL</Label><Input type="url" placeholder="https://…" value={woForm.evidence_url} onChange={e => setWoForm(f => ({ ...f, evidence_url: e.target.value }))} /></div>
+            <div>
+              <Label>Or upload evidence</Label>
+              <FileUpload accept="image/*,.pdf" label={woForm.evidence_file ? 'Replace evidence file' : 'Upload evidence'} onUploaded={url => setWoForm(f => ({ ...f, evidence_file: url }))} />
+              {woForm.evidence_file && <p className="text-xs text-green-600">Evidence file attached ✓</p>}
+            </div>
             {woBlocked && (
               <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-700 space-y-1">
                 <p className="font-medium">Blocked: the write-off couldn't be applied.</p>
