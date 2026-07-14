@@ -43,9 +43,9 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
   const rows: InventoryRow[] = asRows(inventory);
 
   const [products] = useLoadAction(listProductsAction, [], {});
-  const productList = (products as { id: number; name: string; sku: string }[]) || [];
+  const productList = asRows<{ id: number; name: string; sku: string }>(products);
   const [batches] = useLoadAction(listBatchesAction, [productId], { product_id: productId || null });
-  const batchList = (batches as { id: number; batch_number: string }[]) || [];
+  const batchList = asRows<{ id: number; batch_number: string }>(batches);
 
   return (
     <Card>

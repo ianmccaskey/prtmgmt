@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -87,8 +88,8 @@ export function ShipmentDetailPage() {
   const [updateStatus] = useMutateAction(updateShipmentStatus);
 
   const detail = (shipment as Shipment[])?.[0];
-  const itemList = (items as ShipmentItem[]) || [];
-  const docList = (docs as Doc[]) || [];
+  const itemList = asRows<ShipmentItem>(items);
+  const docList = asRows<Doc>(docs);
 
   const handleAddDoc = async () => {
     if (!docType || !docUrl) return;

@@ -41,7 +41,7 @@ export function CustomersPage() {
   const pgCust = usePagination(asRows<Customer>(customers));
 
   const exportCSV = () => {
-    const rows = customers as Customer[];
+    const rows = asRows<Customer>(customers);
     const header = 'Name,Email,Phone,Channel,Handle,VIP,Blocked,Total Orders,Lifetime Value,Last Order';
     const lines = rows.map(c =>
       [c.full_name, c.email, c.phone, c.preferred_channel, c.channel_handle,
@@ -121,7 +121,7 @@ export function CustomersPage() {
                     <td colSpan={7} className="p-3"><Skeleton className="h-4 w-full" /></td>
                   </tr>
                 ))
-              ) : (customers as Customer[]).length === 0 ? (
+              ) : asRows<Customer>(customers).length === 0 ? (
                 <tr><td colSpan={7} className="text-center p-8 text-muted-foreground">No customers found</td></tr>
               ) : (
                 pgCust.pageRows.map(c => (
