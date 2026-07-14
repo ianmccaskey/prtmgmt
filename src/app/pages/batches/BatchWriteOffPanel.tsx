@@ -67,6 +67,7 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
     setSaving(false);
     if (!res || res.length === 0) {
       setBlocked(true);
+      reloadInv(); // refresh so the panel shows the quantities that caused the block
       return;
     }
     setShowConfirm(false);

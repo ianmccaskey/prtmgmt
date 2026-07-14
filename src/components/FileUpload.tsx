@@ -28,7 +28,7 @@ export function FileUpload({ accept, label, onUploaded, disabled }: {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [setting] = useLoadAction(getAppSetting, [], { key: 's3_presign_endpoint' });
+  const [setting, settingLoading] = useLoadAction(getAppSetting, [], { key: 's3_presign_endpoint' });
   const endpoint = (((setting as { value: string }[]) || [])[0]?.value || '').trim();
 
   const handleFile = async (file: File) => {
@@ -75,11 +75,13 @@ export function FileUpload({ accept, label, onUploaded, disabled }: {
         className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
       />
-      <Button type="button" size="sm" variant="outline" disabled={disabled || busy} onClick={() => inputRef.current?.click()}>
-        {busy ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
-        {busy ? 'Uploading…' : (label || 'Upload file')}
+      {/* Disabled until the endpoint setting resolves — otherwise a quick
+          upload could inline a file that should have gone to S3. */}
+      <Button type="button" size="sm" variant="outline" disabled={disabled || busy || settingLoading} onClick={() => inputRef.current?.click()}>
+        {busy || settingLoading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+        {busy ? 'Uploading…' : settingLoading ? 'Loading…' : (label || 'Upload file')}
       </Button>
-      {!endpoint && <p className="text-xs text-slate-400">No S3 endpoint configured — small files stored inline.</p>}
+      {!settingLoading && !endpoint && <p className="text-xs text-slate-400">No S3 endpoint configured — small files stored inline.</p>}
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );

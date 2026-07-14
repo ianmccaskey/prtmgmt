@@ -146,6 +146,10 @@ export function ProductDetailsTab({ product, factories }: Props) {
                     <img src={form.image_file || product.image_file || ''} className="w-14 h-14 rounded object-cover border" alt={product.name} />
                   )}
                   <FileUpload accept="image/*" label={product.image_file || form.image_file ? 'Replace image' : 'Upload image'} onUploaded={url => set('image_file', url)} />
+                  {(form.image_file || product.image_file) && form.image_file !== '__CLEAR__' && (
+                    <Button type="button" size="sm" variant="ghost" className="text-red-500 h-7 text-xs" onClick={() => set('image_file', '__CLEAR__')}>Remove</Button>
+                  )}
+                  {form.image_file === '__CLEAR__' && <span className="text-xs text-red-500">Image will be removed on save</span>}
                 </div>
               </div>
             </>

@@ -8,7 +8,8 @@ function updateUserProfileById() {
         display_name = {{params.display_name}},
         role = {{params.role}},
         assigned_warehouse_id = {{params.assigned_warehouse_id}},
-        avatar_file = COALESCE({{params.avatar_file}}, avatar_file),
+        avatar_file = CASE WHEN {{params.avatar_file}} = '__CLEAR__' THEN NULL
+                           ELSE COALESCE({{params.avatar_file}}, avatar_file) END,
         updated_at = NOW()
       WHERE id = {{params.id}}
       RETURNING id
