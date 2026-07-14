@@ -17,6 +17,10 @@ import { StatusBadge, PaymentBadge, SourceBadges, ChannelBadge } from './OrderBa
 import { AlertTriangle, Check, Crown, Flag, Plus, RefreshCw, Package, Truck } from 'lucide-react';
 import listUserProfiles from '@/actions/settings/listUserProfiles';
 import releaseProductReservation from '@/actions/warehouse/releaseProductReservation';
+import getOrderItemAllocations from '@/actions/orders/getOrderItemAllocations';
+import getOrderNotifications from '@/actions/orders/getOrderNotifications';
+import updateOrderNotes from '@/actions/orders/updateOrderNotes';
+import { OrderItemsEditor, OrderItemRow, AllocationRow } from '@/app/pages/orders/OrderItemsEditor';
 import getOrderDetail from '@/actions/orders/getOrderDetail';
 import getOrderItems from '@/actions/orders/getOrderItems';
 import getOrderPayments from '@/actions/orders/getOrderPayments';
@@ -44,7 +48,10 @@ type Payment = Record<string, string | number | boolean | null>;
 type Shipment = Record<string, string | number | boolean | null>;
 type AuditEntry = Record<string, string | number | null>;
 
-const ISSUE_TYPES = ['lost', 'damaged', 'returned', 'stuck', 'other'];
+// Must match the shipments_outbound.issue_flag CHECK constraint.
+const ISSUE_TYPES = ['lost_in_transit', 'damaged_in_transit', 'returned_to_sender', 'stuck_in_transit', 'other'];
+// Must match the order_payments.issue_type CHECK constraint.
+const PAYMENT_ISSUE_TYPES = ['underpaid', 'overpaid', 'wrong_asset', 'wrong_network', 'wallet_mismatch', 'unconfirmed_onchain', 'other'];
 
 function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; reload: () => void }) {
   const { profileId } = useAppUser();
@@ -107,10 +114,9 @@ function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; rel
               <Select value={issueType} onValueChange={setIssueType}>
                 <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="wrong_amount">Wrong Amount</SelectItem>
-                  <SelectItem value="invalid_tx">Invalid TX</SelectItem>
-                  <SelectItem value="not_received">Not Received</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
+                  {PAYMENT_ISSUE_TYPES.map(t => (
+                    <SelectItem key={t} value={t} className="capitalize">{t.replace(/_/g, ' ')}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -270,17 +276,46 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [items, itemsLoading, , reloadItems] = useLoadAction(getOrderItems, [orderId], { orderId }, { enabled: !!orderId });
   const [shipments, shipmentsLoading, , reloadShipments] = useLoadAction(getOrderShipments, [orderId], { orderId }, { enabled: !!orderId });
   const [auditLog, auditLoading] = useLoadAction(getOrderAuditLog, [orderId], { orderId }, { enabled: !!orderId && isAdmin });
+  const [allocationsRaw, , , reloadAllocations] = useLoadAction(getOrderItemAllocations, [orderId], { orderId }, { enabled: !!orderId });
+  const [notificationsRaw] = useLoadAction(getOrderNotifications, [orderId], { orderId }, { enabled: !!orderId });
   const [salesReps] = useLoadAction(listSalesReps, []);
   const [doUpdateRep] = useMutateAction(updateOrderSalesRep);
+  const [doSaveNotes] = useMutateAction(updateOrderNotes);
   const [editingRep, setEditingRep] = useState(false);
+  const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  const [savingNotes, setSavingNotes] = useState(false);
 
-  const reloadAll = () => { reloadDetail(); reloadItems(); reloadShipments(); onRefresh(); };
+  const reloadAll = () => { reloadDetail(); reloadItems(); reloadShipments(); reloadAllocations(); onRefresh(); };
 
   const order = (detail as OrderDetail[])[0];
+  const allocations = (allocationsRaw as AllocationRow[]) || [];
+  const notifications = (notificationsRaw as { id: number; status: string }[]) || [];
+  const pendingNotifications = notifications.filter(n => n.status === 'pending').length;
 
   if (!order && !detailLoading) return null;
 
-  const isReadOnly = order && (String(order.status) === 'cancelled' || String(order.status) === 'delivered');
+  const status = order ? String(order.status) : '';
+  const isReadOnly = !!order && (status === 'cancelled' || status === 'delivered');
+  const isShippedish = ['partially_shipped', 'shipped', 'delivered'].includes(status);
+  const shipmentList = (shipments as Shipment[]) || [];
+
+  const handleStatusAction = async (next: string) => {
+    const res = await doUpdateStatus({ orderId, status: next, cancellationReason: null }) as unknown[];
+    if (res && res.length > 0) {
+      await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: status, newValue: next, note: null });
+    }
+    reloadAll();
+  };
+
+  const saveNotes = async () => {
+    if (notesDraft == null) return;
+    setSavingNotes(true);
+    await doSaveNotes({ orderId, notes: notesDraft || null });
+    await doAudit({ orderId, userId: profileId, changeType: 'notes', fieldName: 'notes', oldValue: null, newValue: null, note: 'Internal notes updated' });
+    setSavingNotes(false);
+    setNotesDraft(null);
+    reloadDetail();
+  };
 
   return (
     <>
@@ -332,13 +367,45 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                     </div>
                   </SheetHeader>
 
-                  {!isReadOnly && (
-                    <div className="flex gap-2 flex-wrap">
-                      {String(order.status) !== 'cancelled' && (
-                        <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => setCancelOpen(true)}>Cancel Order</Button>
-                      )}
+                  {/* Tracking hero — prominent once anything shipped, for copy-into-chat */}
+                  {isShippedish && shipmentList.length > 0 && (
+                    <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-3 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-blue-800 flex items-center gap-1.5"><Truck className="h-4 w-4" /> Tracking</p>
+                        {pendingNotifications > 0 && (
+                          <Badge variant="outline" className="text-xs text-amber-700 border-amber-300 bg-amber-50">
+                            customer notification pending
+                          </Badge>
+                        )}
+                      </div>
+                      {shipmentList.map(s => (
+                        <div key={String(s.id)} className="flex items-center justify-between text-sm">
+                          <span className="text-blue-900">
+                            {String(s.carrier || '—')} · <span className="font-mono font-medium">{String(s.tracking_number || 'no tracking')}</span>
+                            <span className="text-xs text-blue-600 ml-1.5">({String(s.origin) === 'china' ? 'China' : String(s.warehouse_name || 'Warehouse')})</span>
+                          </span>
+                          {s.tracking_number != null && (
+                            <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-700"
+                              onClick={() => navigator.clipboard.writeText(`${s.carrier || ''} ${s.tracking_number}`.trim())}>
+                              Copy
+                            </Button>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
+
+                  <div className="flex gap-2 flex-wrap">
+                    {status === 'confirmed' && !isReadOnly && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={updatingStatus} onClick={() => handleStatusAction('in_production')}>Start Production</Button>
+                    )}
+                    {status === 'shipped' && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs text-green-700 border-green-300" disabled={updatingStatus} onClick={() => handleStatusAction('delivered')}>Mark Delivered</Button>
+                    )}
+                    {!isReadOnly && status !== 'shipped' && (
+                      <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => setCancelOpen(true)}>Cancel Order</Button>
+                    )}
+                  </div>
 
                   <Separator />
 
@@ -347,34 +414,21 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       <TabsTrigger value="items" className="flex-1">Items</TabsTrigger>
                       <TabsTrigger value="payments" className="flex-1">Payments</TabsTrigger>
                       <TabsTrigger value="shipments" className="flex-1">Shipments</TabsTrigger>
+                      <TabsTrigger value="notes" className="flex-1">Notes</TabsTrigger>
                       {isAdmin && <TabsTrigger value="audit" className="flex-1">Audit Log</TabsTrigger>}
                     </TabsList>
 
-                    <TabsContent value="items" className="pt-3 space-y-2">
-                      {itemsLoading ? <Skeleton className="h-20 w-full" /> : (items as OrderItem[]).map(item => (
-                        <div key={String(item.id)} className="border rounded-md p-3 text-sm space-y-1">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <span className="font-medium">{String(item.product_name)}</span>
-                              <span className="ml-2 text-xs text-muted-foreground">{String(item.product_sku)}</span>
-                            </div>
-                            {item.is_shipped && <Badge variant="outline" className="text-xs px-1 py-0 bg-green-50 text-green-700 border-green-200">Shipped</Badge>}
-                          </div>
-                          <div className="flex items-center justify-between text-muted-foreground">
-                            <span>Qty: {Number(item.quantity)} · @${Number(item.unit_price_usd).toFixed(2)}</span>
-                            <span className="font-medium text-foreground">${Number(item.line_total_usd).toFixed(2)}</span>
-                          </div>
-                          <Badge variant="outline" className={`text-xs px-1 py-0 ${item.fulfillment_source === 'warehouse' ? 'text-blue-600 border-blue-200' : 'text-purple-600 border-purple-200'}`}>
-                            {item.fulfillment_source === 'warehouse' ? 'Warehouse' : 'China Direct'}
-                          </Badge>
-                        </div>
-                      ))}
-
-                      <Separator />
-                      <div className="text-sm space-y-1">
-                        <div className="flex justify-between"><span className="text-muted-foreground">Ship To</span></div>
-                        <p>{String(order.ship_to_name || '')} · {String(order.ship_address_line1 || '')}, {String(order.ship_city || '')} {String(order.ship_state || '')} {String(order.ship_postal_code || '')}, {String(order.ship_country || '')}</p>
-                      </div>
+                    <TabsContent value="items" className="pt-3">
+                      {itemsLoading ? <Skeleton className="h-20 w-full" /> : (
+                        <OrderItemsEditor
+                          orderId={Number(orderId)}
+                          order={order}
+                          items={(items as OrderItemRow[]) || []}
+                          allocations={allocations}
+                          isReadOnly={isReadOnly}
+                          onChanged={reloadAll}
+                        />
+                      )}
                     </TabsContent>
 
                     <TabsContent value="payments" className="pt-3 space-y-3">
@@ -388,6 +442,21 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       ) : (
                         (shipments as Shipment[]).map(s => <ShipmentCard key={String(s.id)} shipment={s} onRefresh={reloadShipments} />)
                       )}
+                    </TabsContent>
+
+                    <TabsContent value="notes" className="pt-3 space-y-2">
+                      <p className="text-xs text-muted-foreground">Internal notes — never shown to customers. Editable in every status.</p>
+                      <Textarea
+                        rows={5}
+                        value={notesDraft ?? String(order.notes || '')}
+                        onChange={e => setNotesDraft(e.target.value)}
+                        placeholder="Internal notes about this order…"
+                      />
+                      <div className="flex justify-end">
+                        <Button size="sm" className="h-7 text-xs" onClick={saveNotes} disabled={savingNotes || notesDraft == null}>
+                          {savingNotes ? 'Saving…' : 'Save Notes'}
+                        </Button>
+                      </div>
                     </TabsContent>
 
                     {isAdmin && (

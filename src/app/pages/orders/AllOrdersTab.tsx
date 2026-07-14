@@ -9,8 +9,17 @@ import { Badge } from '@/components/ui/badge';
 import { StatusBadge, PaymentBadge, SourceBadges, FreeBadge, ChannelBadge } from './OrderBadges';
 import { Plus, Search, Crown } from 'lucide-react';
 import listOrders from '@/actions/orders/listOrders';
+import updateOrderStatus from '@/actions/orders/updateOrderStatus';
+import insertAuditLog from '@/actions/orders/insertAuditLog';
+import { useMutateAction } from '@uibakery/data';
 import { NewOrderForm } from './NewOrderForm';
 import { OrderDetailDrawer } from './OrderDetailDrawer';
+
+/** Inline transitions allowed straight from the table row (rest go through flows/drawer). */
+const INLINE_NEXT: Record<string, string[]> = {
+  confirmed: ['in_production'],
+  shipped: ['delivered'],
+};
 
 type Order = {
   id: number; order_number: string; order_date: string; status: string; payment_status: string;
@@ -26,7 +35,17 @@ const PAYMENT_OPTIONS = ['', 'unpaid', 'partial_paid', 'paid', 'refunded'];
 const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'other'];
 
 export function AllOrdersTab() {
-  const { isWarehouse } = useAppUser();
+  const { isWarehouse, profileId } = useAppUser();
+  const [doUpdateStatus] = useMutateAction(updateOrderStatus);
+  const [doAudit] = useMutateAction(insertAuditLog);
+
+  const inlineStatusChange = async (order: { id: number; status: string }, next: string) => {
+    const res = await doUpdateStatus({ orderId: order.id, status: next, cancellationReason: null }) as unknown[];
+    if (res && res.length > 0) {
+      await doAudit({ orderId: order.id, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: order.status, newValue: next, note: 'Inline status update' });
+    }
+    reload();
+  };
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
@@ -122,7 +141,23 @@ export function AllOrdersTab() {
                       {order.customer_handle && <p className="text-xs text-muted-foreground">{order.customer_handle}</p>}
                     </td>
                     <td className="p-3 text-muted-foreground text-xs whitespace-nowrap">{new Date(order.order_date).toLocaleDateString()}</td>
-                    <td className="p-3"><StatusBadge status={order.status} /></td>
+                    <td className="p-3" onClick={e => e.stopPropagation()}>
+                      {!isWarehouse && INLINE_NEXT[order.status] ? (
+                        <Select value={order.status} onValueChange={v => v !== order.status && inlineStatusChange(order, v)}>
+                          <SelectTrigger className="h-7 w-36 text-xs border-dashed">
+                            <StatusBadge status={order.status} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={order.status} disabled>{order.status.replace(/_/g, ' ')}</SelectItem>
+                            {INLINE_NEXT[order.status].map(n => (
+                              <SelectItem key={n} value={n}>→ {n.replace(/_/g, ' ')}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <StatusBadge status={order.status} />
+                      )}
+                    </td>
                     <td className="p-3"><PaymentBadge status={order.payment_status} /></td>
                     <td className="p-3">
                       <div className="flex items-center gap-1">
