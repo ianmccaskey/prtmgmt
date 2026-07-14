@@ -555,8 +555,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               ))}
             </div>
             <ProductCombo onAdd={addLine} isFree={isFree} />
-            {/* Order-level blanket price adjustment across all lines (prompt rule) */}
-            {lines.filter(l => l.product).length > 1 && (
+            {/* Order-level blanket price adjustment across all lines (prompt
+                rule). Hidden on free orders — lines are already $0 there. */}
+            {!isFree && lines.filter(l => l.product).length > 1 && (
               <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
                 <span>Apply % off list to all lines:</span>
                 <Input type="number" min={0} max={100} value={blanketPct} onChange={e => setBlanketPct(e.target.value)} className="h-7 w-20" placeholder="10" />

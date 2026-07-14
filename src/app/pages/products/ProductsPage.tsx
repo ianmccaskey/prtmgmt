@@ -166,7 +166,7 @@ export function ProductsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(p => (
+                  {pgProd.pageRows.map(p => (
                     <tr key={p.id} className="border-b hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/products/${p.id}`)}>
                       {isAdmin && (
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
@@ -208,7 +208,7 @@ export function ProductsPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {rows.map(p => (
+          {pgProd.pageRows.map(p => (
             <Card key={p.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/products/${p.id}`)}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between mb-2">

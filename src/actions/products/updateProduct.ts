@@ -20,7 +20,7 @@ function updateProduct() {
           vial_size_ml = {{params.vial_size_ml}},
           vials_per_unit = {{params.vials_per_unit}},
           list_price = {{params.list_price}}::numeric,
-          standard_cost = {{params.standard_cost}}::numeric,
+          standard_cost = COALESCE({{params.standard_cost}}::numeric, standard_cost),
           available_warehouse = {{params.available_warehouse}},
           available_china_direct = {{params.available_china_direct}},
           is_active = {{params.is_active}},
@@ -42,7 +42,9 @@ function updateProduct() {
       hist_sc AS (
         INSERT INTO product_price_history (product_id, changed_by_user_id, changed_at, field, old_value, new_value)
         SELECT {{params.id}}::bigint, {{params.user_id}}, NOW(), 'standard_cost', old.standard_cost, {{params.standard_cost}}::numeric
-        FROM old WHERE old.standard_cost IS DISTINCT FROM {{params.standard_cost}}::numeric
+        FROM old
+        WHERE {{params.standard_cost}} IS NOT NULL
+          AND old.standard_cost IS DISTINCT FROM {{params.standard_cost}}::numeric
       )
       SELECT id FROM upd
     `,

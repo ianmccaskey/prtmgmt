@@ -52,7 +52,9 @@ export function ProductDetailsTab({ product, factories }: Props) {
       vial_size_ml: parseFloat(form.vial_size_ml),
       vials_per_unit: parseInt(form.vials_per_unit),
       list_price: parseFloat(form.list_price) || 0,
-      standard_cost: isAdmin ? (parseFloat(form.standard_cost) || 0) : product.standard_cost,
+      // Non-admins pass null — the action's COALESCE leaves the live cost
+      // untouched (a stale prop must never clobber an admin's cost change).
+      standard_cost: isAdmin ? (parseFloat(form.standard_cost) || 0) : null,
       low_stock_threshold: parseInt(form.low_stock_threshold),
       factory_id: !factoryLocked && form.factory_id ? Number(form.factory_id) : null,
       user_id: profileId,
