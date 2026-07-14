@@ -8,7 +8,7 @@ function listRatePlans() {
         rp.tier_kits, rp.tier_price_usd, rp.notes, rp.created_at,
         up.display_name AS created_by_name
       FROM warehouse_shipping_rate_plans rp
-      LEFT JOIN user_profiles up ON up.user_id = rp.created_by_user_id
+      LEFT JOIN user_profiles up ON up.id = rp.created_by_user_id
       ORDER BY rp.effective_date DESC
     `,
   });

@@ -8,7 +8,7 @@ export function getOrderAuditLog() {
         oal.*,
         up.display_name AS actor_name
       FROM order_audit_log oal
-      LEFT JOIN user_profiles up ON up.user_id = oal.changed_by_user_id
+      LEFT JOIN user_profiles up ON up.id = oal.changed_by_user_id
       WHERE oal.sales_order_id = {{params.orderId}}::bigint
       ORDER BY oal.changed_at DESC
     `,

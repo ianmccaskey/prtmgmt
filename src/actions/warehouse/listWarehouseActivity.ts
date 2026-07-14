@@ -15,7 +15,7 @@ function listWarehouseActivity() {
       LEFT JOIN warehouses w ON w.id = wal.warehouse_id
       LEFT JOIN products p ON p.id = wal.product_id
       LEFT JOIN product_batches pb ON pb.id = wal.batch_id
-      LEFT JOIN user_profiles up ON up.user_id = wal.actor_user_id
+      LEFT JOIN user_profiles up ON up.id = wal.actor_user_id
       WHERE
         (COALESCE({{params.warehouse_id}}, '') = '' OR wal.warehouse_id::text = {{params.warehouse_id}})
         AND (COALESCE({{params.event_type}}, '') = '' OR wal.event_type = {{params.event_type}})

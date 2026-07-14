@@ -15,6 +15,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge, PaymentBadge, SourceBadges, ChannelBadge } from './OrderBadges';
 import { AlertTriangle, Check, Crown, Flag, Plus, RefreshCw, Package, Truck } from 'lucide-react';
+import listUserProfiles from '@/actions/settings/listUserProfiles';
 import getOrderDetail from '@/actions/orders/getOrderDetail';
 import getOrderItems from '@/actions/orders/getOrderItems';
 import getOrderPayments from '@/actions/orders/getOrderPayments';
@@ -132,9 +133,11 @@ function RefundTaskForm({ orderId, onCreated }: { orderId: number; onCreated: ()
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ amount: '', reason: '', dueDate: '', assignee: '' });
   const [doCreate, creating] = useMutateAction(createRefundTask);
+  const [profiles] = useLoadAction(listUserProfiles, [], {}, { enabled: open });
+  const profileOptions = ((profiles as { id: number; display_name: string }[]) || []);
 
   const submit = async () => {
-    await doCreate({ orderId, userId: profileId, amountUsdOwed: Number(form.amount), reason: form.reason, assigneeUserId: form.assignee || null, dueDate: form.dueDate || null });
+    await doCreate({ orderId, userId: profileId, amountUsdOwed: Number(form.amount), reason: form.reason, assigneeUserId: form.assignee ? Number(form.assignee) : null, dueDate: form.dueDate || null });
     setOpen(false); setForm({ amount: '', reason: '', dueDate: '', assignee: '' }); onCreated();
   };
 
@@ -149,7 +152,16 @@ function RefundTaskForm({ orderId, onCreated }: { orderId: number; onCreated: ()
           <div className="space-y-3 py-2">
             <div><Label>Amount Owed (USD)</Label><Input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} /></div>
             <div><Label>Reason</Label><Textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} rows={2} /></div>
-            <div><Label>Assignee User ID</Label><Input placeholder="user@example.com" value={form.assignee} onChange={e => setForm(f => ({ ...f, assignee: e.target.value }))} /></div>
+            <div>
+              <Label>Assignee</Label>
+              <Select value={form.assignee || '_none'} onValueChange={v => setForm(f => ({ ...f, assignee: v === '_none' ? '' : v }))}>
+                <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Unassigned</SelectItem>
+                  {profileOptions.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.display_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div><Label>Due Date</Label><Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} /></div>
           </div>
           <DialogFooter>

@@ -14,8 +14,8 @@ export function getRefundTasks() {
       FROM refund_tasks rt
       JOIN sales_orders so ON so.id = rt.sales_order_id
       JOIN customers c ON c.id = so.customer_id
-      LEFT JOIN user_profiles assignee ON assignee.user_id = rt.assignee_user_id
-      LEFT JOIN user_profiles creator ON creator.user_id = rt.created_by_user_id
+      LEFT JOIN user_profiles assignee ON assignee.id = rt.assignee_user_id
+      LEFT JOIN user_profiles creator ON creator.id = rt.created_by_user_id
       WHERE
         (COALESCE({{params.status}}, '') = '' OR rt.status = {{params.status}})
       ORDER BY

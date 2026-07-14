@@ -12,7 +12,7 @@ export function getCustomerDetail() {
         up.display_name AS blocked_by_name
       FROM customers c
       LEFT JOIN sales_orders so ON so.customer_id = c.id
-      LEFT JOIN user_profiles up ON up.user_id = c.blocked_by_user_id
+      LEFT JOIN user_profiles up ON up.id = c.blocked_by_user_id
       WHERE c.id = {{params.customerId}}::bigint
       GROUP BY c.id, up.display_name
     `,

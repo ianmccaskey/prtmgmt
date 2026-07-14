@@ -12,7 +12,7 @@ export function getCustomerNotes() {
         cn.author_user_id,
         up.display_name AS author_name
       FROM customer_notes cn
-      LEFT JOIN user_profiles up ON up.user_id = cn.author_user_id
+      LEFT JOIN user_profiles up ON up.id = cn.author_user_id
       WHERE cn.customer_id = {{params.customerId}}::bigint
       ORDER BY cn.created_at DESC
     `,
