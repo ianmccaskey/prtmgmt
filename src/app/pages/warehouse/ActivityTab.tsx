@@ -229,10 +229,13 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
             <div><Label>Evidence URL</Label><Input type="url" placeholder="https://…" value={woForm.evidence_url} onChange={e => setWoForm(f => ({ ...f, evidence_url: e.target.value }))} /></div>
             {woBlocked && (
               <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-700 space-y-1">
-                <p className="font-medium">Blocked: this write-off would cut into reserved stock. Release these orders first:</p>
+                <p className="font-medium">Blocked: the write-off couldn't be applied.</p>
                 {woBlocked.length === 0
-                  ? <p>Reserved stock exists but no ledgered orders were found (likely seed data) — adjust via a count correction instead.</p>
-                  : woBlocked.map(o => <p key={o.order_number}>• {o.order_number} — {o.customer_name} ({o.reserved_qty} kits reserved)</p>)}
+                  ? <p>Available stock is lower than requested — the row may have changed since this list loaded (or reserved seed stock has no ledgered orders). Reload the tab; for record-keeping errors use a count correction instead.</p>
+                  : (<>
+                      <p>It would cut into stock reserved for these orders — release them first:</p>
+                      {woBlocked.map(o => <p key={o.order_number}>• {o.order_number} — {o.customer_name} ({o.reserved_qty} kits reserved)</p>)}
+                    </>)}
               </div>
             )}
             <div className="flex justify-end gap-2">

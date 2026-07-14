@@ -51,6 +51,7 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
 
   const [newForm, setNewForm] = useState({ source_warehouse_id: '', destination_warehouse_id: '', product_batch_key: '', quantity: '', notes: '' });
   const [newSaving, setNewSaving] = useState(false);
+  const [newError, setNewError] = useState('');
 
   const [sourceInventory] = useLoadAction(listInventoryAction, [newForm.source_warehouse_id], { warehouse_id: newForm.source_warehouse_id });
   const sourceRows: InventoryRow[] = Array.isArray(sourceInventory) ? sourceInventory : [];
@@ -66,8 +67,10 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
     e.preventDefault();
     if (!selectedInventoryRow) return;
     setNewSaving(true);
-    // Atomic: transfer row + source deduction + activity log in one statement.
-    await createTransfer({
+    setNewError('');
+    // Atomic + guarded: transfer row + source deduction + activity log in one
+    // statement, only when the source still has enough available stock.
+    const res = await createTransfer({
       product_id: selectedInventoryRow.product_id,
       batch_id: selectedInventoryRow.batch_id,
       quantity: parseInt(newForm.quantity),
@@ -75,8 +78,12 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
       destination_warehouse_id: parseInt(newForm.destination_warehouse_id),
       notes: newForm.notes || null,
       user_id: profileId,
-    });
+    }) as unknown[];
     setNewSaving(false);
+    if (!res || res.length === 0) {
+      setNewError('Not enough available stock at the source warehouse — it may have changed since this list loaded.');
+      return;
+    }
     setShowNew(false);
     setNewForm({ source_warehouse_id: '', destination_warehouse_id: '', product_batch_key: '', quantity: '', notes: '' });
     await reload();
@@ -94,7 +101,15 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
     const missing = t.quantity - received;
     if (missing > 0 && !receiveNote.trim()) return; // discrepancy needs a note
     setActionSaving(true);
-    await receiveTransfer({ id: t.id, user_id: profileId, received_quantity: received, notes: receiveNote || null });
+    const res = await receiveTransfer({ id: t.id, user_id: profileId, received_quantity: received, notes: receiveNote || null }) as unknown[];
+    // Guarded receive returned zero rows → transfer was no longer 'initiated'
+    // (double-click / concurrent action); skip the loss write-off too.
+    if ((!res || res.length === 0)) {
+      setActionSaving(false);
+      setShowReceive(null);
+      await reload();
+      return;
+    }
     if (missing > 0 && writeOffMissing) {
       await recordLoss({
         product_id: t.product_id, batch_id: t.batch_id, warehouse_id: t.source_warehouse_id,
@@ -224,6 +239,7 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
               <Label>Notes</Label>
               <Textarea value={newForm.notes} onChange={e => setNewForm(f => ({ ...f, notes: e.target.value }))} rows={2} />
             </div>
+            {newError && <p className="text-sm text-red-600">{newError}</p>}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setShowNew(false)}>Cancel</Button>
               <Button type="submit" disabled={newSaving || !newForm.product_batch_key}>{newSaving ? 'Creating…' : 'Create Transfer'}</Button>

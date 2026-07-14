@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLoadAction } from '@uibakery/data';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,14 +63,25 @@ function ModeIcon({ mode }: { mode: string }) {
 export function LogisticsPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  // Reorder quick-action lands here with pre-populated line items.
-  const prefillItems = (location.state as { prefillItems?: ShipmentPrefillItem[] } | null)?.prefillItems;
+  // Reorder quick-action lands here with pre-populated line items. Capture
+  // once, then scrub the history entry so back-navigation doesn't reopen a
+  // stale prefilled dialog.
+  const [prefillItems] = useState<ShipmentPrefillItem[] | undefined>(
+    () => (location.state as { prefillItems?: ShipmentPrefillItem[] } | null)?.prefillItems
+  );
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [factoryFilter, setFactoryFilter] = useState('');
   const [modeFilter, setModeFilter] = useState('');
   const [searchVal, setSearchVal] = useState('');
   const [showNewDialog, setShowNewDialog] = useState(!!prefillItems?.length);
+
+  useEffect(() => {
+    if ((location.state as { prefillItems?: unknown } | null)?.prefillItems) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [shipments, shipmentsLoading] = useLoadAction(listInboundShipments, [], {
     search, status: statusFilter, factory_id: factoryFilter, mode: modeFilter,
@@ -252,7 +263,7 @@ export function LogisticsPage() {
       {showNewDialog && (
         <NewShipmentDialog
           open={showNewDialog}
-          onClose={() => { setShowNewDialog(false); navigate(location.pathname, { replace: true, state: null }); }}
+          onClose={() => setShowNewDialog(false)}
           onCreated={(id) => navigate(`/logistics/${id}`)}
           prefillItems={prefillItems}
         />
