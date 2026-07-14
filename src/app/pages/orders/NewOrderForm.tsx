@@ -260,6 +260,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [copiedWallet, setCopiedWallet] = useState(false);
   const [newCustOpen, setNewCustOpen] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const [doCreate, creating] = useMutateAction(createOrder);
   const [doItem] = useMutateAction(createOrderItem);
@@ -312,9 +313,12 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   };
 
   const save = async (s: 'draft' | 'confirmed') => {
+    if (saving) return; // guard against double-submit re-creating the order and double-reserving
     const errs = validate(s);
     if (errs.length) { setErrors(errs); return; }
     setErrors([]);
+    setSaving(true);
+    try {
     const res = await doCreate({
       customerId: customer!.id, shipToName: ship.name || customer!.full_name,
       shipAddressLine1: ship.line1, shipAddressLine2: ship.line2 || null,
@@ -334,10 +338,10 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     }
     if (s === 'confirmed') {
       // Confirming reserves stock for warehouse-sourced lines (FIFO across
-      // passed-QC batches). A short reservation is a backorder — the
-      // fulfillment queue surfaces the gap.
+      // passed-QC batches), recorded in the reservation ledger. A short
+      // reservation is a backorder — the fulfillment queue surfaces the gap.
       for (const l of lines.filter(x => x.product && x.fulfillment_source === 'warehouse')) {
-        await doReserve({ product_id: l.product!.id, quantity: l.quantity });
+        await doReserve({ order_id: orderId, product_id: l.product!.id, quantity: l.quantity });
       }
     }
     if (addPay && total > 0 && paySpot && selectedWallet) {
@@ -350,6 +354,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       await doAudit({ orderId, userId: profileId, changeType: 'other', fieldName: 'blocked_override', oldValue: null, newValue: 'confirmed', note: overrideNote });
     }
     onSaved(); onClose(); reset();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const reset = () => {
@@ -611,9 +618,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
           {/* Footer actions */}
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="secondary" onClick={() => save('draft')} disabled={creating}>Save Draft</Button>
+            <Button variant="secondary" onClick={() => save('draft')} disabled={creating || saving}>{saving ? 'Saving…' : 'Save Draft'}</Button>
             {canConfirm ? (
-              <Button onClick={() => save('confirmed')} disabled={creating}>Confirm Order</Button>
+              <Button onClick={() => save('confirmed')} disabled={creating || saving}>{saving ? 'Saving…' : 'Confirm Order'}</Button>
             ) : (
               <TooltipProvider>
                 <Tooltip>

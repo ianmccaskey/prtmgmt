@@ -225,8 +225,8 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
   );
 }
 
-function CancelOrderDialog({ orderId, orderStatus, items, open, onClose, onDone }: {
-  orderId: number; orderStatus: string; items: OrderItem[]; open: boolean; onClose: () => void; onDone: () => void;
+function CancelOrderDialog({ orderId, orderStatus, open, onClose, onDone }: {
+  orderId: number; orderStatus: string; open: boolean; onClose: () => void; onDone: () => void;
 }) {
   const { profileId } = useAppUser();
   const [reason, setReason] = useState('');
@@ -236,13 +236,9 @@ function CancelOrderDialog({ orderId, orderStatus, items, open, onClose, onDone 
 
   const submit = async () => {
     await doUpdate({ orderId, status: 'cancelled', cancellationReason: reason || null });
-    // Cancellation releases the stock reserved at confirm time for warehouse
-    // lines. Draft orders never reserved, so skip them.
-    if (['confirmed', 'in_production', 'partially_shipped'].includes(orderStatus)) {
-      for (const it of items.filter(i => i.fulfillment_source === 'warehouse')) {
-        await doRelease({ product_id: it.product_id, quantity: it.quantity });
-      }
-    }
+    // Cancellation releases everything still in this order's reservation
+    // ledger — exactly the rows it reserved, nobody else's.
+    await doRelease({ order_id: orderId, product_id: null });
     await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: orderStatus, newValue: 'cancelled', note: reason || null });
     onDone(); onClose();
   };
@@ -422,7 +418,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
         </SheetContent>
       </Sheet>
 
-      <CancelOrderDialog orderId={Number(orderId)} orderStatus={String(order?.status ?? '')} items={(items as OrderItem[]) || []} open={cancelOpen} onClose={() => setCancelOpen(false)} onDone={reloadAll} />
+      <CancelOrderDialog orderId={Number(orderId)} orderStatus={String(order?.status ?? '')} open={cancelOpen} onClose={() => setCancelOpen(false)} onDone={reloadAll} />
     </>
   );
 }
