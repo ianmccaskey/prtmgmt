@@ -37,18 +37,20 @@ type ShipmentItem = {
   expected_arrival_date: string | null; received_at: string | null;
   sku: string; product_name: string; batch_number: string; qc_status: string;
   destination_warehouse_name: string;
+  receive_address_id: number | null;
+  receive_address_label: string | null;
+  receive_address_city: string | null;
 };
 type Doc = {
   id: number; doc_type: string; label: string; doc_url: string;
   created_at: string; created_by_name: string;
 };
 
+// Must match the shipments_inbound.status CHECK constraint.
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-gray-100 text-gray-700',
-  with_freight_forwarder: 'bg-blue-100 text-blue-700',
+  freight_forwarder: 'bg-blue-100 text-blue-700',
   in_transit: 'bg-amber-100 text-amber-700',
   delivered: 'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-700',
 };
 const CONDITION_COLORS: Record<string, string> = {
   ok: 'bg-green-100 text-green-700',
@@ -56,10 +58,10 @@ const CONDITION_COLORS: Record<string, string> = {
   short: 'bg-amber-100 text-amber-700',
   mixed: 'bg-purple-100 text-purple-700',
 };
-const ALL_STATUSES = ['pending', 'with_freight_forwarder', 'in_transit', 'delivered', 'cancelled'];
+const ALL_STATUSES = ['freight_forwarder', 'in_transit', 'delivered'];
 const STATUS_LABELS: Record<string, string> = {
-  pending: 'Pending', with_freight_forwarder: 'With Freight Forwarder',
-  in_transit: 'In Transit', delivered: 'Delivered', cancelled: 'Cancelled',
+  freight_forwarder: 'With Freight Forwarder',
+  in_transit: 'In Transit', delivered: 'Delivered',
 };
 
 function ModeIcon({ mode }: { mode: string }) {
@@ -140,7 +142,7 @@ export function ShipmentDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {detail.status !== 'delivered' && detail.status !== 'cancelled' && unreceived.length > 0 && (
+          {detail.status !== 'delivered' && unreceived.length > 0 && (
             <Button onClick={() => setShowReceive(true)} className="flex items-center gap-2">
               <Package className="h-4 w-4" /> Receive Shipment
             </Button>
@@ -236,7 +238,12 @@ export function ShipmentDetailPage() {
                     <div className="text-sm font-mono">{item.batch_number}</div>
                     <Badge variant="outline" className="text-xs">{item.qc_status}</Badge>
                   </TableCell>
-                  <TableCell className="text-sm">{item.destination_warehouse_name}</TableCell>
+                  <TableCell className="text-sm">
+                    {item.destination_warehouse_name}
+                    {item.receive_address_label && (
+                      <div className="text-xs text-gray-400">→ {String(item.receive_address_label)}{item.receive_address_city ? ` (${item.receive_address_city})` : ''}</div>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right font-medium">{item.quantity_shipped}</TableCell>
                   <TableCell className="text-right">
                     {item.quantity_received !== null && item.quantity_received !== undefined ? (

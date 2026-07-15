@@ -10,15 +10,23 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, MapPin } from 'lucide-react';
+import { Plus, MapPin, ChevronDown, ChevronRight, Home } from 'lucide-react';
 import listWarehouses from '@/actions/settings/listWarehouses';
 import createWarehouse from '@/actions/settings/createWarehouse';
 import updateWarehouseActive from '@/actions/settings/updateWarehouseActive';
+import listReceiveAddresses from '@/actions/warehouse/listReceiveAddresses';
+import createReceiveAddress from '@/actions/warehouse/createReceiveAddress';
+import setReceiveAddressActive from '@/actions/warehouse/setReceiveAddressActive';
 
 type Warehouse = {
   id: number; name: string; city: string; state: string; country: string;
   address_line1: string; address_line2: string; postal_code: string;
   notes: string; is_active: boolean;
+};
+type ReceiveAddress = {
+  id: number; warehouse_id: number; label: string;
+  address_line1: string; address_line2: string; city: string; state: string;
+  postal_code: string; country: string; is_active: boolean; notes: string;
 };
 
 export function WarehousesTab() {
@@ -34,11 +42,23 @@ export function WarehousesTab() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Receive addresses (multiple per warehouse; ship-from stays on the warehouse row)
+  const [expandedWh, setExpandedWh] = useState<number | null>(null);
+  const [addAddrFor, setAddAddrFor] = useState<Warehouse | null>(null);
+  const emptyAddr = { label: '', address_line1: '', address_line2: '', city: '', state: '', postal_code: '', country: 'US', notes: '' };
+  const [addrForm, setAddrForm] = useState(emptyAddr);
+  const [addrSaving, setAddrSaving] = useState(false);
+  const [addrError, setAddrError] = useState('');
+
   const [warehouses, , , reload] = useLoadAction(listWarehouses, [], {});
+  const [addresses, , , reloadAddresses] = useLoadAction(listReceiveAddresses, [], {});
   const [doCreate] = useMutateAction(createWarehouse);
   const [doToggle] = useMutateAction(updateWarehouseActive);
+  const [doCreateAddr] = useMutateAction(createReceiveAddress);
+  const [doToggleAddr] = useMutateAction(setReceiveAddressActive);
 
   const list = asRows<Warehouse>(warehouses);
+  const addrList = asRows<ReceiveAddress>(addresses);
 
   const handleAdd = async () => {
     if (!name.trim()) { setError('Name is required.'); return; }
@@ -63,6 +83,43 @@ export function WarehousesTab() {
     reload();
   };
 
+  const handleAddAddress = async () => {
+    if (!addAddrFor) return;
+    if (!addrForm.label.trim() || !addrForm.address_line1.trim()) {
+      setAddrError('Label and address line 1 are required.');
+      return;
+    }
+    setAddrSaving(true); setAddrError('');
+    try {
+      await doCreateAddr({
+        warehouse_id: addAddrFor.id,
+        label: addrForm.label.trim(),
+        address_line1: addrForm.address_line1.trim(),
+        address_line2: addrForm.address_line2 || null,
+        city: addrForm.city || null,
+        state: addrForm.state || null,
+        postal_code: addrForm.postal_code || null,
+        country: addrForm.country || 'US',
+        notes: addrForm.notes || null,
+      });
+      setAddAddrFor(null);
+      setAddrForm(emptyAddr);
+      reloadAddresses();
+    } catch (e: unknown) {
+      setAddrError(e instanceof Error ? e.message : 'Failed to add receive address');
+    } finally {
+      setAddrSaving(false);
+    }
+  };
+
+  const handleToggleAddr = async (id: number, current: boolean) => {
+    await doToggleAddr({ id, is_active: !current });
+    reloadAddresses();
+  };
+
+  const fmtAddr = (a: { address_line1: string; address_line2?: string | null; city?: string | null; state?: string | null; postal_code?: string | null }) =>
+    [a.address_line1, a.address_line2, a.city, a.state, a.postal_code].filter(Boolean).join(', ');
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -72,44 +129,107 @@ export function WarehousesTab() {
             <Plus className="h-3 w-3" /> Add Warehouse
           </Button>
         </div>
+        <p className="text-xs text-gray-400">
+          Each warehouse has one ship-from address; expand a row to manage its receive addresses
+          (inbound shipments from China can be distributed across them).
+        </p>
       </CardHeader>
       <CardContent className="p-0">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8"></TableHead>
               <TableHead>Name</TableHead>
               <TableHead>City</TableHead>
-              <TableHead>State / Country</TableHead>
-              <TableHead>Address</TableHead>
+              <TableHead>Ship-From Address</TableHead>
+              <TableHead className="text-center">Receive Addrs</TableHead>
               <TableHead>Notes</TableHead>
               <TableHead className="text-center">Active</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {list.map(w => (
-              <TableRow key={w.id} className={!w.is_active ? 'opacity-50' : ''}>
-                <TableCell className="font-medium text-sm">{w.name}</TableCell>
-                <TableCell className="text-sm">{w.city || '—'}</TableCell>
-                <TableCell className="text-sm">{[w.state, w.country].filter(Boolean).join(', ') || '—'}</TableCell>
-                <TableCell className="text-sm text-gray-500">{w.address_line1 || '—'}</TableCell>
-                <TableCell className="text-sm text-gray-500 max-w-[160px] truncate">{w.notes || '—'}</TableCell>
-                <TableCell className="text-center">
-                  <Switch checked={!!w.is_active} onCheckedChange={() => handleToggle(w.id, w.is_active)} />
-                </TableCell>
-              </TableRow>
-            ))}
+            {list.map(w => {
+              const whAddrs = addrList.filter(a => a.warehouse_id === w.id);
+              const expanded = expandedWh === w.id;
+              return (
+                <React.Fragment key={w.id}>
+                  <TableRow className={!w.is_active ? 'opacity-50' : ''}>
+                    <TableCell className="cursor-pointer" onClick={() => setExpandedWh(expanded ? null : w.id)}>
+                      {expanded ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+                    </TableCell>
+                    <TableCell className="font-medium text-sm cursor-pointer" onClick={() => setExpandedWh(expanded ? null : w.id)}>{w.name}</TableCell>
+                    <TableCell className="text-sm">{w.city || '—'}</TableCell>
+                    <TableCell className="text-sm text-gray-500">{w.address_line1 || '—'}</TableCell>
+                    <TableCell className="text-center text-sm">
+                      <Badge variant="outline" className="text-xs">{whAddrs.filter(a => a.is_active).length}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-gray-500 max-w-[160px] truncate">{w.notes || '—'}</TableCell>
+                    <TableCell className="text-center">
+                      <Switch checked={!!w.is_active} onCheckedChange={() => handleToggle(w.id, w.is_active)} />
+                    </TableCell>
+                  </TableRow>
+                  {expanded && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="bg-slate-50 p-4">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-xs text-gray-600">
+                            <Home className="h-3 w-3" />
+                            <span className="font-medium">Ship-From:</span>
+                            <span>{fmtAddr(w) || 'No address set'}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Receive Addresses</p>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setAddAddrFor(w); setAddrForm(emptyAddr); setAddrError(''); }}>
+                              <Plus className="h-3 w-3 mr-1" /> Add Receive Address
+                            </Button>
+                          </div>
+                          {whAddrs.length === 0 ? (
+                            <p className="text-xs text-gray-400">None yet — inbound lines default to the ship-from address.</p>
+                          ) : (
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-left text-gray-500">
+                                  <th className="py-1 pr-3 font-medium">Label</th>
+                                  <th className="py-1 pr-3 font-medium">Address</th>
+                                  <th className="py-1 pr-3 font-medium">Notes</th>
+                                  <th className="py-1 font-medium text-center">Active</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {whAddrs.map(a => (
+                                  <tr key={a.id} className={`border-t ${!a.is_active ? 'opacity-50' : ''}`}>
+                                    <td className="py-1.5 pr-3 font-medium">{a.label}</td>
+                                    <td className="py-1.5 pr-3 text-gray-600">{fmtAddr(a)}</td>
+                                    <td className="py-1.5 pr-3 text-gray-500">{a.notes || '—'}</td>
+                                    <td className="py-1.5 text-center">
+                                      <Switch checked={!!a.is_active} onCheckedChange={() => handleToggleAddr(a.id, a.is_active)} />
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
+              );
+            })}
             {list.length === 0 && (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-400">No warehouses</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No warehouses</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
       </CardContent>
 
+      {/* Add Warehouse Dialog */}
       <Dialog open={showAdd} onOpenChange={v => !v && setShowAdd(false)}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Warehouse</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>Name *</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. West Coast Hub" /></div>
+            <p className="text-xs text-gray-400">This address is the warehouse's SHIP-FROM address. Add receive addresses after creating.</p>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Address Line 1</Label><Input value={address1} onChange={e => setAddress1(e.target.value)} /></div>
               <div><Label>Address Line 2</Label><Input value={address2} onChange={e => setAddress2(e.target.value)} /></div>
@@ -124,6 +244,30 @@ export function WarehousesTab() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
             <Button onClick={handleAdd} disabled={saving}>{saving ? 'Saving…' : 'Create'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Receive Address Dialog */}
+      <Dialog open={!!addAddrFor} onOpenChange={v => !v && setAddAddrFor(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Add Receive Address — {addAddrFor?.name}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label>Label *</Label><Input value={addrForm.label} onChange={e => setAddrForm(f => ({ ...f, label: e.target.value }))} placeholder='e.g. "Unit B dock", "PO Box 12"' /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Address Line 1 *</Label><Input value={addrForm.address_line1} onChange={e => setAddrForm(f => ({ ...f, address_line1: e.target.value }))} /></div>
+              <div><Label>Address Line 2</Label><Input value={addrForm.address_line2} onChange={e => setAddrForm(f => ({ ...f, address_line2: e.target.value }))} /></div>
+              <div><Label>City</Label><Input value={addrForm.city} onChange={e => setAddrForm(f => ({ ...f, city: e.target.value }))} /></div>
+              <div><Label>State</Label><Input value={addrForm.state} onChange={e => setAddrForm(f => ({ ...f, state: e.target.value }))} /></div>
+              <div><Label>Postal Code</Label><Input value={addrForm.postal_code} onChange={e => setAddrForm(f => ({ ...f, postal_code: e.target.value }))} /></div>
+              <div><Label>Country</Label><Input value={addrForm.country} onChange={e => setAddrForm(f => ({ ...f, country: e.target.value }))} /></div>
+            </div>
+            <div><Label>Notes</Label><Textarea value={addrForm.notes} onChange={e => setAddrForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></div>
+            {addrError && <p className="text-sm text-red-600">{addrError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddAddrFor(null)}>Cancel</Button>
+            <Button onClick={handleAddAddress} disabled={addrSaving}>{addrSaving ? 'Saving…' : 'Add Address'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

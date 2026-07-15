@@ -15,6 +15,7 @@ import createInboundShipmentItem from '@/actions/logistics/createInboundShipment
 import listProducts from '@/actions/products/listProducts';
 import listBatches from '@/actions/batches/listBatches';
 import listWarehouses from '@/actions/warehouse/listWarehouses';
+import listReceiveAddresses from '@/actions/warehouse/listReceiveAddresses';
 
 type LineItem = {
   key: string;
@@ -23,11 +24,13 @@ type LineItem = {
   destination_warehouse_id: string;
   quantity_shipped: string;
   expected_arrival_date: string;
+  receive_address_id: string;
 };
 type Factory = { id: number; name: string };
 type Product = { id: number; sku: string; name: string };
 type Batch = { id: number; batch_number: string; product_id: number; qc_status: string };
 type Warehouse = { id: number; name: string };
+type ReceiveAddress = { id: number; warehouse_id: number; label: string; address_line1: string; city: string; is_active: boolean };
 
 function newLineKey() { return `line-${Date.now()}-${Math.random()}`; }
 
@@ -57,11 +60,11 @@ export function NewShipmentDialog({ open, onClose, onCreated, prefillItems }: Pr
     prefillItems && prefillItems.length > 0
       ? prefillItems.map(p => ({
           key: newLineKey(), product_id: String(p.product_id), batch_id: '',
-          destination_warehouse_id: '', quantity_shipped: String(p.quantity), expected_arrival_date: '',
+          destination_warehouse_id: '', quantity_shipped: String(p.quantity), expected_arrival_date: '', receive_address_id: '',
         }))
       : [{
           key: newLineKey(), product_id: '', batch_id: '',
-          destination_warehouse_id: '', quantity_shipped: '', expected_arrival_date: '',
+          destination_warehouse_id: '', quantity_shipped: '', expected_arrival_date: '', receive_address_id: '',
         }]
   );
   const [saving, setSaving] = useState(false);
@@ -71,6 +74,7 @@ export function NewShipmentDialog({ open, onClose, onCreated, prefillItems }: Pr
   const [products] = useLoadAction(listProducts, [], {});
   const [allBatches] = useLoadAction(listBatches, [], {});
   const [warehouses] = useLoadAction(listWarehouses, [], {});
+  const [receiveAddresses] = useLoadAction(listReceiveAddresses, [], {});
 
   const [createShipment] = useMutateAction(createInboundShipment);
   const [createItem] = useMutateAction(createInboundShipmentItem);
@@ -79,10 +83,13 @@ export function NewShipmentDialog({ open, onClose, onCreated, prefillItems }: Pr
   const productList = asRows<Product>(products);
   const batchList = asRows<Batch>(allBatches);
   const warehouseList = asRows<Warehouse>(warehouses);
+  const addressList = asRows<ReceiveAddress>(receiveAddresses);
+  const addressesForWarehouse = (warehouseId: string) =>
+    addressList.filter(a => String(a.warehouse_id) === warehouseId && a.is_active);
 
   const addLine = () => setLines(prev => [...prev, {
     key: newLineKey(), product_id: '', batch_id: '',
-    destination_warehouse_id: '', quantity_shipped: '', expected_arrival_date: '',
+    destination_warehouse_id: '', quantity_shipped: '', expected_arrival_date: '', receive_address_id: '',
   }]);
 
   const removeLine = (key: string) => setLines(prev => prev.filter(l => l.key !== key));
@@ -126,6 +133,7 @@ export function NewShipmentDialog({ open, onClose, onCreated, prefillItems }: Pr
           destination_warehouse_id: Number(line.destination_warehouse_id),
           quantity_shipped: Number(line.quantity_shipped),
           expected_arrival_date: line.expected_arrival_date || null,
+          receive_address_id: line.receive_address_id ? Number(line.receive_address_id) : null,
         });
       }
       onCreated(shipmentId);
@@ -265,11 +273,30 @@ export function NewShipmentDialog({ open, onClose, onCreated, prefillItems }: Pr
                       </div>
                       <div>
                         <Label className="text-xs">Destination Warehouse *</Label>
-                        <Select value={line.destination_warehouse_id} onValueChange={v => updateLine(line.key, 'destination_warehouse_id', v)}>
+                        <Select value={line.destination_warehouse_id} onValueChange={v => {
+                          updateLine(line.key, 'destination_warehouse_id', v);
+                          updateLine(line.key, 'receive_address_id', '');
+                        }}>
                           <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select warehouse" /></SelectTrigger>
                           <SelectContent>
                             {warehouseList.map((w: Warehouse) => (
                               <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Receive Address</Label>
+                        <Select
+                          value={line.receive_address_id || '_main'}
+                          onValueChange={v => updateLine(line.key, 'receive_address_id', v === '_main' ? '' : v)}
+                          disabled={!line.destination_warehouse_id}
+                        >
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Main (ship-from)" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_main">Main (ship-from address)</SelectItem>
+                            {addressesForWarehouse(line.destination_warehouse_id).map(a => (
+                              <SelectItem key={a.id} value={String(a.id)}>{a.label} — {a.address_line1}{a.city ? `, ${a.city}` : ''}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
