@@ -71,11 +71,12 @@ function mkLine(): LineItem {
   return { key: Math.random().toString(36).slice(2), product: null, quantity: 1, unit_price: 0, fulfillment_source: 'warehouse', price_mode: 'list', preferred_batch_id: null };
 }
 
-function CustomerCombo({ onSelect }: { onSelect: (c: Customer) => void }) {
+function CustomerCombo({ onSelect, onCreateNew }: { onSelect: (c: Customer) => void; onCreateNew: (name: string) => void }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const [res, , , reload] = useLoadAction(searchCustomers, [], { q }, { enabled: false });
   useEffect(() => { if (q.length >= 2) reload(); }, [q]);
+  const canCreate = q.trim().length >= 2;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -84,12 +85,12 @@ function CustomerCombo({ onSelect }: { onSelect: (c: Customer) => void }) {
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[420px] p-0" align="start">
-        <Command>
+        <Command shouldFilter={false}>
           <CommandInput placeholder="Type to search…" value={q} onValueChange={setQ} />
           <CommandList>
-            <CommandEmpty>No customers found.</CommandEmpty>
+            <CommandEmpty>{q.length < 2 ? 'Type at least 2 characters…' : 'No customers found.'}</CommandEmpty>
             <CommandGroup>
-              {rows<Customer>(res).map(c => (
+              {(q.length >= 2 ? rows<Customer>(res) : []).map(c => (
                 <CommandItem key={c.id} onSelect={() => { onSelect(c); setOpen(false); setQ(''); }}>
                   <div className="flex flex-col">
                     <span className="font-medium">{c.full_name}</span>
@@ -98,6 +99,14 @@ function CustomerCombo({ onSelect }: { onSelect: (c: Customer) => void }) {
                 </CommandItem>
               ))}
             </CommandGroup>
+            {canCreate && (
+              <CommandGroup>
+                <CommandItem value={`__create__${q}`} onSelect={() => { onCreateNew(q.trim()); setOpen(false); setQ(''); }}>
+                  <Plus className="h-3.5 w-3.5 mr-2 text-blue-600" />
+                  <span className="text-blue-600">Create new customer “{q.trim()}”</span>
+                </CommandItem>
+              </CommandGroup>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>
@@ -154,11 +163,16 @@ function ProductCombo({ onAdd }: { onAdd: (p: Product) => void }) {
   );
 }
 
-function NewCustomerDialog({ open, onClose, onCreated }: {
-  open: boolean; onClose: () => void; onCreated: (c: Customer) => void;
+function NewCustomerDialog({ open, onClose, onCreated, initialName }: {
+  open: boolean; onClose: () => void; onCreated: (c: Customer) => void; initialName?: string;
 }) {
   const initForm = { full_name: '', email: '', phone: '', preferred_channel: 'telegram', channel_handle: '', ship_address_line1: '', ship_address_line2: '', ship_city: '', ship_state: '', ship_postal_code: '', ship_country: 'US', is_vip: false, notes: '' };
   const [form, setForm] = useState(initForm);
+  // Prefill the name typed into the customer search when opened from the
+  // dropdown's "Create new customer" entry.
+  useEffect(() => {
+    if (open && initialName) setForm(f => (f.full_name ? f : { ...f, full_name: initialName }));
+  }, [open, initialName]);
   const [dupOpen, setDupOpen] = useState(false);
   const [dups, setDups] = useState<Customer[]>([]);
   const [error, setError] = useState('');
@@ -275,6 +289,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [addPay, setAddPay] = useState(false);
   const [copiedWallet, setCopiedWallet] = useState(false);
   const [newCustOpen, setNewCustOpen] = useState(false);
+  const [newCustName, setNewCustName] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [blanketPct, setBlanketPct] = useState('');
@@ -456,8 +471,8 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               </div>
             ) : (
               <div className="space-y-2">
-                <CustomerCombo onSelect={pickCustomer} />
-                <Button variant="outline" size="sm" className="w-full" onClick={() => setNewCustOpen(true)}>
+                <CustomerCombo onSelect={pickCustomer} onCreateNew={name => { setNewCustName(name); setNewCustOpen(true); }} />
+                <Button variant="outline" size="sm" className="w-full" onClick={() => { setNewCustName(''); setNewCustOpen(true); }}>
                   <Plus className="h-3 w-3 mr-1" /> Create New Customer
                 </Button>
               </div>
@@ -708,7 +723,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
         </SheetContent>
       </Sheet>
 
-      <NewCustomerDialog open={newCustOpen} onClose={() => setNewCustOpen(false)} onCreated={c => { pickCustomer(c); setNewCustOpen(false); }} />
+      <NewCustomerDialog open={newCustOpen} initialName={newCustName} onClose={() => setNewCustOpen(false)} onCreated={c => { pickCustomer(c); setNewCustOpen(false); }} />
     </>
   );
 }
