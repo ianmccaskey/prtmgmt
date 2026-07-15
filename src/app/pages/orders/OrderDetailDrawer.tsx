@@ -91,7 +91,7 @@ function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; rel
               {String(p.verification_status)}
             </Badge>
           </div>
-          <p className="text-muted-foreground">{Number(p.amount_asset).toFixed(6)} {String(p.asset)} · ${Number(p.amount_usd).toFixed(2)}</p>
+          <p className="text-muted-foreground">{p.amount_asset != null ? `${Number(p.amount_asset).toFixed(6)} ${String(p.asset)} · ` : ''}${Number(p.amount_usd).toFixed(2)}</p>
           {p.tx_hash && <p className="text-xs text-muted-foreground break-all">TX: {String(p.tx_hash)}</p>}
           {p.issue_type && <p className="text-xs text-red-600">Issue: {String(p.issue_type)} — {String(p.issue_notes)}</p>}
           <div className="flex gap-2 pt-1">

@@ -36,13 +36,15 @@ function StatChip({ label, value, highlight }: { label: string; value: string; h
 }
 
 const ASSETS = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
+// Network values must match the order_payments.network CHECK constraint.
 const NETWORKS: Record<string, string[]> = {
-  USDC: ['ETH', 'SOL'], USDT: ['ETH', 'SOL'], ETH: ['ETH'], SOL: ['SOL'], BTC: ['BTC'],
+  USDC: ['ethereum', 'solana'], USDT: ['ethereum', 'solana'], ETH: ['ethereum'], SOL: ['solana'], BTC: ['bitcoin'],
 };
+const NETWORK_LABELS: Record<string, string> = { ethereum: 'Ethereum', solana: 'Solana', bitcoin: 'Bitcoin' };
 
 function MarkSentDrawer({ task, open, onClose, onDone }: { task: RefundTask | null; open: boolean; onClose: () => void; onDone: () => void }) {
   const [asset, setAsset] = useState('USDC');
-  const [network, setNetwork] = useState('ETH');
+  const [network, setNetwork] = useState('ethereum');
   const [spot, setSpot] = useState('');
   const [amountAssetStr, setAmountAssetStr] = useState('');
   const [txHash, setTxHash] = useState('');
@@ -55,7 +57,7 @@ function MarkSentDrawer({ task, open, onClose, onDone }: { task: RefundTask | nu
     if (!task) return;
     await doSend({ taskId: task.id, asset, network, spotRateUsd: Number(spot), amountAsset: Number(amountAssetStr || computedAmountAsset), amountUsd, txHash });
     onDone(); onClose();
-    setAsset('USDC'); setNetwork('ETH'); setSpot(''); setAmountAssetStr(''); setTxHash('');
+    setAsset('USDC'); setNetwork('ethereum'); setSpot(''); setAmountAssetStr(''); setTxHash('');
   };
 
   return (
@@ -84,7 +86,7 @@ function MarkSentDrawer({ task, open, onClose, onDone }: { task: RefundTask | nu
               <Label>Network</Label>
               <Select value={network} onValueChange={setNetwork}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{(NETWORKS[asset] || []).map(n => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
+                <SelectContent>{(NETWORKS[asset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
