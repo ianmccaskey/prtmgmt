@@ -12,7 +12,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge, PaymentBadge, SourceBadges, ChannelBadge } from './OrderBadges';
 import { AlertTriangle, Check, Crown, Flag, Plus, RefreshCw, Package, Truck } from 'lucide-react';
@@ -335,8 +334,11 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
     <>
       <Sheet open={open} onOpenChange={v => !v && onClose()}>
         <SheetContent className="w-full sm:max-w-2xl p-0" side="right">
-          <ScrollArea className="h-full">
-            <div className="p-6 space-y-4">
+          {/* Native scroll instead of Radix ScrollArea: its display:table
+              viewport lets content exceed the sheet width and clip on
+              mobile; overflow-x-hidden + break-words keep everything inside. */}
+          <div className="h-full overflow-y-auto overflow-x-hidden">
+            <div className="p-4 sm:p-6 space-y-4 break-words">
               {detailLoading ? (
                 <div className="space-y-2"><Skeleton className="h-6 w-40" /><Skeleton className="h-4 w-64" /></div>
               ) : order ? (
@@ -353,7 +355,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       <span className="text-sm font-medium">{String(order.customer_name)}</span>
                       {order.is_vip && <Badge className="bg-yellow-100 text-yellow-700 border-yellow-300 text-xs px-1"><Crown className="h-3 w-3 mr-0.5 inline" />VIP</Badge>}
                     </div>
-                    <p className="text-sm text-muted-foreground">{String(order.customer_email || '')} · {String(order.customer_phone || '')}</p>
+                    <p className="text-sm text-muted-foreground break-all">{String(order.customer_email || '')} · {String(order.customer_phone || '')}</p>
                     <p className="text-sm font-semibold">Total: ${Number(order.total_usd).toFixed(2)}</p>
                     <div className="flex items-center gap-2 mt-1 text-sm">
                       <span className="text-muted-foreground">Sales Rep:</span>
@@ -393,9 +395,9 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                         )}
                       </div>
                       {shipmentList.map(s => (
-                        <div key={String(s.id)} className="flex items-center justify-between text-sm">
-                          <span className="text-blue-900">
-                            {String(s.carrier || '—')} · <span className="font-mono font-medium">{String(s.tracking_number || 'no tracking')}</span>
+                        <div key={String(s.id)} className="flex items-center justify-between gap-2 flex-wrap text-sm">
+                          <span className="text-blue-900 min-w-0">
+                            {String(s.carrier || '—')} · <span className="font-mono font-medium break-all">{String(s.tracking_number || 'no tracking')}</span>
                             <span className="text-xs text-blue-600 ml-1.5">({String(s.origin) === 'china' ? 'China' : String(s.warehouse_name || 'Warehouse')})</span>
                           </span>
                           {s.tracking_number != null && (
@@ -427,12 +429,12 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                   <Separator />
 
                   <Tabs defaultValue="items">
-                    <TabsList className="w-full">
-                      <TabsTrigger value="items" className="flex-1">Items</TabsTrigger>
-                      <TabsTrigger value="payments" className="flex-1">Payments</TabsTrigger>
-                      <TabsTrigger value="shipments" className="flex-1">Shipments</TabsTrigger>
-                      <TabsTrigger value="notes" className="flex-1">Notes</TabsTrigger>
-                      {isAdmin && <TabsTrigger value="audit" className="flex-1">Audit Log</TabsTrigger>}
+                    <TabsList className="flex h-auto w-full flex-wrap">
+                      <TabsTrigger value="items" className="flex-1 min-w-[26%] sm:min-w-0">Items</TabsTrigger>
+                      <TabsTrigger value="payments" className="flex-1 min-w-[26%] sm:min-w-0">Payments</TabsTrigger>
+                      <TabsTrigger value="shipments" className="flex-1 min-w-[26%] sm:min-w-0">Shipments</TabsTrigger>
+                      <TabsTrigger value="notes" className="flex-1 min-w-[26%] sm:min-w-0">Notes</TabsTrigger>
+                      {isAdmin && <TabsTrigger value="audit" className="flex-1 min-w-[26%] sm:min-w-0">Audit Log</TabsTrigger>}
                     </TabsList>
 
                     <TabsContent value="items" className="pt-3">
@@ -500,7 +502,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                 </>
               ) : null}
             </div>
-          </ScrollArea>
+          </div>
         </SheetContent>
       </Sheet>
 

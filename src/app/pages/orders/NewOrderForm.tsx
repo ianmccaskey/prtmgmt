@@ -444,7 +444,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   return (
     <>
       <Sheet open={open} onOpenChange={v => !v && onClose()}>
-        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-6" side="right">
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto overflow-x-hidden p-4 sm:p-6 break-words" side="right">
           <SheetHeader className="mb-4">
             <SheetTitle>New Order</SheetTitle>
             <p className="text-sm text-muted-foreground">Order #: auto-generated · By: <span className="font-medium">{displayName}</span></p>
