@@ -19,12 +19,12 @@ import createReceiveAddress from '@/actions/warehouse/createReceiveAddress';
 import setReceiveAddressActive from '@/actions/warehouse/setReceiveAddressActive';
 
 type Warehouse = {
-  id: number; name: string; city: string; state: string; country: string;
+  id: number; name: string; ship_from_name: string | null; city: string; state: string; country: string;
   address_line1: string; address_line2: string; postal_code: string;
   notes: string; is_active: boolean;
 };
 type ReceiveAddress = {
-  id: number; warehouse_id: number; label: string;
+  id: number; warehouse_id: number; label: string; address_name: string | null;
   address_line1: string; address_line2: string; city: string; state: string;
   postal_code: string; country: string; is_active: boolean; notes: string;
 };
@@ -32,6 +32,7 @@ type ReceiveAddress = {
 export function WarehousesTab() {
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
+  const [shipFromName, setShipFromName] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [country, setCountry] = useState('');
@@ -45,7 +46,7 @@ export function WarehousesTab() {
   // Receive addresses (multiple per warehouse; ship-from stays on the warehouse row)
   const [expandedWh, setExpandedWh] = useState<number | null>(null);
   const [addAddrFor, setAddAddrFor] = useState<Warehouse | null>(null);
-  const emptyAddr = { label: '', address_line1: '', address_line2: '', city: '', state: '', postal_code: '', country: 'US', notes: '' };
+  const emptyAddr = { label: '', address_name: '', address_line1: '', address_line2: '', city: '', state: '', postal_code: '', country: 'US', notes: '' };
   const [addrForm, setAddrForm] = useState(emptyAddr);
   const [addrSaving, setAddrSaving] = useState(false);
   const [addrError, setAddrError] = useState('');
@@ -66,9 +67,9 @@ export function WarehousesTab() {
     if (dup) { setError('A warehouse with this name already exists.'); return; }
     setSaving(true); setError('');
     try {
-      await doCreate({ name: name.trim(), city: city || null, state: state || null, country: country || null, address_line1: address1 || null, address_line2: address2 || null, postal_code: postal || null, notes: notes || null });
+      await doCreate({ name: name.trim(), ship_from_name: shipFromName.trim() || null, city: city || null, state: state || null, country: country || null, address_line1: address1 || null, address_line2: address2 || null, postal_code: postal || null, notes: notes || null });
       setShowAdd(false);
-      setName(''); setCity(''); setState(''); setCountry('');
+      setName(''); setShipFromName(''); setCity(''); setState(''); setCountry('');
       setAddress1(''); setAddress2(''); setPostal(''); setNotes('');
       reload();
     } catch (e: unknown) {
@@ -94,6 +95,7 @@ export function WarehousesTab() {
       await doCreateAddr({
         warehouse_id: addAddrFor.id,
         label: addrForm.label.trim(),
+        address_name: addrForm.address_name.trim() || null,
         address_line1: addrForm.address_line1.trim(),
         address_line2: addrForm.address_line2 || null,
         city: addrForm.city || null,
@@ -117,8 +119,8 @@ export function WarehousesTab() {
     reloadAddresses();
   };
 
-  const fmtAddr = (a: { address_line1: string; address_line2?: string | null; city?: string | null; state?: string | null; postal_code?: string | null }) =>
-    [a.address_line1, a.address_line2, a.city, a.state, a.postal_code].filter(Boolean).join(', ');
+  const fmtAddr = (a: { address_line1: string; address_line2?: string | null; city?: string | null; state?: string | null; postal_code?: string | null }, nameLine?: string | null) =>
+    [nameLine, a.address_line1, a.address_line2, a.city, a.state, a.postal_code].filter(Boolean).join(', ');
 
   return (
     <Card>
@@ -175,7 +177,7 @@ export function WarehousesTab() {
                           <div className="flex items-center gap-2 text-xs text-gray-600">
                             <Home className="h-3 w-3" />
                             <span className="font-medium">Ship-From:</span>
-                            <span>{fmtAddr(w) || 'No address set'}</span>
+                            <span>{fmtAddr(w, w.ship_from_name) || 'No address set'}</span>
                           </div>
                           <div className="flex items-center justify-between">
                             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Receive Addresses</p>
@@ -199,7 +201,7 @@ export function WarehousesTab() {
                                 {whAddrs.map(a => (
                                   <tr key={a.id} className={`border-t ${!a.is_active ? 'opacity-50' : ''}`}>
                                     <td className="py-1.5 pr-3 font-medium">{a.label}</td>
-                                    <td className="py-1.5 pr-3 text-gray-600">{fmtAddr(a)}</td>
+                                    <td className="py-1.5 pr-3 text-gray-600">{fmtAddr(a, a.address_name)}</td>
                                     <td className="py-1.5 pr-3 text-gray-500">{a.notes || '—'}</td>
                                     <td className="py-1.5 text-center">
                                       <Switch checked={!!a.is_active} onCheckedChange={() => handleToggleAddr(a.id, a.is_active)} />
@@ -230,6 +232,7 @@ export function WarehousesTab() {
           <div className="space-y-3">
             <div><Label>Name *</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. West Coast Hub" /></div>
             <p className="text-xs text-gray-400">This address is the warehouse's SHIP-FROM address. Add receive addresses after creating.</p>
+            <div><Label>Ship-From Name Line</Label><Input value={shipFromName} onChange={e => setShipFromName(e.target.value)} placeholder='e.g. "SND Fulfillment" — appears as the first address line' /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Address Line 1</Label><Input value={address1} onChange={e => setAddress1(e.target.value)} /></div>
               <div><Label>Address Line 2</Label><Input value={address2} onChange={e => setAddress2(e.target.value)} /></div>
@@ -254,6 +257,7 @@ export function WarehousesTab() {
           <DialogHeader><DialogTitle>Add Receive Address — {addAddrFor?.name}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>Label *</Label><Input value={addrForm.label} onChange={e => setAddrForm(f => ({ ...f, label: e.target.value }))} placeholder='e.g. "Unit B dock", "PO Box 12"' /></div>
+            <div><Label>Name Line</Label><Input value={addrForm.address_name} onChange={e => setAddrForm(f => ({ ...f, address_name: e.target.value }))} placeholder='e.g. "SND Fulfillment" — the recipient line on the label' /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Address Line 1 *</Label><Input value={addrForm.address_line1} onChange={e => setAddrForm(f => ({ ...f, address_line1: e.target.value }))} /></div>
               <div><Label>Address Line 2</Label><Input value={addrForm.address_line2} onChange={e => setAddrForm(f => ({ ...f, address_line2: e.target.value }))} /></div>

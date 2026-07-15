@@ -14,6 +14,7 @@ function listShipmentItems() {
         w.name AS destination_warehouse_name,
         sii.receive_address_id,
         ra.label AS receive_address_label,
+        ra.address_name AS receive_address_name,
         ra.address_line1 AS receive_address_line1,
         ra.city AS receive_address_city
       FROM shipments_inbound_items sii

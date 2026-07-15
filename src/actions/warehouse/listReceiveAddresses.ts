@@ -5,7 +5,7 @@ function listReceiveAddresses() {
   return action('listReceiveAddresses', 'SQL', {
     datasourceName: 'Peptide Ops DB',
     query: `
-      SELECT ra.id, ra.warehouse_id, ra.label, ra.address_line1, ra.address_line2,
+      SELECT ra.id, ra.warehouse_id, ra.label, ra.address_name, ra.address_line1, ra.address_line2,
              ra.city, ra.state, ra.postal_code, ra.country, ra.is_active, ra.notes,
              w.name AS warehouse_name
       FROM warehouse_receive_addresses ra

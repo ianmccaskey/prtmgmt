@@ -39,6 +39,7 @@ type ShipmentItem = {
   destination_warehouse_name: string;
   receive_address_id: number | null;
   receive_address_label: string | null;
+  receive_address_name: string | null;
   receive_address_city: string | null;
 };
 type Doc = {
@@ -241,7 +242,7 @@ export function ShipmentDetailPage() {
                   <TableCell className="text-sm">
                     {item.destination_warehouse_name}
                     {item.receive_address_label && (
-                      <div className="text-xs text-gray-400">→ {String(item.receive_address_label)}{item.receive_address_city ? ` (${item.receive_address_city})` : ''}</div>
+                      <div className="text-xs text-gray-400">→ {String(item.receive_address_label)}{item.receive_address_name ? ` · ${item.receive_address_name}` : ''}{item.receive_address_city ? ` (${item.receive_address_city})` : ''}</div>
                     )}
                   </TableCell>
                   <TableCell className="text-right font-medium">{item.quantity_shipped}</TableCell>
