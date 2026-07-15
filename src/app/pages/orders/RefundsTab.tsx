@@ -147,7 +147,7 @@ export function RefundsTab() {
   return (
     <div className="space-y-4">
       {/* Mini stats */}
-      <div className="flex items-center bg-muted/30 border border-border/60 rounded-lg overflow-x-auto">
+      <div className="flex flex-wrap items-center bg-muted/30 border border-border/60 rounded-lg">
         <StatChip label="Owed Count" value={statRow?.owed_count ?? '0'} />
         <StatChip label="Owed (USD)" value={`$${Number(statRow?.owed_usd ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
         <StatChip label="Overdue" value={statRow?.overdue_count ?? '0'} highlight={Number(statRow?.overdue_count) > 0} />

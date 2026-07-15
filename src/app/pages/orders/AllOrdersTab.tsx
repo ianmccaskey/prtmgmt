@@ -71,34 +71,36 @@ export function AllOrdersTab() {
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
+      {/* Filters — single row on desktop, stacked search + 2-col grid on mobile */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+        <div className="relative w-full sm:flex-1 sm:min-w-[200px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search order#, customer, email…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="All statuses" /></SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s || 'All statuses'}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={paymentFilter} onValueChange={setPaymentFilter}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Payment status" /></SelectTrigger>
-          <SelectContent>
-            {PAYMENT_OPTIONS.map(s => <SelectItem key={s} value={s}>{s || 'All payments'}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={channelFilter} onValueChange={setChannelFilter}>
-          <SelectTrigger className="w-[130px]"><SelectValue placeholder="Channel" /></SelectTrigger>
-          <SelectContent>
-            {CHANNEL_OPTIONS.map(c => <SelectItem key={c} value={c} className="capitalize">{c || 'All channels'}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-[140px]" />
-        <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-[140px]" />
+        <div className="grid grid-cols-2 gap-2 sm:contents">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="All statuses" /></SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s || 'All statuses'}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+            <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="Payment status" /></SelectTrigger>
+            <SelectContent>
+              {PAYMENT_OPTIONS.map(s => <SelectItem key={s} value={s}>{s || 'All payments'}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={channelFilter} onValueChange={setChannelFilter}>
+            <SelectTrigger className="w-full sm:w-[130px]"><SelectValue placeholder="Channel" /></SelectTrigger>
+            <SelectContent>
+              {CHANNEL_OPTIONS.map(c => <SelectItem key={c} value={c} className="capitalize">{c || 'All channels'}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full sm:w-[140px]" />
+          <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full sm:w-[140px] col-span-2 sm:col-span-1" />
+        </div>
         {!isWarehouse && (
-          <Button onClick={() => setNewOrderOpen(true)}>
+          <Button className="w-full sm:w-auto" onClick={() => setNewOrderOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> New Order
           </Button>
         )}
@@ -112,11 +114,11 @@ export function AllOrdersTab() {
               <tr>
                 <th className="text-left p-3 font-medium">Order #</th>
                 <th className="text-left p-3 font-medium">Customer</th>
-                <th className="text-left p-3 font-medium">Date</th>
+                <th className="text-left p-3 font-medium hidden md:table-cell">Date</th>
                 <th className="text-left p-3 font-medium">Status</th>
-                <th className="text-left p-3 font-medium">Payment</th>
-                <th className="text-left p-3 font-medium">Source</th>
-                <th className="text-left p-3 font-medium">Channel</th>
+                <th className="text-left p-3 font-medium hidden sm:table-cell">Payment</th>
+                <th className="text-left p-3 font-medium hidden lg:table-cell">Source</th>
+                <th className="text-left p-3 font-medium hidden lg:table-cell">Channel</th>
                 <th className="text-right p-3 font-medium">Total</th>
               </tr>
             </thead>
@@ -143,7 +145,7 @@ export function AllOrdersTab() {
                       </div>
                       {order.customer_handle && <p className="text-xs text-muted-foreground">{order.customer_handle}</p>}
                     </td>
-                    <td className="p-3 text-muted-foreground text-xs whitespace-nowrap">{new Date(order.order_date).toLocaleDateString()}</td>
+                    <td className="p-3 text-muted-foreground text-xs whitespace-nowrap hidden md:table-cell">{new Date(order.order_date).toLocaleDateString()}</td>
                     <td className="p-3" onClick={e => e.stopPropagation()}>
                       {!isWarehouse && INLINE_NEXT[order.status] ? (
                         <Select value={order.status} onValueChange={v => v !== order.status && inlineStatusChange(order, v)}>
@@ -161,14 +163,14 @@ export function AllOrdersTab() {
                         <StatusBadge status={order.status} />
                       )}
                     </td>
-                    <td className="p-3"><PaymentBadge status={order.payment_status} /></td>
-                    <td className="p-3">
+                    <td className="p-3 hidden sm:table-cell"><PaymentBadge status={order.payment_status} /></td>
+                    <td className="p-3 hidden lg:table-cell">
                       <div className="flex items-center gap-1">
                         <SourceBadges hasWarehouse={order.has_warehouse_lines} hasChina={order.has_china_lines} />
                         {order.is_free_order && <FreeBadge reason={order.free_order_reason_label} />}
                       </div>
                     </td>
-                    <td className="p-3"><ChannelBadge channel={order.order_channel} /></td>
+                    <td className="p-3 hidden lg:table-cell"><ChannelBadge channel={order.order_channel} /></td>
                     <td className="p-3 text-right font-medium">${Number(order.total_usd).toFixed(2)}</td>
                   </tr>
                 ))

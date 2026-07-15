@@ -13,8 +13,8 @@ type StatStripRow = {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col px-4 py-2 border-r border-border/60 last:border-0 min-w-0">
-      <span className="text-xs text-muted-foreground whitespace-nowrap">{label}</span>
+    <div className="flex flex-col px-4 py-2 min-w-0 bg-background">
+      <span className="text-xs text-muted-foreground truncate">{label}</span>
       <span className="text-sm font-semibold text-foreground mt-0.5">{value}</span>
     </div>
   );
@@ -31,7 +31,7 @@ export function OrdersStatStrip() {
   const fmt = (v: string) => v ?? '0';
 
   return (
-    <div className="flex items-center bg-muted/30 border border-border/60 rounded-lg overflow-x-auto">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px bg-border/60 border border-border/60 rounded-lg overflow-hidden">
       <Stat label="Confirmed" value={fmt(data.confirmed_count)} />
       <Stat label="In Production" value={fmt(data.in_production_count)} />
       <Stat label="Shipped (Month)" value={fmt(data.shipped_this_month)} />

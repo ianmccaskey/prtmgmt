@@ -11,7 +11,7 @@ export function OrdersPage() {
   // China-Direct and Refunds queues are hidden for warehouse users.
   const { isWarehouse } = useAppUser();
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 p-4 sm:p-6">
       <div>
         <h1 className="text-xl font-semibold">Sales Orders</h1>
         <p className="text-sm text-muted-foreground">Manage orders, track payments, and fulfill shipments</p>
@@ -20,7 +20,7 @@ export function OrdersPage() {
       <OrdersStatStrip />
 
       <Tabs defaultValue="all">
-        <TabsList>
+        <TabsList className="flex h-auto w-full flex-wrap justify-start sm:w-auto">
           <TabsTrigger value="all">All Orders</TabsTrigger>
           {!isWarehouse && <TabsTrigger value="china">China-Direct Queue</TabsTrigger>}
           {!isWarehouse && <TabsTrigger value="refunds">Refunds Queue</TabsTrigger>}
