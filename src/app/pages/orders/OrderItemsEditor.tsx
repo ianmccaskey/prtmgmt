@@ -27,6 +27,7 @@ export type OrderItemRow = {
   product_name: string; product_sku: string;
   available_warehouse: boolean; available_china_direct: boolean;
   is_shipped: boolean;
+  preferred_batch_id: number | null; preferred_batch_number: string | null;
 };
 export type AllocationRow = {
   id: number; sales_order_item_id: number; quantity: number;
@@ -193,7 +194,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     const price = addPrice !== '' ? Math.max(0, parseFloat(addPrice) || 0) : Number(p.list_price);
     const source = p.available_warehouse && Number(p.available_stock) >= qty ? 'warehouse' : 'china_direct';
     setBusy(true); setError('');
-    await doCreateItem({ orderId, productId: p.id, quantity: qty, unitPriceUsd: price, lineTotalUsd: qty * price, fulfillmentSource: source });
+    await doCreateItem({ orderId, productId: p.id, quantity: qty, unitPriceUsd: price, lineTotalUsd: qty * price, fulfillmentSource: source, preferredBatchId: null });
     if (source === 'warehouse' && orderStatusConfirmedPlus) {
       await doReserve({ order_id: orderId, product_id: p.id, quantity: qty });
     }
@@ -281,6 +282,11 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
               <Badge variant="outline" className={`text-xs px-1 py-0 ${item.fulfillment_source === 'warehouse' ? 'text-blue-600 border-blue-200' : 'text-purple-600 border-purple-200'}`}>
                 {item.fulfillment_source === 'warehouse' ? 'Warehouse' : 'China Direct'}
               </Badge>
+              {item.preferred_batch_number && (
+                <Badge variant="outline" className="text-xs px-1 py-0 text-teal-600 border-teal-200">
+                  Batch {item.preferred_batch_number}
+                </Badge>
+              )}
               {itemAllocs.map(a => (
                 <span key={a.id} className="text-xs text-muted-foreground bg-slate-50 rounded px-1.5 py-0.5">
                   {a.quantity}× {a.batch_number} @ {a.warehouse_name}{Number(a.quantity_shipped) > 0 ? ` (${a.quantity_shipped} shipped)` : ''}

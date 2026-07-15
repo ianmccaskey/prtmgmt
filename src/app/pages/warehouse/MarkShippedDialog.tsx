@@ -66,15 +66,21 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Default FIFO allocation: for each line, walk candidate rows oldest-batch
-  // first, taking free stock + this order's reservations until covered.
+  // Default allocation: rows holding this order's own reservations come
+  // first (a rep-pinned batch reserves against that batch, so pinning flows
+  // through to here), then remaining rows FIFO oldest-batch first — the
+  // stable sort preserves FIFO order within each group.
   useEffect(() => {
     if (stockLoading || allocs.length > 0) return;
     const next: AllocRow[] = [];
     const usedByRow: Record<number, number> = {};
     for (const it of order.items) {
       let remaining = itemRemaining(it);
-      for (const r of stock.filter(s => s.product_id === it.product_id)) {
+      const candidates = stock
+        .filter(s => s.product_id === it.product_id)
+        .slice()
+        .sort((a, b) => (Number(b.order_reserved) > 0 ? 1 : 0) - (Number(a.order_reserved) > 0 ? 1 : 0));
+      for (const r of candidates) {
         if (remaining <= 0) break;
         const usable = rowUsable(r) - (usedByRow[r.inventory_id] || 0);
         if (usable <= 0) continue;

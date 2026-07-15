@@ -11,13 +11,13 @@ export function searchProducts() {
       LEFT JOIN inventory i ON i.product_id = p.id
       WHERE p.is_active = true
         AND (
-          COALESCE(params.q, '') = ''
+          COALESCE({{params.q}}, '') = ''
           OR p.sku ILIKE {{ '%' + params.q + '%' }}
           OR p.name ILIKE {{ '%' + params.q + '%' }}
         )
       GROUP BY p.id
       ORDER BY p.name
-      LIMIT 50
+      LIMIT 200
     `,
   });
 }

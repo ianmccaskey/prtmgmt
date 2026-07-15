@@ -12,6 +12,8 @@ export function getOrderItems() {
         soi.unit_price_usd,
         soi.line_total_usd,
         soi.fulfillment_source,
+        soi.preferred_batch_id,
+        pb.batch_number AS preferred_batch_number,
         p.name AS product_name,
         p.sku AS product_sku,
         p.available_warehouse,
@@ -24,6 +26,7 @@ export function getOrderItems() {
         ) AS is_shipped
       FROM sales_order_items soi
       JOIN products p ON p.id = soi.product_id
+      LEFT JOIN product_batches pb ON pb.id = soi.preferred_batch_id
       WHERE soi.sales_order_id = {{params.orderId}}::bigint
       ORDER BY soi.id
     `,

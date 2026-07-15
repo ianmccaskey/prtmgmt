@@ -29,6 +29,8 @@ import checkDuplicateCustomer from '@/actions/orders/checkDuplicateCustomer';
 import insertAuditLog from '@/actions/orders/insertAuditLog';
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo';
+import reserveBatchStock from '@/actions/warehouse/reserveBatchStock';
+import listBatchStock from '@/actions/orders/listBatchStock';
 
 type Customer = {
   id: number; full_name: string; email: string; phone: string;
@@ -46,6 +48,11 @@ type LineItem = {
   quantity: number; unit_price: number;
   fulfillment_source: 'warehouse' | 'china_direct';
   price_mode: 'list' | 'tier' | 'manual' | 'free';
+  preferred_batch_id: number | null;
+};
+type BatchStock = {
+  id: number; product_id: number; batch_number: string;
+  manufacture_date: string | null; available: number;
 };
 type Wallet = { id: number; asset: string; network: string; address: string; label: string };
 type FreeReason = { id: number; label: string };
@@ -57,7 +64,7 @@ const NETWORKS: Record<string, string[]> = {
 };
 
 function mkLine(): LineItem {
-  return { key: Math.random().toString(36).slice(2), product: null, quantity: 1, unit_price: 0, fulfillment_source: 'warehouse', price_mode: 'list' };
+  return { key: Math.random().toString(36).slice(2), product: null, quantity: 1, unit_price: 0, fulfillment_source: 'warehouse', price_mode: 'list', preferred_batch_id: null };
 }
 
 function CustomerCombo({ onSelect }: { onSelect: (c: Customer) => void }) {
@@ -94,12 +101,13 @@ function CustomerCombo({ onSelect }: { onSelect: (c: Customer) => void }) {
   );
 }
 
-function ProductCombo({ onAdd, isFree }: { onAdd: (p: Product) => void; isFree: boolean }) {
+function ProductCombo({ onAdd }: { onAdd: (p: Product) => void }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
-  const [res, , , reload] = useLoadAction(searchProducts, [], { q }, { enabled: false });
-  useEffect(() => { reload(); }, [q]);
-  useEffect(() => { if (open) reload(); }, [open]);
+  // Loads all active products the moment the popover opens (empty q matches
+  // everything server-side); each keystroke narrows via SKU/name ILIKE. The
+  // server does the filtering, so cmdk's own filter is off.
+  const [res, loading] = useLoadAction(searchProducts, [open, q], { q }, { enabled: open });
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -108,10 +116,10 @@ function ProductCombo({ onAdd, isFree }: { onAdd: (p: Product) => void; isFree: 
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[500px] p-0" align="start">
-        <Command>
+        <Command shouldFilter={false}>
           <CommandInput placeholder="Search products…" value={q} onValueChange={setQ} />
           <CommandList>
-            <CommandEmpty>No products found.</CommandEmpty>
+            <CommandEmpty>{loading ? 'Loading products…' : 'No products found.'}</CommandEmpty>
             <CommandGroup>
               {rows<Product>(res).map(p => (
                 <CommandItem key={p.id} onSelect={() => { onAdd(p); setOpen(false); setQ(''); }}>
@@ -238,6 +246,10 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [wallets] = useLoadAction(getReceiveWallets, []);
   const [freeReasons] = useLoadAction(getFreeOrderReasons, []);
   const [salesReps] = useLoadAction(listSalesReps, []);
+  // In-stock passed-QC batches for every product; a line shows the batch
+  // picker only when its product has stock in 2+ batches.
+  const [batchStockRaw] = useLoadAction(listBatchStock, [open], {}, { enabled: open });
+  const batchesFor = (productId: number) => rows<BatchStock>(batchStockRaw).filter(b => b.product_id === productId);
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [channel, setChannel] = useState('telegram');
@@ -277,6 +289,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [doPayment] = useMutateAction(createOrderPayment);
   const [doAudit] = useMutateAction(insertAuditLog);
   const [doReserve] = useMutateAction(reserveProductStockFifo);
+  const [doReserveBatch] = useMutateAction(reserveBatchStock);
   const [doRecomputePayment] = useMutateAction(recomputePaymentStatus);
 
   useEffect(() => { if (prefillCustomer) pickCustomer(prefillCustomer); }, [prefillCustomer]);
@@ -290,7 +303,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const addLine = (p: Product) => {
     const stock = Number(p.available_stock);
     const src: LineItem['fulfillment_source'] = p.available_warehouse && stock >= 1 ? 'warehouse' : 'china_direct';
-    setLines(prev => [...prev.filter(l => l.product !== null), { key: Math.random().toString(36).slice(2), product: p, quantity: 1, unit_price: isFree ? 0 : Number(p.list_price), fulfillment_source: src, price_mode: isFree ? 'free' : 'list' }]);
+    setLines(prev => [...prev.filter(l => l.product !== null), { key: Math.random().toString(36).slice(2), product: p, quantity: 1, unit_price: isFree ? 0 : Number(p.list_price), fulfillment_source: src, price_mode: isFree ? 'free' : 'list', preferred_batch_id: null }]);
   };
   const upLine = (key: string, patch: Partial<LineItem>) => setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l));
   const rmLine = (key: string) => setLines(prev => prev.filter(l => l.key !== key));
@@ -344,14 +357,23 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     if (!res?.[0]) return;
     const orderId = res[0].id;
     for (const l of lines.filter(x => x.product)) {
-      await doItem({ orderId, productId: l.product!.id, quantity: l.quantity, unitPriceUsd: l.unit_price, lineTotalUsd: l.quantity * l.unit_price, fulfillmentSource: l.fulfillment_source });
+      await doItem({ orderId, productId: l.product!.id, quantity: l.quantity, unitPriceUsd: l.unit_price, lineTotalUsd: l.quantity * l.unit_price, fulfillmentSource: l.fulfillment_source, preferredBatchId: l.fulfillment_source === 'warehouse' ? l.preferred_batch_id : null });
     }
     if (s === 'confirmed') {
-      // Confirming reserves stock for warehouse-sourced lines (FIFO across
-      // passed-QC batches), recorded in the reservation ledger. A short
-      // reservation is a backorder — the fulfillment queue surfaces the gap.
+      // Confirming reserves stock for warehouse-sourced lines, recorded in
+      // the reservation ledger. A pinned batch is reserved first; any
+      // shortfall (and unpinned lines) falls back to FIFO across passed-QC
+      // batches. A short reservation is a backorder — the fulfillment queue
+      // surfaces the gap.
       for (const l of lines.filter(x => x.product && x.fulfillment_source === 'warehouse')) {
-        await doReserve({ order_id: orderId, product_id: l.product!.id, quantity: l.quantity });
+        let remaining = l.quantity;
+        if (l.preferred_batch_id != null) {
+          const got = await doReserveBatch({ order_id: orderId, product_id: l.product!.id, batch_id: l.preferred_batch_id, quantity: l.quantity }) as { reserved_qty: number }[];
+          remaining -= (got || []).reduce((sum, r) => sum + Number(r?.reserved_qty || 0), 0);
+        }
+        if (remaining > 0) {
+          await doReserve({ order_id: orderId, product_id: l.product!.id, quantity: remaining });
+        }
       }
     }
     if (addPay && total > 0 && paySpot && selectedWallet) {
@@ -531,7 +553,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                     <div><Label className="text-xs">Unit Price</Label>
                       <Input type="number" min={0} step={0.01} value={line.unit_price} onChange={e => upLine(line.key, { unit_price: Number(e.target.value), price_mode: 'manual' })} className="h-8" /></div>
                     <div><Label className="text-xs">Source</Label>
-                      <Select value={line.fulfillment_source} onValueChange={v => upLine(line.key, { fulfillment_source: v as LineItem['fulfillment_source'] })}>
+                      <Select value={line.fulfillment_source} onValueChange={v => upLine(line.key, { fulfillment_source: v as LineItem['fulfillment_source'], ...(v === 'china_direct' ? { preferred_batch_id: null } : {}) })}>
                         <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {line.product!.available_warehouse && <SelectItem value="warehouse">Warehouse</SelectItem>}
@@ -540,6 +562,26 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                       </Select>
                     </div>
                   </div>
+                  {/* Batch picker — only when 2+ in-stock passed-QC batches exist */}
+                  {line.fulfillment_source === 'warehouse' && batchesFor(line.product!.id).length >= 2 && (
+                    <div>
+                      <Label className="text-xs">Batch</Label>
+                      <Select
+                        value={line.preferred_batch_id != null ? String(line.preferred_batch_id) : 'auto'}
+                        onValueChange={v => upLine(line.key, { preferred_batch_id: v === 'auto' ? null : Number(v) })}
+                      >
+                        <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto (FIFO — oldest batch first)</SelectItem>
+                          {batchesFor(line.product!.id).map(b => (
+                            <SelectItem key={b.id} value={String(b.id)}>
+                              {b.batch_number} · {b.available} available
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex gap-1">
                       {line.fulfillment_source === 'warehouse' && (
@@ -555,7 +597,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                 </div>
               ))}
             </div>
-            <ProductCombo onAdd={addLine} isFree={isFree} />
+            <ProductCombo onAdd={addLine} />
             {/* Order-level blanket price adjustment across all lines (prompt
                 rule). Hidden on free orders — lines are already $0 there. */}
             {!isFree && lines.filter(l => l.product).length > 1 && (
