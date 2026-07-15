@@ -46,7 +46,7 @@ export const handler = async (event) => {
   );
   return {
     statusCode: 200,
-    headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       uploadUrl,
       publicUrl: `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`,
@@ -56,7 +56,11 @@ export const handler = async (event) => {
 ```
 
 - Enable a **Function URL** (auth type NONE, or IAM + CloudFront in front).
-- Handle the CORS preflight (Function URL CORS config: allow `POST`, `*`).
+- Configure CORS on the Function URL: allow origin `*` (tighten later),
+  methods `POST`, headers `content-type`.
+- IMPORTANT: do NOT also return an `Access-Control-Allow-Origin` header from
+  the handler — the Function URL CORS config adds its own, and duplicated
+  headers make browsers reject the response ("fetch failed").
 
 ## 3. Point the app at it
 
