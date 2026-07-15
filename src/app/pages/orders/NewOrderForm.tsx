@@ -365,7 +365,11 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       // shortfall (and unpinned lines) falls back to FIFO across passed-QC
       // batches. A short reservation is a backorder — the fulfillment queue
       // surfaces the gap.
-      for (const l of lines.filter(x => x.product && x.fulfillment_source === 'warehouse')) {
+      // Pinned lines reserve first so an Auto/FIFO sibling line of the same
+      // product can't consume the pinned batch's stock before they run.
+      const whLines = lines.filter(x => x.product && x.fulfillment_source === 'warehouse');
+      const reserveOrder = [...whLines.filter(l => l.preferred_batch_id != null), ...whLines.filter(l => l.preferred_batch_id == null)];
+      for (const l of reserveOrder) {
         let remaining = l.quantity;
         if (l.preferred_batch_id != null) {
           const got = await doReserveBatch({ order_id: orderId, product_id: l.product!.id, batch_id: l.preferred_batch_id, quantity: l.quantity }) as { reserved_qty: number }[];

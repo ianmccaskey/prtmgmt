@@ -66,20 +66,25 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Default allocation: rows holding this order's own reservations come
-  // first (a rep-pinned batch reserves against that batch, so pinning flows
-  // through to here), then remaining rows FIFO oldest-batch first — the
-  // stable sort preserves FIFO order within each group.
+  // Default allocation, per line: rows of the line's pinned batch first,
+  // then rows holding this order's reservations, then the rest FIFO
+  // oldest-batch first (stable sort keeps FIFO order within each tier).
+  // Pinned lines are processed first so an unpinned sibling line of the
+  // same product can't claim the pinned batch's rows before them.
   useEffect(() => {
     if (stockLoading || allocs.length > 0) return;
     const next: AllocRow[] = [];
     const usedByRow: Record<number, number> = {};
-    for (const it of order.items) {
+    const itemsOrdered = [...order.items].sort((a, b) => (b.preferred_batch_id != null ? 1 : 0) - (a.preferred_batch_id != null ? 1 : 0));
+    for (const it of itemsOrdered) {
       let remaining = itemRemaining(it);
+      const score = (r: FifoRow) =>
+        (it.preferred_batch_id != null && r.batch_id === it.preferred_batch_id ? 2 : 0) +
+        (Number(r.order_reserved) > 0 ? 1 : 0);
       const candidates = stock
         .filter(s => s.product_id === it.product_id)
         .slice()
-        .sort((a, b) => (Number(b.order_reserved) > 0 ? 1 : 0) - (Number(a.order_reserved) > 0 ? 1 : 0));
+        .sort((a, b) => score(b) - score(a));
       for (const r of candidates) {
         if (remaining <= 0) break;
         const usable = rowUsable(r) - (usedByRow[r.inventory_id] || 0);
@@ -210,6 +215,11 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                       <div>
                         <span className="font-medium text-sm">{it.product_name}</span>
                         <span className="ml-2 text-xs text-slate-400 font-mono">{it.sku}</span>
+                        {it.preferred_batch_number && (
+                          <Badge variant="outline" className="ml-2 text-xs px-1 py-0 text-teal-600 border-teal-200">
+                            Batch {it.preferred_batch_number} requested
+                          </Badge>
+                        )}
                       </div>
                       <Badge variant={lineTotal === rem ? 'secondary' : 'outline'} className={lineTotal < rem ? 'text-amber-600 border-amber-300' : ''}>
                         {lineTotal}/{rem} kits allocated{lineTotal < rem ? ' — backorder' : ''}

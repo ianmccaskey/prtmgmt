@@ -19,6 +19,7 @@ import updateOrderShipTo from '@/actions/orders/updateOrderShipTo';
 import insertAuditLog from '@/actions/orders/insertAuditLog';
 import searchProducts from '@/actions/orders/searchProducts';
 import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo';
+import reserveBatchStock from '@/actions/warehouse/reserveBatchStock';
 import releaseProductReservation from '@/actions/warehouse/releaseProductReservation';
 
 export type OrderItemRow = {
@@ -59,6 +60,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [doShipTo] = useMutateAction(updateOrderShipTo);
   const [doAudit] = useMutateAction(insertAuditLog);
   const [doReserve] = useMutateAction(reserveProductStockFifo);
+  const [doReserveBatch] = useMutateAction(reserveBatchStock);
   const [doRelease] = useMutateAction(releaseProductReservation);
 
   const [editId, setEditId] = useState<number | null>(null);
@@ -84,18 +86,32 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const orderStatusConfirmedPlus = ['confirmed', 'in_production', 'partially_shipped'].includes(String(order.status));
 
   // Reservations are ledgered per (order, product) — a release wipes EVERY
-  // line's reservation for that product. So any resync must re-reserve the
-  // combined quantity of all still-open warehouse lines of the product.
-  const siblingWarehouseQty = (productId: number, excludeItemId: number) =>
+  // line's reservation for that product. So any resync must re-reserve ALL
+  // still-open warehouse lines of the product, honoring each line's batch
+  // pin: pinned quantities reserve from their batch first, everything left
+  // (unpinned lines + pinned shortfalls) tops up via one FIFO reserve.
+  type LineSpec = { qty: number; batchId: number | null };
+
+  const siblingWarehouseLines = (productId: number, excludeItemId: number): LineSpec[] =>
     items
       .filter(i => i.product_id === productId && i.id !== excludeItemId
         && i.fulfillment_source === 'warehouse' && !i.is_shipped
         && !allocations.some(a => a.sales_order_item_id === i.id))
-      .reduce((s, i) => s + Number(i.quantity), 0);
+      .map(i => ({ qty: Number(i.quantity), batchId: i.preferred_batch_id }));
 
-  const resyncProductReservation = async (productId: number, totalQty: number) => {
+  const resyncProductReservation = async (productId: number, lineSpecs: LineSpec[]) => {
     await doRelease({ order_id: orderId, product_id: productId });
-    if (totalQty > 0) await doReserve({ order_id: orderId, product_id: productId, quantity: totalQty });
+    let fifoQty = 0;
+    for (const l of lineSpecs) {
+      if (l.qty <= 0) continue;
+      if (l.batchId != null) {
+        const got = await doReserveBatch({ order_id: orderId, product_id: productId, batch_id: l.batchId, quantity: l.qty }) as { reserved_qty: number }[];
+        fifoQty += Math.max(0, l.qty - (got || []).reduce((s, r) => s + Number(r?.reserved_qty || 0), 0));
+      } else {
+        fifoQty += l.qty;
+      }
+    }
+    if (fifoQty > 0) await doReserve({ order_id: orderId, product_id: productId, quantity: fifoQty });
   };
 
   const recalc = async (discountUsd?: number, shippingUsd?: number) => {
@@ -122,7 +138,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     }
     // Re-sync reservations at the new quantity plus any sibling lines'.
     if (it.fulfillment_source === 'warehouse' && orderStatusConfirmedPlus) {
-      await resyncProductReservation(it.product_id, qty + siblingWarehouseQty(it.product_id, it.id));
+      await resyncProductReservation(it.product_id, [{ qty, batchId: it.preferred_batch_id }, ...siblingWarehouseLines(it.product_id, it.id)]);
     }
     if (qty !== Number(it.quantity)) {
       await doAudit({ orderId, userId: profileId, changeType: 'line_item_qty', fieldName: `line.${it.product_sku}.quantity`, oldValue: String(it.quantity), newValue: String(qty), note: null });
@@ -144,7 +160,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
       return;
     }
     if (it.fulfillment_source === 'warehouse' && orderStatusConfirmedPlus) {
-      await resyncProductReservation(it.product_id, siblingWarehouseQty(it.product_id, it.id));
+      await resyncProductReservation(it.product_id, siblingWarehouseLines(it.product_id, it.id));
     }
     await doAudit({ orderId, userId: profileId, changeType: 'line_item_removed', fieldName: `line.${it.product_sku}`, oldValue: `${it.quantity} @ $${Number(it.unit_price_usd).toFixed(2)}`, newValue: null, note: null });
     await recalc();
@@ -172,7 +188,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
       // Locked line — undo the reservation we just added by resyncing back to
       // the sibling lines' total (line itself stays on its original source).
       if (target === 'warehouse' && orderStatusConfirmedPlus) {
-        await resyncProductReservation(it.product_id, siblingWarehouseQty(it.product_id, it.id));
+        await resyncProductReservation(it.product_id, siblingWarehouseLines(it.product_id, it.id));
       }
       setError(`${it.product_name}: line is locked (already allocated/shipped).`);
       setBusy(false); onChanged();
@@ -180,7 +196,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     }
     if (target === 'china_direct' && orderStatusConfirmedPlus) {
       // Switching away from warehouse: keep only the sibling lines reserved.
-      await resyncProductReservation(it.product_id, siblingWarehouseQty(it.product_id, it.id));
+      await resyncProductReservation(it.product_id, siblingWarehouseLines(it.product_id, it.id));
     }
     await doAudit({ orderId, userId: profileId, changeType: 'other', fieldName: `line.${it.product_sku}.fulfillment_source`, oldValue: it.fulfillment_source, newValue: target, note: null });
     setBusy(false);
@@ -282,7 +298,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
               <Badge variant="outline" className={`text-xs px-1 py-0 ${item.fulfillment_source === 'warehouse' ? 'text-blue-600 border-blue-200' : 'text-purple-600 border-purple-200'}`}>
                 {item.fulfillment_source === 'warehouse' ? 'Warehouse' : 'China Direct'}
               </Badge>
-              {item.preferred_batch_number && (
+              {item.fulfillment_source === 'warehouse' && item.preferred_batch_number && (
                 <Badge variant="outline" className="text-xs px-1 py-0 text-teal-600 border-teal-200">
                   Batch {item.preferred_batch_number}
                 </Badge>
