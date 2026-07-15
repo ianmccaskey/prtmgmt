@@ -71,6 +71,16 @@ export function WalletsReasonsTab() {
   const walletList = asRows<Wallet>(wallets);
   const reasonList = asRows<FreeReason>(reasons);
 
+  const [toggleError, setToggleError] = useState('');
+  const toggleWallet = async (w: Wallet) => {
+    setToggleError('');
+    const res = await doToggleWallet({ id: w.id, is_active: !w.is_active }) as unknown[];
+    if (!w.is_active && (!res || res.length === 0)) {
+      setToggleError(`Can't activate ${w.label || `${w.asset}/${w.network}`} — another active ${w.asset}/${w.network} wallet already exists. Deactivate it first.`);
+    }
+    reloadWallets();
+  };
+
   const openAddWallet = () => {
     setEditWallet(null); setWCombo(''); setWAddress(''); setWLabel(''); setWNotes(''); setWError('');
     setShowWalletForm(true);
@@ -89,7 +99,16 @@ export function WalletsReasonsTab() {
     setWSaving(true); setWError('');
     try {
       if (editWallet) {
-        await doUpdateWallet({ id: editWallet.id, asset, network, address: wAddress, label: wLabel || `${asset} ${network}`, notes: wNotes || null });
+        const res = await doUpdateWallet({ id: editWallet.id, asset, network, address: wAddress, label: wLabel || `${asset} ${network}`, notes: wNotes || null }) as { id: number; locked: boolean }[];
+        // A payment may have referenced the wallet between opening the
+        // dialog and saving — the SQL then keeps asset/network/address.
+        // Don't close as if those edits saved.
+        const wantedLockedChange = wAddress !== editWallet.address || asset !== editWallet.asset || network !== editWallet.network;
+        if (res?.[0]?.locked && !editWallet.is_used && wantedLockedChange) {
+          setWError('A payment was just recorded against this wallet, so the asset, network, and address are now locked — label and notes were saved, the rest kept their original values.');
+          reloadWallets();
+          return;
+        }
       } else {
         await doCreateWallet({ asset, network, address: wAddress, label: wLabel || `${asset} ${network}`, notes: wNotes || null });
       }
@@ -116,7 +135,12 @@ export function WalletsReasonsTab() {
     setRSaving(true); setRError('');
     try {
       if (editReason) {
-        await doUpdateReason({ id: editReason.id, label: rLabel.trim(), description: rDesc || null });
+        const res = await doUpdateReason({ id: editReason.id, label: rLabel.trim(), description: rDesc || null }) as { id: number; locked: boolean }[];
+        if (res?.[0]?.locked && !editReason.is_used && rLabel.trim() !== editReason.label) {
+          setRError('An order just used this reason, so the label is now locked — the description was saved, the label kept its original value.');
+          reloadReasons();
+          return;
+        }
       } else {
         await doCreateReason({ label: rLabel.trim(), description: rDesc || null });
       }
@@ -178,7 +202,7 @@ export function WalletsReasonsTab() {
                   <TableCell className="text-sm text-gray-600">{w.network}</TableCell>
                   <TableCell className="font-mono text-xs text-gray-600 max-w-[200px] truncate">{w.address}</TableCell>
                   <TableCell className="text-sm">{w.label}</TableCell>
-                  <TableCell className="text-center"><Switch checked={!!w.is_active} onCheckedChange={async () => { await doToggleWallet({ id: w.id, is_active: !w.is_active }); reloadWallets(); }} /></TableCell>
+                  <TableCell className="text-center"><Switch checked={!!w.is_active} onCheckedChange={() => toggleWallet(w)} /></TableCell>
                   <TableCell className="text-right pr-2">
                     <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit wallet" onClick={() => openEditWallet(w)}><Pencil className="h-3 w-3" /></Button>
                     {w.is_used ? (
@@ -199,6 +223,7 @@ export function WalletsReasonsTab() {
               {walletList.length === 0 && <TableRow><TableCell colSpan={6} className="text-center py-6 text-gray-400">No wallets</TableCell></TableRow>}
             </TableBody>
           </Table>
+          {toggleError && <p className="text-sm text-red-600 bg-red-50 rounded p-2 m-3">{toggleError}</p>}
         </CardContent>
       </Card>
 

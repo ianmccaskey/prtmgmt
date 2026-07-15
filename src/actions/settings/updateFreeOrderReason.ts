@@ -13,7 +13,8 @@ function updateFreeOrderReason() {
       SET description = {{params.description}},
           label = CASE WHEN EXISTS(SELECT 1 FROM sales_orders so WHERE so.free_order_reason_id = r.id) THEN r.label ELSE {{params.label}} END
       WHERE r.id = {{params.id}}::bigint
-      RETURNING r.id
+      RETURNING r.id,
+        EXISTS(SELECT 1 FROM sales_orders so WHERE so.free_order_reason_id = r.id) AS locked
     `,
   });
 }

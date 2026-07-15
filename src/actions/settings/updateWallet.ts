@@ -18,7 +18,8 @@ function updateWallet() {
           network = CASE WHEN EXISTS(SELECT 1 FROM order_payments op WHERE op.receive_wallet_id = w.id) THEN w.network ELSE {{params.network}} END,
           address = CASE WHEN EXISTS(SELECT 1 FROM order_payments op WHERE op.receive_wallet_id = w.id) THEN w.address ELSE {{params.address}} END
       WHERE w.id = {{params.id}}::bigint
-      RETURNING w.id
+      RETURNING w.id,
+        EXISTS(SELECT 1 FROM order_payments op WHERE op.receive_wallet_id = w.id) AS locked
     `,
   });
 }
