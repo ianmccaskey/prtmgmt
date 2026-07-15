@@ -74,9 +74,12 @@ function mkLine(): LineItem {
 function CustomerCombo({ onSelect, onCreateNew }: { onSelect: (c: Customer) => void; onCreateNew: (name: string) => void }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
-  const [res, , , reload] = useLoadAction(searchCustomers, [], { q }, { enabled: false });
+  const [res, searching, , reload] = useLoadAction(searchCustomers, [], { q }, { enabled: false });
   useEffect(() => { if (q.length >= 2) reload(); }, [q]);
   const canCreate = q.trim().length >= 2;
+  // Hide rows while a search is in flight — with cmdk filtering off, stale
+  // results from the previous query would otherwise show under the new one.
+  const results = !searching && q.length >= 2 ? rows<Customer>(res) : [];
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -88,9 +91,13 @@ function CustomerCombo({ onSelect, onCreateNew }: { onSelect: (c: Customer) => v
         <Command shouldFilter={false}>
           <CommandInput placeholder="Type to search…" value={q} onValueChange={setQ} />
           <CommandList>
-            <CommandEmpty>{q.length < 2 ? 'Type at least 2 characters…' : 'No customers found.'}</CommandEmpty>
+            {/* cmdk suppresses CommandEmpty whenever any item renders (the
+                create entry counts), so empty-state copy is plain text. */}
+            {q.length < 2 && <p className="py-3 text-center text-sm text-muted-foreground">Type at least 2 characters…</p>}
+            {q.length >= 2 && searching && <p className="py-3 text-center text-sm text-muted-foreground">Searching…</p>}
+            {q.length >= 2 && !searching && results.length === 0 && <p className="py-3 text-center text-sm text-muted-foreground">No customers found.</p>}
             <CommandGroup>
-              {(q.length >= 2 ? rows<Customer>(res) : []).map(c => (
+              {results.map(c => (
                 <CommandItem key={c.id} onSelect={() => { onSelect(c); setOpen(false); setQ(''); }}>
                   <div className="flex flex-col">
                     <span className="font-medium">{c.full_name}</span>
@@ -168,11 +175,13 @@ function NewCustomerDialog({ open, onClose, onCreated, initialName }: {
 }) {
   const initForm = { full_name: '', email: '', phone: '', preferred_channel: 'telegram', channel_handle: '', ship_address_line1: '', ship_address_line2: '', ship_city: '', ship_state: '', ship_postal_code: '', ship_country: 'US', is_vip: false, notes: '' };
   const [form, setForm] = useState(initForm);
-  // Prefill the name typed into the customer search when opened from the
-  // dropdown's "Create new customer" entry.
+  // Fresh form on every open, seeded with the name typed into the customer
+  // search when opened from the dropdown's "Create new customer" entry
+  // (a canceled prefill must not leak into the next open).
   useEffect(() => {
-    if (open && initialName) setForm(f => (f.full_name ? f : { ...f, full_name: initialName }));
-  }, [open, initialName]);
+    if (open) { setForm({ ...initForm, full_name: initialName || '' }); setError(''); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const [dupOpen, setDupOpen] = useState(false);
   const [dups, setDups] = useState<Customer[]>([]);
   const [error, setError] = useState('');
