@@ -115,7 +115,10 @@ export function WalletsReasonsTab() {
       setShowWalletForm(false);
       reloadWallets();
     } catch (e: unknown) {
-      setWError(e instanceof Error ? e.message : 'Failed to save wallet');
+      const msg = e instanceof Error ? e.message : 'Failed to save wallet';
+      setWError(msg.includes('receive_wallets_one_active_per_combo')
+        ? `An active ${wCombo} wallet already exists — deactivate it first.`
+        : msg);
     } finally { setWSaving(false); }
   };
 
