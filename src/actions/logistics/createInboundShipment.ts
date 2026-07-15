@@ -12,7 +12,7 @@ function createInboundShipment() {
         {{params.reference_number}}, {{params.factory_id}}, {{params.freight_forwarder}},
         {{params.mode}}, {{params.tracking_number}},
         {{params.departure_date}}, {{params.arrival_date}},
-        'pending', {{params.customs_status}}, {{params.hts_code}},
+        'freight_forwarder', {{params.customs_status}}, {{params.hts_code}},
         {{params.declared_value}}, {{params.notes}}
       ) RETURNING id, reference_number
     `,

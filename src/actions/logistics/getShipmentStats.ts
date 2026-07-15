@@ -5,7 +5,7 @@ function getShipmentStats() {
     datasourceName: 'Peptide Ops DB',
     query: `
       SELECT
-        COUNT(CASE WHEN si.status != 'delivered' THEN 1 END) AS with_freight_forwarder,
+        COUNT(CASE WHEN si.status = 'freight_forwarder' THEN 1 END) AS with_freight_forwarder,
         COUNT(CASE WHEN si.status = 'in_transit' THEN 1 END) AS in_transit,
         COUNT(CASE WHEN si.status = 'delivered' AND si.arrival_date >= date_trunc('month', CURRENT_DATE) THEN 1 END) AS delivered_this_month,
         COUNT(DISTINCT CASE
