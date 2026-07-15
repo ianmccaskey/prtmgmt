@@ -162,7 +162,7 @@ export function ProductDetailsTab({ product, factories }: Props) {
               <div><span className="text-slate-500">Vial Size</span><p className="mt-0.5">{product.vial_size_ml} mL</p></div>
               <div><span className="text-slate-500">Vials/Kit</span><p className="mt-0.5">{product.vials_per_unit}</p></div>
               <div><span className="text-slate-500">Low Stock Threshold</span><p className="mt-0.5">{product.low_stock_threshold} kits</p></div>
-              <div><span className="text-slate-500">Status</span><p className="mt-0.5"><Badge variant={product.is_active ? 'default' : 'secondary'}>{product.is_active ? 'Active' : 'Inactive'}</Badge></p></div>
+              <div><span className="text-slate-500">Status</span><div className="mt-0.5"><Badge variant={product.is_active ? 'default' : 'secondary'}>{product.is_active ? 'Active' : 'Inactive'}</Badge></div></div>
               <div className="col-span-2"><span className="text-slate-500">Channels</span>
                 <div className="flex gap-2 mt-0.5">
                   {product.available_warehouse && <Badge variant="outline">Warehouse</Badge>}
