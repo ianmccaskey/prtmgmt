@@ -59,9 +59,13 @@ type FreeReason = { id: number; label: string };
 
 const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'other'];
 const ASSETS = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
+// Network values match the receive_wallets.network CHECK constraint — the
+// wallet lookup and the order_payments insert both depend on these exact
+// strings.
 const NETWORKS: Record<string, string[]> = {
-  USDC: ['ETH', 'SOL'], USDT: ['ETH', 'SOL'], ETH: ['ETH'], SOL: ['SOL'], BTC: ['BTC'],
+  USDC: ['ethereum', 'solana'], USDT: ['ethereum', 'solana'], ETH: ['ethereum'], SOL: ['solana'], BTC: ['bitcoin'],
 };
+const NETWORK_LABELS: Record<string, string> = { ethereum: 'Ethereum', solana: 'Solana', bitcoin: 'Bitcoin' };
 
 function mkLine(): LineItem {
   return { key: Math.random().toString(36).slice(2), product: null, quantity: 1, unit_price: 0, fulfillment_source: 'warehouse', price_mode: 'list', preferred_batch_id: null };
@@ -266,8 +270,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [ship, setShip] = useState({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
   const [editShip, setEditShip] = useState(false);
   const [payAsset, setPayAsset] = useState('USDC');
-  const [payNetwork, setPayNetwork] = useState('ETH');
-  const [paySpot, setPaySpot] = useState('');
+  const [payNetwork, setPayNetwork] = useState('ethereum');
   const [payTx, setPayTx] = useState('');
   const [addPay, setAddPay] = useState(false);
   const [copiedWallet, setCopiedWallet] = useState(false);
@@ -294,6 +297,15 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
 
   useEffect(() => { if (prefillCustomer) pickCustomer(prefillCustomer); }, [prefillCustomer]);
 
+  // Default the sales rep to whoever is logged in (when they're in the rep
+  // list — reps and admins both are). Only fills the field while it's
+  // empty, so an explicit choice is never overridden.
+  useEffect(() => {
+    if (open && !salesRepId && profileId != null && rows<{ id: number }>(salesReps).some(r => r.id === profileId)) {
+      setSalesRepId(String(profileId));
+    }
+  }, [open, salesReps, profileId, salesRepId]);
+
   const pickCustomer = (c: Customer) => {
     setCustomer(c);
     setChannel(c.preferred_channel || 'telegram');
@@ -312,7 +324,6 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const total = Math.max(0, subtotal - Number(discount) + Number(shipping));
 
   const selectedWallet = rows<Wallet>(wallets).find(w => w.asset === payAsset && w.network === payNetwork);
-  const amountAsset = paySpot && Number(paySpot) > 0 ? (total / Number(paySpot)).toFixed(6) : '—';
 
   const copyWallet = () => {
     if (selectedWallet) { navigator.clipboard.writeText(selectedWallet.address); setCopiedWallet(true); setTimeout(() => setCopiedWallet(false), 2000); }
@@ -380,8 +391,8 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
         }
       }
     }
-    if (addPay && total > 0 && paySpot && selectedWallet) {
-      await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: Number(paySpot), amountAsset: Number(amountAsset), amountUsd: total, txHash: payTx || null });
+    if (addPay && total > 0 && selectedWallet) {
+      await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: null, amountAsset: null, amountUsd: total, txHash: payTx || null });
     } else {
       // Derive payment_status (free $0 orders roll straight to 'paid').
       await doRecomputePayment({ orderId });
@@ -399,7 +410,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     setCustomer(null); setChannel('telegram'); setIsFree(false); setFreeReasonId(''); setFreeNote('');
     setPartial(false); setLines([mkLine()]); setDiscount('0'); setShipping('0'); setNotes('');
     setOverrideNote(''); setShip({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
-    setEditShip(false); setPayAsset('USDC'); setPayNetwork('ETH'); setPaySpot(''); setPayTx('');
+    setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx('');
     setAddPay(false); setErrors([]); setSalesRepId('');
   };
 
@@ -488,29 +499,6 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                 <span className="text-xs text-muted-foreground">{partial ? 'Ship available now' : 'Hold until all in stock'}</span>
               </div>
             </div>
-          </div>
-
-          {/* Free Order */}
-          <div className="border rounded p-3 mb-4 space-y-3">
-            <div className="flex items-center gap-3">
-              <Switch checked={isFree} onCheckedChange={v => { setIsFree(v); if (v) setLines(prev => prev.map(l => ({ ...l, unit_price: 0, price_mode: 'free' as const }))); }} />
-              <Label>Free Order</Label>
-            </div>
-            {isFree && (
-              <div className="space-y-2">
-                <div>
-                  <Label className="text-xs">Reason *</Label>
-                  <Select value={freeReasonId} onValueChange={setFreeReasonId}>
-                    <SelectTrigger><SelectValue placeholder="Select reason…" /></SelectTrigger>
-                    <SelectContent>{rows<FreeReason>(freeReasons).map(r => <SelectItem key={r.id} value={String(r.id)}>{r.label}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Note *</Label>
-                  <Input placeholder="e.g. marketing sample for @influencer_x" value={freeNote} onChange={e => setFreeNote(e.target.value)} />
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Ship To */}
@@ -646,30 +634,50 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                   <div><Label className="text-xs">Network</Label>
                     <Select value={payNetwork} onValueChange={setPayNetwork}>
                       <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                      <SelectContent>{(NETWORKS[payAsset] || []).map(n => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
+                      <SelectContent>{(NETWORKS[payAsset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                 </div>
-                <div>
-                  <Label className="text-xs">Spot Rate (USD per {payAsset})</Label>
-                  <div className="flex items-center gap-2">
-                    <Input type="number" min={0} step={0.01} value={paySpot} onChange={e => setPaySpot(e.target.value)} className="h-8" />
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">= {amountAsset} {payAsset}</span>
-                  </div>
-                </div>
-                {selectedWallet && (
+                {selectedWallet ? (
                   <div className="bg-muted/40 rounded p-2">
                     <Label className="text-xs mb-1 block">Receive Address ({selectedWallet.label})</Label>
                     <div className="flex items-center gap-2">
                       <code className="text-xs flex-1 break-all">{selectedWallet.address}</code>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={copyWallet}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={copyWallet} title="Copy address">
                         {copiedWallet ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                       </Button>
                     </div>
                   </div>
+                ) : (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                    No active {payAsset} wallet on {NETWORK_LABELS[payNetwork] || payNetwork} — add one under Settings → Wallets, or pick another asset.
+                  </p>
                 )}
                 <div><Label className="text-xs">TX Hash (optional)</Label>
                   <Input placeholder="0x…" value={payTx} onChange={e => setPayTx(e.target.value)} className="h-8" /></div>
+              </div>
+            )}
+          </div>
+
+          {/* Free Order */}
+          <div className="border rounded p-3 mb-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <Switch checked={isFree} onCheckedChange={v => { setIsFree(v); if (v) setLines(prev => prev.map(l => ({ ...l, unit_price: 0, price_mode: 'free' as const }))); }} />
+              <Label>Free Order</Label>
+            </div>
+            {isFree && (
+              <div className="space-y-2">
+                <div>
+                  <Label className="text-xs">Reason *</Label>
+                  <Select value={freeReasonId} onValueChange={setFreeReasonId}>
+                    <SelectTrigger><SelectValue placeholder="Select reason…" /></SelectTrigger>
+                    <SelectContent>{rows<FreeReason>(freeReasons).map(r => <SelectItem key={r.id} value={String(r.id)}>{r.label}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Note *</Label>
+                  <Input placeholder="e.g. marketing sample for @influencer_x" value={freeNote} onChange={e => setFreeNote(e.target.value)} />
+                </div>
               </div>
             )}
           </div>
