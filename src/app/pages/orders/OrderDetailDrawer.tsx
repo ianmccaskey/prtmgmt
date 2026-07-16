@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusBadge, PaymentBadge, SourceBadges, ChannelBadge } from './OrderBadges';
 import { AlertTriangle, Check, Crown, Flag, Plus, RefreshCw, Package, Truck } from 'lucide-react';
 import listUserProfiles from '@/actions/settings/listUserProfiles';
@@ -412,11 +413,19 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                   )}
 
                   <div className="flex gap-2 flex-wrap">
-                    {status === 'draft' && (
-                      <Button size="sm" className="h-7 text-xs" disabled={updatingStatus} onClick={() => handleStatusAction('confirmed')}>Confirm Order</Button>
-                    )}
-                    {status === 'confirmed' && !isReadOnly && (
-                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={updatingStatus} onClick={() => handleStatusAction('in_production')}>Start Production</Button>
+                    {status === 'quote' && (
+                      ['paid', 'partial_paid'].includes(String(order.payment_status)) ? (
+                        <Button size="sm" className="h-7 text-xs" disabled={updatingStatus} onClick={() => handleStatusAction('confirmed')}>Confirm Order</Button>
+                      ) : (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span tabIndex={0}><Button size="sm" className="h-7 text-xs" disabled>Confirm Order</Button></span>
+                            </TooltipTrigger>
+                            <TooltipContent><p className="text-xs max-w-[220px]">Quotes confirm once a payment is verified (paid / partial paid).</p></TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )
                     )}
                     {status === 'shipped' && (
                       <Button size="sm" variant="outline" className="h-7 text-xs text-green-700 border-green-300" disabled={updatingStatus} onClick={() => handleStatusAction('delivered')}>Mark Delivered</Button>

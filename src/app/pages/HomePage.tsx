@@ -81,8 +81,8 @@ type ActivityRow = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
+  quote: '#94a3b8',
   confirmed: '#3b82f6',
-  in_production: '#f59e0b',
   partially_shipped: '#f97316',
   shipped: '#10b981',
   delivered: '#059669',

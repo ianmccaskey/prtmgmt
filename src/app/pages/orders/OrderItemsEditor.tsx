@@ -83,7 +83,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [discount, setDiscount] = useState('');
   const [shipping, setShipping] = useState('');
 
-  const orderStatusConfirmedPlus = ['confirmed', 'in_production', 'partially_shipped'].includes(String(order.status));
+  const orderStatusConfirmedPlus = ['confirmed', 'partially_shipped'].includes(String(order.status));
 
   // Reservations are ledgered per (order, product) — a release wipes EVERY
   // line's reservation for that product. So any resync must re-reserve ALL

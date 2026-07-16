@@ -21,7 +21,7 @@ function listReorderSuggestions() {
           JOIN sales_orders so ON so.id = soi.sales_order_id
           WHERE soi.product_id = p.id
             AND so.order_date >= CURRENT_DATE - INTERVAL '30 days'
-            AND so.status IN ('confirmed','in_production','partially_shipped','shipped','delivered')
+            AND so.status IN ('confirmed','partially_shipped','shipped','delivered')
             AND so.is_free_order = false
         ), 0) AS sales_last_30d
       FROM products p

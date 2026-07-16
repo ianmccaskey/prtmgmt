@@ -353,7 +353,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     if (selectedWallet) { navigator.clipboard.writeText(selectedWallet.address); setCopiedWallet(true); setTimeout(() => setCopiedWallet(false), 2000); }
   };
 
-  const validate = (s: 'draft' | 'confirmed'): string[] => {
+  const validate = (s: 'quote' | 'confirmed'): string[] => {
     const errs: string[] = [];
     if (!customer) errs.push('Select a customer');
     if (lines.filter(l => l.product).length === 0) errs.push('Add at least one line item');
@@ -370,7 +370,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     return errs;
   };
 
-  const save = async (s: 'draft' | 'confirmed') => {
+  const save = async (s: 'quote' | 'confirmed') => {
     if (saving) return; // guard against double-submit re-creating the order and double-reserving
     const errs = validate(s);
     if (errs.length) { setErrors(errs); return; }
@@ -712,11 +712,14 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
             <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Notes…" />
           </div>
 
-          {/* Footer actions */}
-          <div className="flex gap-2 justify-end">
+          {/* Footer actions. Confirmation requires paid/partial-paid, and a
+              crypto payment added here is pending until verified — so
+              non-free orders always start as quotes; only $0/free orders
+              (payment_status derives straight to 'paid') confirm here. */}
+          <div className="flex gap-2 justify-end flex-wrap">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="secondary" onClick={() => save('draft')} disabled={creating || saving}>{saving ? 'Saving…' : 'Save Draft'}</Button>
-            {canConfirm ? (
+            <Button variant="secondary" onClick={() => save('quote')} disabled={creating || saving}>{saving ? 'Saving…' : 'Save as Quote'}</Button>
+            {canConfirm && (isFree || total === 0) ? (
               <Button onClick={() => save('confirmed')} disabled={creating || saving}>{saving ? 'Saving…' : 'Confirm Order'}</Button>
             ) : (
               <TooltipProvider>
@@ -724,7 +727,13 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                   <TooltipTrigger asChild>
                     <span tabIndex={0}><Button disabled>Confirm Order</Button></span>
                   </TooltipTrigger>
-                  <TooltipContent><p className="text-xs">Customer is blocked. Admins can confirm with an override note.</p></TooltipContent>
+                  <TooltipContent>
+                    <p className="text-xs max-w-[240px]">
+                      {!canConfirm
+                        ? 'Customer is blocked. Admins can confirm with an override note.'
+                        : 'Orders confirm once payment is verified (paid / partial paid). Save as Quote, verify the payment, then confirm from the order.'}
+                    </p>
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}

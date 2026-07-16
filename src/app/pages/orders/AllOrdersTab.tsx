@@ -19,7 +19,6 @@ import { OrderDetailDrawer } from './OrderDetailDrawer';
 
 /** Inline transitions allowed straight from the table row (rest go through flows/drawer). */
 const INLINE_NEXT: Record<string, string[]> = {
-  confirmed: ['in_production'],
   shipped: ['delivered'],
 };
 
@@ -32,7 +31,7 @@ type Order = {
   free_order_reason_label: string;
 };
 
-const STATUS_OPTIONS = ['', 'confirmed', 'in_production', 'partially_shipped', 'shipped', 'delivered', 'cancelled'];
+const STATUS_OPTIONS = ['', 'quote', 'confirmed', 'partially_shipped', 'shipped', 'delivered', 'cancelled'];
 const PAYMENT_OPTIONS = ['', 'unpaid', 'partial_paid', 'paid', 'refunded'];
 const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'other'];
 

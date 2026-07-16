@@ -31,7 +31,6 @@ export type QueueOrder = {
 
 const STATUS_COLORS: Record<string, string> = {
   confirmed: 'bg-blue-100 text-blue-700',
-  in_production: 'bg-amber-100 text-amber-700',
   partially_shipped: 'bg-orange-100 text-orange-700',
 };
 

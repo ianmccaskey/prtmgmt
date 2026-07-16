@@ -4,7 +4,7 @@ import getOrdersStatStrip from '@/actions/orders/getOrdersStatStrip';
 
 type StatStripRow = {
   confirmed_count: string;
-  in_production_count: string;
+  quote_count: string;
   shipped_this_month: string;
   revenue_this_month: string;
   unpaid_balance: string;
@@ -32,8 +32,8 @@ export function OrdersStatStrip() {
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px bg-border/60 border border-border/60 rounded-lg overflow-hidden">
+      <Stat label="Quotes" value={fmt(data.quote_count)} />
       <Stat label="Confirmed" value={fmt(data.confirmed_count)} />
-      <Stat label="In Production" value={fmt(data.in_production_count)} />
       <Stat label="Shipped (Month)" value={fmt(data.shipped_this_month)} />
       <Stat label="Revenue (Month)" value={fmtUSD(data.revenue_this_month)} />
       <Stat label="Unpaid Balance" value={fmtUSD(data.unpaid_balance)} />

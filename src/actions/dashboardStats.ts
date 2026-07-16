@@ -5,7 +5,7 @@ export function getDashboardStats() {
     datasourceName: 'Peptide Ops DB',
     query: `
       SELECT
-        (SELECT COUNT(*) FROM sales_orders WHERE status IN ('confirmed','in_production','partially_shipped')) AS open_orders,
+        (SELECT COUNT(*) FROM sales_orders WHERE status IN ('confirmed','partially_shipped')) AS open_orders,
         (SELECT COUNT(*) FROM sales_orders WHERE status = 'shipped' AND DATE_TRUNC('month', order_date) = DATE_TRUNC('month', CURRENT_DATE)) AS shipped_this_month,
         (SELECT COALESCE(SUM(total_usd),0) FROM sales_orders WHERE status IN ('shipped','delivered') AND DATE_TRUNC('month', order_date) = DATE_TRUNC('month', CURRENT_DATE)) AS revenue_this_month,
         (SELECT COUNT(*) FROM shipments_inbound WHERE status IN ('freight_forwarder','in_transit')) AS inbound_in_transit,
@@ -34,7 +34,7 @@ export function getDashboardStats() {
         (SELECT COALESCE(SUM(internal_shipping_cost_usd),0) FROM shipments_outbound WHERE payable_status = 'owed' AND origin = 'warehouse') AS warehouse_payables_usd,
         (SELECT COUNT(DISTINCT soi.sales_order_id) FROM sales_order_items soi
           JOIN sales_orders so ON so.id = soi.sales_order_id
-          WHERE soi.fulfillment_source = 'china_direct' AND so.status IN ('confirmed','in_production')
+          WHERE soi.fulfillment_source = 'china_direct' AND so.status = 'confirmed'
         ) AS china_direct_awaiting
     `,
   });

@@ -23,7 +23,7 @@ export function getChinaDirectQueue() {
       JOIN customers c ON c.id = so.customer_id
       JOIN sales_order_items soi ON soi.sales_order_id = so.id
       WHERE soi.fulfillment_source = 'china_direct'
-        AND so.status IN ('confirmed','in_production')
+        AND so.status = 'confirmed'
       ORDER BY so.order_date ASC
     `,
   });

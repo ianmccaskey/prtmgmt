@@ -6,7 +6,7 @@ export function getOrdersStatStrip() {
     query: `
       SELECT
         (SELECT COUNT(*) FROM sales_orders WHERE status = 'confirmed') AS confirmed_count,
-        (SELECT COUNT(*) FROM sales_orders WHERE status = 'in_production') AS in_production_count,
+        (SELECT COUNT(*) FROM sales_orders WHERE status = 'quote') AS quote_count,
         (SELECT COUNT(*) FROM sales_orders
           WHERE status = 'shipped'
           AND DATE_TRUNC('month', order_date) = DATE_TRUNC('month', CURRENT_DATE)) AS shipped_this_month,
@@ -18,7 +18,7 @@ export function getOrdersStatStrip() {
         (SELECT COUNT(DISTINCT soi.sales_order_id) FROM sales_order_items soi
           JOIN sales_orders so ON so.id = soi.sales_order_id
           WHERE soi.fulfillment_source = 'china_direct'
-          AND so.status IN ('confirmed','in_production')) AS china_direct_awaiting
+          AND so.status = 'confirmed') AS china_direct_awaiting
     `,
   });
 }

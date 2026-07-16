@@ -44,7 +44,7 @@ function listFulfillmentQueue() {
         JOIN product_batches pb ON pb.id = i.batch_id AND pb.qc_status = 'passed'
         GROUP BY i.product_id
       ) stock ON stock.product_id = soi.product_id
-      WHERE so.status IN ('confirmed', 'in_production', 'partially_shipped')
+      WHERE so.status IN ('confirmed', 'partially_shipped')
         AND soi.fulfillment_source = 'warehouse'
         AND COALESCE(alloc.allocated_qty, 0) < soi.quantity
       ORDER BY so.order_date ASC, so.id ASC, soi.id ASC

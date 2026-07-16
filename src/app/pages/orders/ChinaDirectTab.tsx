@@ -9,10 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusBadge, PaymentBadge } from './OrderBadges';
-import { Truck, Factory } from 'lucide-react';
+import { Truck } from 'lucide-react';
 import getChinaDirectQueue from '@/actions/orders/getChinaDirectQueue';
 import getChinaDirectStats from '@/actions/orders/getChinaDirectStats';
-import updateToInProduction from '@/actions/orders/updateToInProduction';
 import markShippedFromChina from '@/actions/orders/markShippedFromChina';
 
 type ChinaOrder = {
@@ -21,7 +20,7 @@ type ChinaOrder = {
   days_waiting: number; has_warehouse_lines: boolean; factory_name: string;
 };
 
-type Stats = { awaiting_production: string; in_production: string; shipped_china_this_month: string };
+type Stats = { awaiting_shipment: string; shipped_china_this_month: string };
 
 function StatChip({ label, value }: { label: string; value: string }) {
   return (
@@ -67,23 +66,16 @@ function ShipFromChinaDialog({ order, open, onClose, onDone }: { order: ChinaOrd
 export function ChinaDirectTab() {
   const [queue, loading, , reload] = useLoadAction(getChinaDirectQueue, []);
   const [stats] = useLoadAction(getChinaDirectStats, []);
-  const [doInProduction, updating] = useMutateAction(updateToInProduction);
   const [shipOpen, setShipOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<ChinaOrder | null>(null);
 
   const statRow = (stats as Stats[])[0];
 
-  const handleInProduction = async (orderId: number) => {
-    await doInProduction({ orderId });
-    reload();
-  };
-
   return (
     <div className="space-y-4">
       {/* Mini stats */}
-      <div className="flex items-center bg-muted/30 border border-border/60 rounded-lg overflow-x-auto">
-        <StatChip label="Awaiting Production" value={statRow?.awaiting_production ?? '0'} />
-        <StatChip label="In Production" value={statRow?.in_production ?? '0'} />
+      <div className="flex flex-wrap items-center bg-muted/30 border border-border/60 rounded-lg">
+        <StatChip label="Awaiting Shipment" value={statRow?.awaiting_shipment ?? '0'} />
         <StatChip label="Shipped China (Month)" value={statRow?.shipped_china_this_month ?? '0'} />
       </div>
 
@@ -137,11 +129,6 @@ export function ChinaDirectTab() {
                     <td className="p-3">
                       <div className="flex gap-1">
                         {order.status === 'confirmed' && (
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleInProduction(order.id)} disabled={updating}>
-                            <Factory className="h-3 w-3 mr-1" /> In Production
-                          </Button>
-                        )}
-                        {(order.status === 'confirmed' || order.status === 'in_production') && (
                           <Button size="sm" className="h-7 text-xs" onClick={() => { setSelectedOrder(order); setShipOpen(true); }}>
                             <Truck className="h-3 w-3 mr-1" /> Ship
                           </Button>
