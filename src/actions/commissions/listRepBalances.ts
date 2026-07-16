@@ -19,7 +19,7 @@ function listRepBalances() {
           COUNT(*) AS orders_count
         FROM sales_orders so
         WHERE so.sales_rep_user_profile_id IS NOT NULL
-          AND so.status <> 'cancelled'
+          AND so.status NOT IN ('cancelled','quote')
         GROUP BY so.sales_rep_user_profile_id
       ) orders ON orders.sales_rep_user_profile_id = up.id
       LEFT JOIN (

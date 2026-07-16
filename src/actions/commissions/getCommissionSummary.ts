@@ -7,7 +7,7 @@ function getCommissionSummary() {
       SELECT
         (SELECT COALESCE(SUM(so.total_usd * 0.10), 0)
            FROM sales_orders so
-           WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status <> 'cancelled'
+           WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status NOT IN ('cancelled','quote')
              AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
              AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
         ) AS rep_commission_earned_usd,

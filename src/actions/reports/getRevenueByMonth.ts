@@ -11,7 +11,7 @@ function getRevenueByMonth() {
         COALESCE(SUM(soi.line_total_usd), 0) AS total_revenue
       FROM sales_orders so
       JOIN sales_order_items soi ON soi.sales_order_id = so.id
-      WHERE so.status NOT IN ('cancelled')
+      WHERE so.status NOT IN ('cancelled','quote')
         AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
         AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
       GROUP BY DATE_TRUNC('month', so.order_date)

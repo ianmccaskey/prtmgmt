@@ -16,7 +16,7 @@ function getTopCustomers() {
         MAX(so.order_date) AS last_order_date
       FROM customers c
       JOIN sales_orders so ON so.customer_id = c.id
-      WHERE so.status NOT IN ('cancelled')
+      WHERE so.status NOT IN ('cancelled','quote')
         AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
         AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
       GROUP BY c.id

@@ -15,7 +15,7 @@ function listRepCommissionOrders() {
       WHERE ({{params.sales_rep_user_profile_id}} IS NULL OR up.id = {{params.sales_rep_user_profile_id}}::bigint)
         AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
         AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
-        AND so.status <> 'cancelled'
+        AND so.status NOT IN ('cancelled','quote')
       ORDER BY so.order_date DESC
     `,
   });

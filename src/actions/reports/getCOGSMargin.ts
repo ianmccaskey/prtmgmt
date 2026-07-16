@@ -20,7 +20,7 @@ function getCOGSMargin() {
       JOIN sales_orders so ON so.id = soi.sales_order_id
       LEFT JOIN sales_order_item_allocations soia ON soia.sales_order_item_id = soi.id
       LEFT JOIN product_batches pb ON pb.id = soia.batch_id
-      WHERE so.status NOT IN ('cancelled')
+      WHERE so.status NOT IN ('cancelled','quote')
         AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
         AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
       GROUP BY p.id

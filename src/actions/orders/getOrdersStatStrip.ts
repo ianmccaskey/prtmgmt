@@ -14,7 +14,8 @@ export function getOrdersStatStrip() {
           WHERE status IN ('shipped','delivered')
           AND DATE_TRUNC('month', order_date) = DATE_TRUNC('month', CURRENT_DATE)) AS revenue_this_month,
         (SELECT COALESCE(SUM(so.total_usd),0) FROM sales_orders so
-          WHERE so.payment_status IN ('unpaid','partial_paid')) AS unpaid_balance,
+          WHERE so.payment_status IN ('unpaid','partial_paid')
+          AND so.status NOT IN ('quote','cancelled')) AS unpaid_balance,
         (SELECT COUNT(DISTINCT soi.sales_order_id) FROM sales_order_items soi
           JOIN sales_orders so ON so.id = soi.sales_order_id
           WHERE soi.fulfillment_source = 'china_direct'

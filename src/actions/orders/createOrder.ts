@@ -30,7 +30,16 @@ export function createOrder() {
         {{params.freeOrderReasonId}},
         {{params.freeOrderNote}},
         {{params.partialFulfillmentAllowed}}::boolean,
-        {{params.status}},
+        -- Confirmation is payment-gated. At creation nothing is verified
+        -- yet, so 'confirmed' is only honored for free/$0 orders (their
+        -- payment_status derives straight to 'paid'); everything else is
+        -- forced to 'quote' regardless of what the client sent.
+        CASE
+          WHEN {{params.status}} = 'confirmed'
+            AND ({{params.isFreeOrder}}::boolean = true OR {{params.totalUsd}}::numeric = 0)
+          THEN 'confirmed'
+          ELSE 'quote'
+        END,
         {{params.subtotalUsd}}::numeric,
         {{params.customerShippingChargeUsd}}::numeric,
         {{params.discountUsd}}::numeric,
