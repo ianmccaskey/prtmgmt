@@ -111,7 +111,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={9} className="text-center py-6 text-slate-400">No batches yet</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={10} className="text-center py-6 text-slate-400">No batches yet</td></tr>}
               </tbody>
             </table>
           )}
