@@ -14,6 +14,8 @@ export function getOrderItems() {
         soi.fulfillment_source,
         soi.preferred_batch_id,
         pb.batch_number AS preferred_batch_number,
+        soi.preferred_warehouse_id,
+        lw.name AS preferred_warehouse_name,
         p.name AS product_name,
         p.sku AS product_sku,
         p.available_warehouse,
@@ -27,6 +29,7 @@ export function getOrderItems() {
       FROM sales_order_items soi
       JOIN products p ON p.id = soi.product_id
       LEFT JOIN product_batches pb ON pb.id = soi.preferred_batch_id
+      LEFT JOIN warehouses lw ON lw.id = soi.preferred_warehouse_id
       WHERE soi.sales_order_id = {{params.orderId}}::bigint
       ORDER BY soi.id
     `,

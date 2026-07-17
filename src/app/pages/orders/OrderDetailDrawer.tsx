@@ -319,10 +319,12 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
     if (res && res.length > 0) {
       if (next === 'confirmed') {
         // Confirming a quote starts the reservation lifecycle for its
-        // warehouse lines, targeted at the order's fulfillment warehouse
-        // when one is set (shortfall there = backorder at that warehouse).
-        const whParam = whOverride !== null ? whOverride : (order?.preferred_warehouse_id ? String(order.preferred_warehouse_id) : '');
+        // warehouse lines, targeted per line: the line's own warehouse
+        // (split shipments) or the order-level one when the line has none
+        // (shortfall there = backorder at that warehouse).
+        const orderWhParam = whOverride !== null ? whOverride : (order?.preferred_warehouse_id ? String(order.preferred_warehouse_id) : '');
         for (const it of rows<OrderItemRow>(items).filter(i => i.fulfillment_source === 'warehouse')) {
+          const whParam = it.preferred_warehouse_id != null ? String(it.preferred_warehouse_id) : orderWhParam;
           await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity), warehouse_id: whParam });
         }
       }
@@ -405,14 +407,20 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                         >
                           <SelectTrigger className="h-7 w-52 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="auto">Auto (split / oldest batch first)</SelectItem>
+                            <SelectItem value="auto">Auto / as set per line</SelectItem>
                             {rows<{ id: number; name: string }>(warehousesRaw).map(w => (
-                              <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                              <SelectItem key={w.id} value={String(w.id)}>{w.name} (clears per-line splits)</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       ) : (
-                        <span className="font-medium">{String(order.preferred_warehouse_name || 'Auto')}</span>
+                        <span className="font-medium">
+                          {order.preferred_warehouse_name
+                            ? String(order.preferred_warehouse_name)
+                            : rows<OrderItemRow>(items).some(i => i.preferred_warehouse_id != null)
+                              ? 'Split (per line)'
+                              : 'Auto'}
+                        </span>
                       )}
                     </div>
                   </SheetHeader>

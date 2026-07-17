@@ -18,6 +18,7 @@ export type QueueItem = {
   customer_name: string;
   item_id: number; product_id: number; quantity: number; unit_price_usd: string;
   preferred_batch_id: number | null; preferred_batch_number: string | null;
+  line_preferred_warehouse_id: number | null; line_preferred_warehouse_name: string | null;
   sku: string; product_name: string;
   allocated_qty: number; stock_available: number; order_reserved_qty: number;
   fulfill_warehouses: string[] | string;

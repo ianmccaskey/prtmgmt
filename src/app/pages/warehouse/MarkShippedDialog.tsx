@@ -81,11 +81,13 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
       // Own reservations outrank an unreserved pinned-batch row: shipping
       // must consume this order's ledger rows first or they'd be stranded
       // (ship consumes ledger only for the inventory rows it ships from).
-      // A reserved pinned row still ranks highest (4+2).
+      // A reserved pinned row still ranks highest (4+2). The warehouse
+      // preference is per line (split shipments) falling back to the order's.
+      const prefWh = it.line_preferred_warehouse_id ?? order.preferred_warehouse_id;
       const score = (r: FifoRow) =>
         (Number(r.order_reserved) > 0 ? 4 : 0) +
         (it.preferred_batch_id != null && r.batch_id === it.preferred_batch_id ? 2 : 0) +
-        (order.preferred_warehouse_id != null && r.warehouse_id === order.preferred_warehouse_id ? 1 : 0);
+        (prefWh != null && r.warehouse_id === prefWh ? 1 : 0);
       const candidates = stock
         .filter(s => s.product_id === it.product_id)
         .slice()
@@ -228,6 +230,11 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                         {it.preferred_batch_number && (
                           <Badge variant="outline" className="ml-2 text-xs px-1 py-0 text-teal-600 border-teal-200">
                             Batch {it.preferred_batch_number} requested
+                          </Badge>
+                        )}
+                        {it.line_preferred_warehouse_name && (
+                          <Badge variant="outline" className="ml-2 text-xs px-1 py-0 text-indigo-600 border-indigo-200">
+                            → {it.line_preferred_warehouse_name}
                           </Badge>
                         )}
                       </div>

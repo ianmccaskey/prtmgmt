@@ -5,7 +5,7 @@ export function createOrderItem() {
     datasourceName: 'Peptide Ops DB',
     query: `
       INSERT INTO sales_order_items (
-        sales_order_id, product_id, quantity, unit_price_usd, line_total_usd, fulfillment_source, preferred_batch_id
+        sales_order_id, product_id, quantity, unit_price_usd, line_total_usd, fulfillment_source, preferred_batch_id, preferred_warehouse_id
       ) VALUES (
         {{params.orderId}}::bigint,
         {{params.productId}}::bigint,
@@ -13,7 +13,8 @@ export function createOrderItem() {
         {{params.unitPriceUsd}}::numeric,
         {{params.lineTotalUsd}}::numeric,
         {{params.fulfillmentSource}},
-        {{params.preferredBatchId}}::bigint
+        {{params.preferredBatchId}}::bigint,
+        {{params.preferredWarehouseId}}::bigint
       )
     `,
   });

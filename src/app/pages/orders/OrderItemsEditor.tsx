@@ -29,6 +29,7 @@ export type OrderItemRow = {
   available_warehouse: boolean; available_china_direct: boolean;
   is_shipped: boolean;
   preferred_batch_id: number | null; preferred_batch_number: string | null;
+  preferred_warehouse_id: number | null; preferred_warehouse_name: string | null;
 };
 export type AllocationRow = {
   id: number; sales_order_item_id: number; quantity: number;
@@ -84,36 +85,45 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [shipping, setShipping] = useState('');
 
   const orderStatusConfirmedPlus = ['confirmed', 'partially_shipped'].includes(String(order.status));
-  // Reservations target the order's fulfillment warehouse when one is set.
-  const preferredWh = order.preferred_warehouse_id ? String(order.preferred_warehouse_id) : '';
+  // Reservations target each line's fulfillment warehouse (split shipments)
+  // or the order-level one when the line has none.
+  const orderWh = order.preferred_warehouse_id ? Number(order.preferred_warehouse_id) : null;
+  const preferredWh = orderWh != null ? String(orderWh) : '';
+  const itemWh = (i: OrderItemRow): number | null => i.preferred_warehouse_id ?? orderWh;
 
   // Reservations are ledgered per (order, product) — a release wipes EVERY
   // line's reservation for that product. So any resync must re-reserve ALL
   // still-open warehouse lines of the product, honoring each line's batch
   // pin: pinned quantities reserve from their batch first, everything left
   // (unpinned lines + pinned shortfalls) tops up via one FIFO reserve.
-  type LineSpec = { qty: number; batchId: number | null };
+  type LineSpec = { qty: number; batchId: number | null; whId: number | null };
 
   const siblingWarehouseLines = (productId: number, excludeItemId: number): LineSpec[] =>
     items
       .filter(i => i.product_id === productId && i.id !== excludeItemId
         && i.fulfillment_source === 'warehouse' && !i.is_shipped
         && !allocations.some(a => a.sales_order_item_id === i.id))
-      .map(i => ({ qty: Number(i.quantity), batchId: i.preferred_batch_id }));
+      .map(i => ({ qty: Number(i.quantity), batchId: i.preferred_batch_id, whId: itemWh(i) }));
 
   const resyncProductReservation = async (productId: number, lineSpecs: LineSpec[]) => {
     await doRelease({ order_id: orderId, product_id: productId });
-    let fifoQty = 0;
+    // Pinned lines reserve their batch at their warehouse; the rest is
+    // FIFO-topped-up per warehouse ('' = any) so split lines stay split.
+    const fifoByWh = new Map<string, number>();
     for (const l of lineSpecs) {
       if (l.qty <= 0) continue;
+      const whParam = l.whId != null ? String(l.whId) : '';
       if (l.batchId != null) {
-        const got = await doReserveBatch({ order_id: orderId, product_id: productId, batch_id: l.batchId, quantity: l.qty, warehouse_id: preferredWh }) as { reserved_qty: number }[];
-        fifoQty += Math.max(0, l.qty - (got || []).reduce((s, r) => s + Number(r?.reserved_qty || 0), 0));
+        const got = await doReserveBatch({ order_id: orderId, product_id: productId, batch_id: l.batchId, quantity: l.qty, warehouse_id: whParam }) as { reserved_qty: number }[];
+        const short = Math.max(0, l.qty - (got || []).reduce((s, r) => s + Number(r?.reserved_qty || 0), 0));
+        if (short > 0) fifoByWh.set(whParam, (fifoByWh.get(whParam) || 0) + short);
       } else {
-        fifoQty += l.qty;
+        fifoByWh.set(whParam, (fifoByWh.get(whParam) || 0) + l.qty);
       }
     }
-    if (fifoQty > 0) await doReserve({ order_id: orderId, product_id: productId, quantity: fifoQty, warehouse_id: preferredWh });
+    for (const [whParam, qty] of fifoByWh) {
+      await doReserve({ order_id: orderId, product_id: productId, quantity: qty, warehouse_id: whParam });
+    }
   };
 
   const recalc = async (discountUsd?: number, shippingUsd?: number) => {
@@ -140,7 +150,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     }
     // Re-sync reservations at the new quantity plus any sibling lines'.
     if (it.fulfillment_source === 'warehouse' && orderStatusConfirmedPlus) {
-      await resyncProductReservation(it.product_id, [{ qty, batchId: it.preferred_batch_id }, ...siblingWarehouseLines(it.product_id, it.id)]);
+      await resyncProductReservation(it.product_id, [{ qty, batchId: it.preferred_batch_id, whId: itemWh(it) }, ...siblingWarehouseLines(it.product_id, it.id)]);
     }
     if (qty !== Number(it.quantity)) {
       await doAudit({ orderId, userId: profileId, changeType: 'line_item_qty', fieldName: `line.${it.product_sku}.quantity`, oldValue: String(it.quantity), newValue: String(qty), note: null });
@@ -212,7 +222,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     const price = addPrice !== '' ? Math.max(0, parseFloat(addPrice) || 0) : Number(p.list_price);
     const source = p.available_warehouse && Number(p.available_stock) >= qty ? 'warehouse' : 'china_direct';
     setBusy(true); setError('');
-    await doCreateItem({ orderId, productId: p.id, quantity: qty, unitPriceUsd: price, lineTotalUsd: qty * price, fulfillmentSource: source, preferredBatchId: null });
+    await doCreateItem({ orderId, productId: p.id, quantity: qty, unitPriceUsd: price, lineTotalUsd: qty * price, fulfillmentSource: source, preferredBatchId: null, preferredWarehouseId: null });
     if (source === 'warehouse' && orderStatusConfirmedPlus) {
       await doReserve({ order_id: orderId, product_id: p.id, quantity: qty, warehouse_id: preferredWh });
     }
@@ -303,6 +313,11 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
               {item.fulfillment_source === 'warehouse' && item.preferred_batch_number && (
                 <Badge variant="outline" className="text-xs px-1 py-0 text-teal-600 border-teal-200">
                   Batch {item.preferred_batch_number}
+                </Badge>
+              )}
+              {item.fulfillment_source === 'warehouse' && item.preferred_warehouse_name && (
+                <Badge variant="outline" className="text-xs px-1 py-0 text-indigo-600 border-indigo-200">
+                  From {item.preferred_warehouse_name}
                 </Badge>
               )}
               {itemAllocs.map(a => (

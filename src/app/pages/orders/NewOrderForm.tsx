@@ -50,6 +50,7 @@ type LineItem = {
   fulfillment_source: 'warehouse' | 'china_direct';
   price_mode: 'list' | 'tier' | 'manual' | 'free';
   preferred_batch_id: number | null;
+  preferred_warehouse_id: number | null;
 };
 type BatchStock = {
   id: number; product_id: number; batch_number: string;
@@ -69,7 +70,7 @@ const NETWORKS: Record<string, string[]> = {
 const NETWORK_LABELS: Record<string, string> = { ethereum: 'Ethereum', solana: 'Solana', bitcoin: 'Bitcoin' };
 
 function mkLine(): LineItem {
-  return { key: Math.random().toString(36).slice(2), product: null, quantity: 1, unit_price: 0, fulfillment_source: 'warehouse', price_mode: 'list', preferred_batch_id: null };
+  return { key: Math.random().toString(36).slice(2), product: null, quantity: 1, unit_price: 0, fulfillment_source: 'warehouse', price_mode: 'list', preferred_batch_id: null, preferred_warehouse_id: null };
 }
 
 function CustomerCombo({ onSelect, onCreateNew }: { onSelect: (c: Customer) => void; onCreateNew: (name: string) => void }) {
@@ -357,7 +358,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const addLine = (p: Product) => {
     const stock = Number(p.available_stock);
     const src: LineItem['fulfillment_source'] = p.available_warehouse && stock >= 1 ? 'warehouse' : 'china_direct';
-    setLines(prev => [...prev.filter(l => l.product !== null), { key: Math.random().toString(36).slice(2), product: p, quantity: 1, unit_price: isFree ? 0 : Number(p.list_price), fulfillment_source: src, price_mode: isFree ? 'free' : 'list', preferred_batch_id: null }]);
+    setLines(prev => [...prev.filter(l => l.product !== null), { key: Math.random().toString(36).slice(2), product: p, quantity: 1, unit_price: isFree ? 0 : Number(p.list_price), fulfillment_source: src, price_mode: isFree ? 'free' : 'list', preferred_batch_id: null, preferred_warehouse_id: null }]);
   };
   const upLine = (key: string, patch: Partial<LineItem>) => setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l));
   const rmLine = (key: string) => setLines(prev => prev.filter(l => l.key !== key));
@@ -383,20 +384,39 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     })
     .sort((a, b) => Number(b.fillsAll) - Number(a.fillsAll) || b.totalAvail - a.totalAvail || a.id - b.id);
   const suggestedWh = warehouseOptions.find(w => w.fillsAll) || null;
-  const effectiveWh = fulfillWarehouse
-    ? warehouseOptions.find(w => String(w.id) === fulfillWarehouse) || null
-    : suggestedWh;
+  const splitMode = fulfillWarehouse === 'split';
+  const effectiveWh = splitMode
+    ? null
+    : fulfillWarehouse
+      ? warehouseOptions.find(w => String(w.id) === fulfillWarehouse) || null
+      : suggestedWh;
+  // The warehouse a given line will reserve/fulfill from (null = auto FIFO).
+  const lineWh = (l: LineItem): number | null => (splitMode ? l.preferred_warehouse_id : effectiveWh?.id ?? null);
 
-  // A pinned batch must exist at the effective warehouse — clear pins that
-  // stop being valid when the warehouse selection changes.
+  // Entering split mode: default each warehouse line to its best warehouse
+  // (covers the line, else most stock of that product).
+  useEffect(() => {
+    if (!splitMode) return;
+    setLines(prev => prev.map(l => {
+      if (!l.product || l.fulfillment_source !== 'warehouse' || l.preferred_warehouse_id != null) return l;
+      const options = whAvail.filter(a => a.product_id === l.product!.id);
+      const best = [...options].sort((a, b) =>
+        Number(b.available >= l.quantity) - Number(a.available >= l.quantity) || b.available - a.available)[0];
+      return best ? { ...l, preferred_warehouse_id: best.warehouse_id } : l;
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splitMode]);
+
+  // A pinned batch must exist at the line's effective warehouse — clear
+  // pins that stop being valid when warehouse selections change.
   useEffect(() => {
     setLines(prev => prev.map(l => {
       if (!l.product || l.preferred_batch_id == null) return l;
-      const ok = batchesFor(l.product.id, effectiveWh?.id ?? null).some(b => b.id === l.preferred_batch_id);
+      const ok = batchesFor(l.product.id, splitMode ? l.preferred_warehouse_id : effectiveWh?.id ?? null).some(b => b.id === l.preferred_batch_id);
       return ok ? l : { ...l, preferred_batch_id: null };
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveWh?.id]);
+  }, [effectiveWh?.id, splitMode]);
 
   const selectedWallet = rows<Wallet>(wallets).find(w => w.asset === payAsset && w.network === payNetwork);
 
@@ -410,6 +430,10 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     if (lines.filter(l => l.product).length === 0) errs.push('Add at least one line item');
     if (isFree && !freeReasonId) errs.push('Free order reason is required');
     if (isFree && !freeNote.trim()) errs.push('Free order note is required');
+    if (splitMode) {
+      const unassigned = lines.filter(l => l.product && l.fulfillment_source === 'warehouse' && l.preferred_warehouse_id == null);
+      if (unassigned.length > 0) errs.push(`Split shipment: assign a warehouse to ${unassigned.map(l => l.product!.name).join(', ')}`);
+    }
     if (s === 'confirmed' && customer?.is_blocked && !overrideNote.trim()) errs.push('Override note required for blocked customer (admin)');
     if (s === 'confirmed') {
       const wLines = lines.filter(l => l.product && l.fulfillment_source === 'warehouse');
@@ -439,12 +463,16 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       subtotalUsd: subtotal, customerShippingChargeUsd: Number(shipping), discountUsd: Number(discount), totalUsd: total,
       notes: notes || null, createdByUserId: profileId,
       salesRepUserProfileId: salesRepId ? Number(salesRepId) : null,
-      preferredWarehouseId: effectiveWh ? effectiveWh.id : null,
+      preferredWarehouseId: !splitMode && effectiveWh ? effectiveWh.id : null,
     }) as { id: number; order_number: string }[];
     if (!res?.[0]) return;
     const orderId = res[0].id;
     for (const l of lines.filter(x => x.product)) {
-      await doItem({ orderId, productId: l.product!.id, quantity: l.quantity, unitPriceUsd: l.unit_price, lineTotalUsd: l.quantity * l.unit_price, fulfillmentSource: l.fulfillment_source, preferredBatchId: l.fulfillment_source === 'warehouse' ? l.preferred_batch_id : null });
+      await doItem({
+        orderId, productId: l.product!.id, quantity: l.quantity, unitPriceUsd: l.unit_price, lineTotalUsd: l.quantity * l.unit_price, fulfillmentSource: l.fulfillment_source,
+        preferredBatchId: l.fulfillment_source === 'warehouse' ? l.preferred_batch_id : null,
+        preferredWarehouseId: splitMode && l.fulfillment_source === 'warehouse' ? l.preferred_warehouse_id : null,
+      });
     }
     if (s === 'confirmed') {
       // Confirming reserves stock for warehouse-sourced lines, recorded in
@@ -456,10 +484,12 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       // product can't consume the pinned batch's stock before they run.
       const whLines = lines.filter(x => x.product && x.fulfillment_source === 'warehouse');
       const reserveOrder = [...whLines.filter(l => l.preferred_batch_id != null), ...whLines.filter(l => l.preferred_batch_id == null)];
-      // Reservations target the fulfillment warehouse when one is set;
-      // shortfalls there stay unreserved (backorder at that warehouse).
-      const whParam = effectiveWh ? String(effectiveWh.id) : '';
+      // Reservations target each line's fulfillment warehouse when one is
+      // set (order-level, or per line in split mode); shortfalls there stay
+      // unreserved (backorder at that warehouse).
       for (const l of reserveOrder) {
+        const wh = lineWh(l);
+        const whParam = wh != null ? String(wh) : '';
         let remaining = l.quantity;
         if (l.preferred_batch_id != null) {
           const got = await doReserveBatch({ order_id: orderId, product_id: l.product!.id, batch_id: l.preferred_batch_id, quantity: l.quantity, warehouse_id: whParam }) as { reserved_qty: number }[];
@@ -633,9 +663,31 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                       </Select>
                     </div>
                   </div>
+                  {/* Split mode: each line picks its ship-from warehouse */}
+                  {splitMode && line.fulfillment_source === 'warehouse' && (
+                    <div>
+                      <Label className="text-xs">Ship From *</Label>
+                      <Select
+                        value={line.preferred_warehouse_id != null ? String(line.preferred_warehouse_id) : ''}
+                        onValueChange={v => upLine(line.key, { preferred_warehouse_id: Number(v), preferred_batch_id: null })}
+                      >
+                        <SelectTrigger className="h-8"><SelectValue placeholder="Pick warehouse…" /></SelectTrigger>
+                        <SelectContent>
+                          {whAvail.filter(a => a.product_id === line.product!.id).map(a => (
+                            <SelectItem key={a.warehouse_id} value={String(a.warehouse_id)}>
+                              {a.warehouse_name} · {a.available} available{a.available < line.quantity ? ' (short)' : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {whAvail.filter(a => a.product_id === line.product!.id).length === 0 && (
+                        <p className="text-xs text-red-600 mt-1">No warehouse has sellable stock of this product.</p>
+                      )}
+                    </div>
+                  )}
                   {/* Batch picker — only when 2+ in-stock passed-QC batches
-                      exist at the effective fulfillment warehouse */}
-                  {line.fulfillment_source === 'warehouse' && batchesFor(line.product!.id, effectiveWh?.id ?? null).length >= 2 && (
+                      exist at the line's effective fulfillment warehouse */}
+                  {line.fulfillment_source === 'warehouse' && batchesFor(line.product!.id, lineWh(line)).length >= 2 && (
                     <div>
                       <Label className="text-xs">Batch</Label>
                       <Select
@@ -645,7 +697,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                         <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="auto">Auto (FIFO — oldest batch first)</SelectItem>
-                          {batchesFor(line.product!.id, effectiveWh?.id ?? null).map(b => (
+                          {batchesFor(line.product!.id, lineWh(line)).map(b => (
                             <SelectItem key={b.id} value={String(b.id)}>
                               {b.batch_number} · {b.available} available
                             </SelectItem>
@@ -695,9 +747,14 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                       {w.name} {w.fillsAll ? '— fills all items' : '— partial stock'}
                     </SelectItem>
                   ))}
+                  <SelectItem value="split">Split shipment — assign per line</SelectItem>
                 </SelectContent>
               </Select>
-              {effectiveWh ? (
+              {splitMode ? (
+                <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
+                  Split shipment: pick a <span className="font-medium">Ship From</span> warehouse on each line below. One shipment is created per warehouse at fulfillment.
+                </p>
+              ) : effectiveWh ? (
                 effectiveWh.fillsAll ? (
                   <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded p-2">
                     {fulfillWarehouse ? '' : 'Auto: '}<span className="font-medium">{effectiveWh.name}</span> can fill every item on this order.
