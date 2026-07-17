@@ -408,7 +408,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   }, [splitMode]);
 
   // A pinned batch must exist at the line's effective warehouse — clear
-  // pins that stop being valid when warehouse selections change.
+  // pins that stop being valid when warehouse selections change (order
+  // level, split toggle, or any per-line assignment incl. split defaults).
+  const lineWhSig = lines.map(l => `${l.key}:${l.preferred_warehouse_id ?? ''}`).join(',');
   useEffect(() => {
     setLines(prev => prev.map(l => {
       if (!l.product || l.preferred_batch_id == null) return l;
@@ -416,7 +418,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       return ok ? l : { ...l, preferred_batch_id: null };
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveWh?.id, splitMode]);
+  }, [effectiveWh?.id, splitMode, lineWhSig]);
 
   const selectedWallet = rows<Wallet>(wallets).find(w => w.asset === payAsset && w.network === payNetwork);
 

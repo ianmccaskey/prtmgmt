@@ -20,6 +20,7 @@ import insertAuditLog from '@/actions/orders/insertAuditLog';
 import searchProducts from '@/actions/orders/searchProducts';
 import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo';
 import reserveBatchStock from '@/actions/warehouse/reserveBatchStock';
+import listWarehouseAvailability from '@/actions/orders/listWarehouseAvailability';
 import releaseProductReservation from '@/actions/warehouse/releaseProductReservation';
 
 export type OrderItemRow = {
@@ -76,6 +77,8 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [addPrice, setAddPrice] = useState('');
   const [products] = useLoadAction(searchProducts, [addOpen], { q: '' }, { enabled: addOpen });
   const productOptions = asRows<ProductOption>(products);
+  const [whAvailRaw] = useLoadAction(listWarehouseAvailability, [addOpen], {}, { enabled: addOpen });
+  const whAvailability = asRows<{ product_id: number; warehouse_id: number; warehouse_name: string; available: number }>(whAvailRaw);
 
   const [shipToOpen, setShipToOpen] = useState(false);
   const [shipForm, setShipForm] = useState({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
@@ -222,9 +225,21 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     const price = addPrice !== '' ? Math.max(0, parseFloat(addPrice) || 0) : Number(p.list_price);
     const source = p.available_warehouse && Number(p.available_stock) >= qty ? 'warehouse' : 'china_direct';
     setBusy(true); setError('');
-    await doCreateItem({ orderId, productId: p.id, quantity: qty, unitPriceUsd: price, lineTotalUsd: qty * price, fulfillmentSource: source, preferredBatchId: null, preferredWarehouseId: null });
+    // On a split order (no order-level warehouse, lines carry their own),
+    // a new line must stay in the split model: assign it the warehouse
+    // that best covers it (covers qty, else most stock) instead of
+    // letting it reserve auto-FIFO across warehouses.
+    const orderIsSplit = orderWh == null && items.some(i => i.preferred_warehouse_id != null);
+    let lineWhId: number | null = null;
+    if (source === 'warehouse' && orderIsSplit) {
+      const best = whAvailability
+        .filter(a => a.product_id === p.id)
+        .sort((a, b) => Number(b.available >= qty) - Number(a.available >= qty) || b.available - a.available)[0];
+      lineWhId = best ? best.warehouse_id : null;
+    }
+    await doCreateItem({ orderId, productId: p.id, quantity: qty, unitPriceUsd: price, lineTotalUsd: qty * price, fulfillmentSource: source, preferredBatchId: null, preferredWarehouseId: lineWhId });
     if (source === 'warehouse' && orderStatusConfirmedPlus) {
-      await doReserve({ order_id: orderId, product_id: p.id, quantity: qty, warehouse_id: preferredWh });
+      await doReserve({ order_id: orderId, product_id: p.id, quantity: qty, warehouse_id: lineWhId != null ? String(lineWhId) : preferredWh });
     }
     await doAudit({ orderId, userId: profileId, changeType: 'line_item_added', fieldName: `line.${p.sku}`, oldValue: null, newValue: `${qty} @ $${price.toFixed(2)} (${source})`, note: null });
     await recalc();
