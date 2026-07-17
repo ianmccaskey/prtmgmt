@@ -18,7 +18,7 @@ import { Plus, ExternalLink } from 'lucide-react';
 
 type Batch = {
   id: number; batch_number: string; factory_name: string; manufacture_date: string;
-  quantity_produced: number; qty_remaining: number; cost_override: number; standard_cost: number;
+  quantity_produced: number; net_content_mg: number | null; qty_remaining: number; cost_override: number; standard_cost: number;
   qc_status: string; overall_purity_pct: number; coa_url: string; notes: string;
 };
 
@@ -41,7 +41,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
   const factoryList: { id: number; name: string }[] = asRows(factories);
 
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ batch_number: '', factory_id: '', manufacture_date: '', quantity_produced: '', cost_override: '', qc_status: 'pending', coa_url: '', overall_purity_pct: '', notes: '' });
+  const [form, setForm] = useState({ batch_number: '', factory_id: '', manufacture_date: '', quantity_produced: '', net_content_mg: '', cost_override: '', qc_status: 'pending', coa_url: '', overall_purity_pct: '', notes: '' });
   const [saving, setSaving] = useState(false);
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -55,6 +55,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
       factory_id: form.factory_id ? parseInt(form.factory_id) : null,
       manufacture_date: form.manufacture_date || null,
       quantity_produced: parseInt(form.quantity_produced) || 0,
+      net_content_mg: form.net_content_mg ? parseFloat(form.net_content_mg) : null,
       cost_override: form.cost_override ? parseFloat(form.cost_override) : null,
       qc_status: form.qc_status,
       coa_url: form.coa_url || null,
@@ -63,7 +64,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
     });
     setSaving(false);
     setShowNew(false);
-    setForm({ batch_number: '', factory_id: '', manufacture_date: '', quantity_produced: '', cost_override: '', qc_status: 'pending', coa_url: '', overall_purity_pct: '', notes: '' });
+    setForm({ batch_number: '', factory_id: '', manufacture_date: '', quantity_produced: '', net_content_mg: '', cost_override: '', qc_status: 'pending', coa_url: '', overall_purity_pct: '', notes: '' });
     await reload();
   };
 
@@ -85,6 +86,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Factory</th>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Mfg Date</th>
                   <th className="text-right px-4 py-2 font-medium text-slate-600">Produced</th>
+                  <th className="text-right px-4 py-2 font-medium text-slate-600">Net (mg)</th>
                   <th className="text-right px-4 py-2 font-medium text-slate-600">Remaining</th>
                   {isAdmin && <th className="text-right px-4 py-2 font-medium text-slate-600">Cost</th>}
                   <th className="text-left px-4 py-2 font-medium text-slate-600">QC</th>
@@ -99,6 +101,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
                     <td className="px-4 py-2 text-slate-600">{b.factory_name || '—'}</td>
                     <td className="px-4 py-2 text-slate-600">{b.manufacture_date ? new Date(b.manufacture_date).toLocaleDateString() : '—'}</td>
                     <td className="px-4 py-2 text-right">{b.quantity_produced}</td>
+                    <td className="px-4 py-2 text-right">{b.net_content_mg != null ? Number(b.net_content_mg) : '—'}</td>
                     <td className="px-4 py-2 text-right">{b.qty_remaining}</td>
                     {isAdmin && <td className="px-4 py-2 text-right">${Number(b.cost_override ?? b.standard_cost).toFixed(2)}</td>}
                     <td className="px-4 py-2"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${QC_STATUS_COLORS[b.qc_status] || 'bg-slate-100 text-slate-600'}`}>{b.qc_status}</span></td>
@@ -132,6 +135,9 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Manufacture Date</Label><Input type="date" value={form.manufacture_date} onChange={e => set('manufacture_date', e.target.value)} /></div>
               <div><Label>Qty Produced</Label><Input type="number" value={form.quantity_produced} onChange={e => set('quantity_produced', e.target.value)} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Net Content (mg)</Label><Input type="number" step="0.01" value={form.net_content_mg} onChange={e => set('net_content_mg', e.target.value)} placeholder="e.g. 5" /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>QC Status</Label>

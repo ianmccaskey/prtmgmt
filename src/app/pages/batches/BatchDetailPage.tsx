@@ -19,6 +19,7 @@ import { useAppUser } from '@/app/AppContext';
 type Batch = {
   id: number; batch_number: string; product_id: number; product_name: string; sku: string;
   factory_id: number; factory_name: string; manufacture_date: string; quantity_produced: number;
+  net_content_mg: number | null;
   qty_remaining: number; qty_reserved: number; cost_override: number; standard_cost: number;
   qc_status: string; coa_url: string; overall_purity_pct: number; notes: string;
 };
@@ -64,7 +65,9 @@ export function BatchDetailPage() {
         </div>
         <div className="text-right">
           <div className="text-lg font-bold text-slate-800">{b.qty_remaining} kits</div>
-          <div className="text-xs text-slate-400">{b.qty_reserved} reserved · {b.quantity_produced} produced</div>
+          <div className="text-xs text-slate-400">
+            {b.qty_reserved} reserved · {b.quantity_produced} produced{b.net_content_mg != null ? ` · ${Number(b.net_content_mg)} mg net` : ''}
+          </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => setShowReport(true)}>
           <FileText className="h-3 w-3 mr-1" /> Traceability Report

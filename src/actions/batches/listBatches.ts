@@ -6,7 +6,7 @@ function listBatches() {
     query: `
       SELECT
         pb.id, pb.batch_number, pb.product_id, pb.factory_id,
-        pb.manufacture_date, pb.quantity_produced, pb.cost_override,
+        pb.manufacture_date, pb.quantity_produced, pb.net_content_mg, pb.cost_override,
         pb.qc_status, pb.coa_url, pb.overall_purity_pct, pb.notes,
         p.sku, p.name AS product_name, p.standard_cost,
         f.name AS factory_name,

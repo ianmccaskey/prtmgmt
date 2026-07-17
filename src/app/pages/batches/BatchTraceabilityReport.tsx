@@ -16,6 +16,7 @@ type Row = Record<string, string | number | boolean | null>;
 type Batch = {
   id: number; batch_number: string; product_name: string; sku: string;
   factory_name: string; manufacture_date: string; quantity_produced: number;
+  net_content_mg: number | null;
   qty_remaining: number; qc_status: string; overall_purity_pct: number;
   coa_url: string; notes: string;
 };
@@ -87,10 +88,12 @@ export function BatchTraceabilityReport({ batch, onClose }: { batch: Batch; onCl
 
           <Section title="Batch Metadata">
             <SimpleTable
-              headers={['Factory', 'Mfg Date', 'Produced', 'Remaining', 'QC Status', 'Purity %', 'CoA']}
+              headers={['Factory', 'Mfg Date', 'Produced', 'Net (mg)', 'Remaining', 'QC Status', 'Purity %', 'CoA']}
               rows={[[
                 batch.factory_name || '—', fmtDate(batch.manufacture_date),
-                batch.quantity_produced, batch.qty_remaining, batch.qc_status,
+                batch.quantity_produced,
+                batch.net_content_mg != null ? Number(batch.net_content_mg) : '—',
+                batch.qty_remaining, batch.qc_status,
                 batch.overall_purity_pct != null ? `${batch.overall_purity_pct}%` : '—',
                 batch.coa_url || '—',
               ]]}
