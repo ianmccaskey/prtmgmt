@@ -1,3 +1,6 @@
 node_modules/
 docs/ui_bakery_prompt.md
 .claude/
+
+# Local DB credentials for tools/apply-migrations.ts — never commit
+.env.local
