@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { StatusBadge, PaymentBadge, ChannelBadge } from '@/app/pages/orders/OrderBadges';
+import { OrderDetailDrawer } from '@/app/pages/orders/OrderDetailDrawer';
 import { Crown, Ban, ArrowLeft, Plus, Pencil, Trash2, ShoppingCart, Save, X } from 'lucide-react';
 import getCustomerDetail from '@/actions/customers/getCustomerDetail';
 import getCustomerOrders from '@/actions/customers/getCustomerOrders';
@@ -144,7 +145,12 @@ export function CustomerDetailPage() {
   const customerId = Number(id);
 
   const [detail, detailLoading, , reloadDetail] = useLoadAction(getCustomerDetail, [customerId], { customerId });
-  const [orders, ordersLoading] = useLoadAction(getCustomerOrders, [customerId], { customerId });
+  const [orders, ordersLoading, , reloadOrders] = useLoadAction(getCustomerOrders, [customerId], { customerId });
+
+  // Order drawer opened in place — same full-detail modal as the Sales
+  // Orders page, instead of bouncing to /orders.
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [orderDrawerOpen, setOrderDrawerOpen] = useState(false);
 
   const customer = (detail as CustomerDetail[])[0];
 
@@ -410,7 +416,7 @@ export function CustomerDetailPage() {
                       <tr
                         key={String(o.id)}
                         className="border-b hover:bg-muted/30 cursor-pointer transition-colors"
-                        onClick={() => navigate('/orders')}
+                        onClick={() => { setSelectedOrderId(Number(o.id)); setOrderDrawerOpen(true); }}
                       >
                         <td className="p-3 font-mono text-xs font-medium">{String(o.order_number)}</td>
                         <td className="p-3 text-xs text-muted-foreground">{new Date(String(o.order_date)).toLocaleDateString()}</td>
@@ -437,6 +443,12 @@ export function CustomerDetailPage() {
       </Tabs>
 
       <BlockDialog customer={customer} open={blockOpen} onClose={() => setBlockOpen(false)} onDone={reloadDetail} />
+      <OrderDetailDrawer
+        orderId={selectedOrderId}
+        open={orderDrawerOpen}
+        onClose={() => { setOrderDrawerOpen(false); setSelectedOrderId(null); }}
+        onRefresh={() => { reloadOrders(); reloadDetail(); }}
+      />
     </div>
   );
 }
