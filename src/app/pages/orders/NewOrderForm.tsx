@@ -53,7 +53,7 @@ type LineItem = {
 };
 type BatchStock = {
   id: number; product_id: number; batch_number: string;
-  manufacture_date: string | null; available: number;
+  manufacture_date: string | null; warehouse_id: number; available: number;
 };
 type Wallet = { id: number; asset: string; network: string; address: string; label: string };
 type FreeReason = { id: number; label: string };
@@ -274,10 +274,21 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [wallets] = useLoadAction(getReceiveWallets, []);
   const [freeReasons] = useLoadAction(getFreeOrderReasons, []);
   const [salesReps] = useLoadAction(listSalesReps, []);
-  // In-stock passed-QC batches for every product; a line shows the batch
-  // picker only when its product has stock in 2+ batches.
+  // In-stock passed-QC batches per product (per warehouse); a line shows
+  // the batch picker only when its product has stock in 2+ batches. When a
+  // fulfillment warehouse is chosen, only that warehouse's batches are
+  // pinnable — a pin must be fulfillable where the order fulfills.
   const [batchStockRaw] = useLoadAction(listBatchStock, [open], {}, { enabled: open });
-  const batchesFor = (productId: number) => rows<BatchStock>(batchStockRaw).filter(b => b.product_id === productId);
+  const batchesFor = (productId: number, warehouseId: number | null) => {
+    const agg = new Map<number, BatchStock>();
+    for (const b of rows<BatchStock>(batchStockRaw)) {
+      if (b.product_id !== productId) continue;
+      if (warehouseId != null && b.warehouse_id !== warehouseId) continue;
+      const cur = agg.get(b.id);
+      agg.set(b.id, cur ? { ...cur, available: cur.available + b.available } : { ...b });
+    }
+    return [...agg.values()];
+  };
   // Per-product per-warehouse availability for the fulfillment-warehouse
   // suggestion and override.
   const [whAvailRaw] = useLoadAction(listWarehouseAvailability, [open], {}, { enabled: open });
@@ -375,6 +386,17 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const effectiveWh = fulfillWarehouse
     ? warehouseOptions.find(w => String(w.id) === fulfillWarehouse) || null
     : suggestedWh;
+
+  // A pinned batch must exist at the effective warehouse — clear pins that
+  // stop being valid when the warehouse selection changes.
+  useEffect(() => {
+    setLines(prev => prev.map(l => {
+      if (!l.product || l.preferred_batch_id == null) return l;
+      const ok = batchesFor(l.product.id, effectiveWh?.id ?? null).some(b => b.id === l.preferred_batch_id);
+      return ok ? l : { ...l, preferred_batch_id: null };
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveWh?.id]);
 
   const selectedWallet = rows<Wallet>(wallets).find(w => w.asset === payAsset && w.network === payNetwork);
 
@@ -611,8 +633,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                       </Select>
                     </div>
                   </div>
-                  {/* Batch picker — only when 2+ in-stock passed-QC batches exist */}
-                  {line.fulfillment_source === 'warehouse' && batchesFor(line.product!.id).length >= 2 && (
+                  {/* Batch picker — only when 2+ in-stock passed-QC batches
+                      exist at the effective fulfillment warehouse */}
+                  {line.fulfillment_source === 'warehouse' && batchesFor(line.product!.id, effectiveWh?.id ?? null).length >= 2 && (
                     <div>
                       <Label className="text-xs">Batch</Label>
                       <Select
@@ -622,7 +645,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                         <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="auto">Auto (FIFO — oldest batch first)</SelectItem>
-                          {batchesFor(line.product!.id).map(b => (
+                          {batchesFor(line.product!.id, effectiveWh?.id ?? null).map(b => (
                             <SelectItem key={b.id} value={String(b.id)}>
                               {b.batch_number} · {b.available} available
                             </SelectItem>

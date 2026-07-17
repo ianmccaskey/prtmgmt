@@ -295,6 +295,10 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [editingRep, setEditingRep] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
   const [savingNotes, setSavingNotes] = useState(false);
+  // Local mirror of a just-edited fulfillment warehouse ('' = auto) so a
+  // Confirm click can't race the detail reload and reserve at the old one.
+  const [whOverride, setWhOverride] = useState<string | null>(null);
+  useEffect(() => { setWhOverride(null); }, [orderId]);
 
   const reloadAll = () => { reloadDetail(); reloadItems(); reloadShipments(); reloadAllocations(); onRefresh(); };
 
@@ -317,7 +321,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
         // Confirming a quote starts the reservation lifecycle for its
         // warehouse lines, targeted at the order's fulfillment warehouse
         // when one is set (shortfall there = backorder at that warehouse).
-        const whParam = order?.preferred_warehouse_id ? String(order.preferred_warehouse_id) : '';
+        const whParam = whOverride !== null ? whOverride : (order?.preferred_warehouse_id ? String(order.preferred_warehouse_id) : '');
         for (const it of rows<OrderItemRow>(items).filter(i => i.fulfillment_source === 'warehouse')) {
           await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity), warehouse_id: whParam });
         }
@@ -392,8 +396,9 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       <span className="text-muted-foreground">Fulfills from:</span>
                       {status === 'quote' ? (
                         <Select
-                          value={order.preferred_warehouse_id ? String(order.preferred_warehouse_id) : 'auto'}
+                          value={whOverride !== null ? (whOverride || 'auto') : (order.preferred_warehouse_id ? String(order.preferred_warehouse_id) : 'auto')}
                           onValueChange={async v => {
+                            setWhOverride(v === 'auto' ? '' : v);
                             await doUpdateWarehouse({ orderId, warehouseId: v === 'auto' ? null : Number(v) });
                             reloadDetail();
                           }}

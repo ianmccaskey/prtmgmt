@@ -11,12 +11,12 @@ function listBatchStock() {
     datasourceName: 'Peptide Ops DB',
     query: `
       SELECT
-        pb.id, pb.product_id, pb.batch_number, pb.manufacture_date,
+        pb.id, pb.product_id, pb.batch_number, pb.manufacture_date, i.warehouse_id,
         COALESCE(SUM(GREATEST(0, i.quantity_on_hand - i.quantity_reserved)), 0)::int AS available
       FROM product_batches pb
       JOIN inventory i ON i.batch_id = pb.id
       WHERE pb.qc_status = 'passed'
-      GROUP BY pb.id, pb.product_id, pb.batch_number, pb.manufacture_date
+      GROUP BY pb.id, pb.product_id, pb.batch_number, pb.manufacture_date, i.warehouse_id
       HAVING SUM(GREATEST(0, i.quantity_on_hand - i.quantity_reserved)) > 0
       ORDER BY pb.product_id, pb.manufacture_date ASC NULLS LAST, pb.id ASC
     `,

@@ -78,9 +78,13 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
     const itemsOrdered = [...order.items].sort((a, b) => (b.preferred_batch_id != null ? 1 : 0) - (a.preferred_batch_id != null ? 1 : 0));
     for (const it of itemsOrdered) {
       let remaining = itemRemaining(it);
+      // Own reservations outrank an unreserved pinned-batch row: shipping
+      // must consume this order's ledger rows first or they'd be stranded
+      // (ship consumes ledger only for the inventory rows it ships from).
+      // A reserved pinned row still ranks highest (4+2).
       const score = (r: FifoRow) =>
-        (it.preferred_batch_id != null && r.batch_id === it.preferred_batch_id ? 4 : 0) +
-        (Number(r.order_reserved) > 0 ? 2 : 0) +
+        (Number(r.order_reserved) > 0 ? 4 : 0) +
+        (it.preferred_batch_id != null && r.batch_id === it.preferred_batch_id ? 2 : 0) +
         (order.preferred_warehouse_id != null && r.warehouse_id === order.preferred_warehouse_id ? 1 : 0);
       const candidates = stock
         .filter(s => s.product_id === it.product_id)
