@@ -72,7 +72,7 @@ function ModeIcon({ mode }: { mode: string }) {
 }
 
 export function ShipmentDetailPage() {
-  const { profileId } = useAppUser();
+  const { profileId, isAdmin } = useAppUser();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [showAddDoc, setShowAddDoc] = useState(false);
@@ -143,10 +143,18 @@ export function ShipmentDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Receiving belongs to the destination warehouse (Warehouse →
+              In-Transit); this button is an admin-only override. */}
           {detail.status !== 'delivered' && unreceived.length > 0 && (
-            <Button onClick={() => setShowReceive(true)} className="flex items-center gap-2">
-              <Package className="h-4 w-4" /> Receive Shipment
-            </Button>
+            isAdmin ? (
+              <Button onClick={() => setShowReceive(true)} className="flex items-center gap-2">
+                <Package className="h-4 w-4" /> Receive Shipment
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground max-w-[220px] text-right">
+                Received by the destination warehouse under Warehouse → In-Transit
+              </span>
+            )
           )}
           <Select value={detail.status} onValueChange={handleStatusChange} disabled={statusChanging}>
             <SelectTrigger className="w-44">

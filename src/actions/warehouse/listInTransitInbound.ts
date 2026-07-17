@@ -10,7 +10,7 @@ function listInTransitInbound() {
         sii.condition_flag,
         p.sku, p.name AS product_name,
         pb.batch_number,
-        w.name AS destination_warehouse, w.id AS destination_warehouse_id,
+        w.name AS destination_warehouse, w.name AS destination_warehouse_name, w.id AS destination_warehouse_id,
         si.reference_number, si.status AS shipment_status, si.arrival_date
       FROM shipments_inbound_items sii
       JOIN shipments_inbound si ON si.id = sii.shipment_id
