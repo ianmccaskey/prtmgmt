@@ -12,7 +12,8 @@ function listFulfillmentQueue() {
     query: `
       SELECT
         so.id AS order_id, so.order_number, so.status, so.order_date,
-        so.partial_fulfillment_allowed,
+        so.partial_fulfillment_allowed, so.preferred_warehouse_id,
+        pw.name AS preferred_warehouse_name,
         so.ship_to_name, so.ship_address_line1, so.ship_city, so.ship_country,
         c.full_name AS customer_name,
         soi.id AS item_id, soi.product_id, soi.quantity, soi.unit_price_usd,
@@ -27,6 +28,7 @@ function listFulfillmentQueue() {
       JOIN sales_order_items soi ON soi.sales_order_id = so.id
       JOIN products p ON p.id = soi.product_id
       LEFT JOIN product_batches pb_pref ON pb_pref.id = soi.preferred_batch_id
+      LEFT JOIN warehouses pw ON pw.id = so.preferred_warehouse_id
       LEFT JOIN (
         SELECT sales_order_item_id, SUM(quantity) AS allocated_qty
         FROM sales_order_item_allocations GROUP BY sales_order_item_id

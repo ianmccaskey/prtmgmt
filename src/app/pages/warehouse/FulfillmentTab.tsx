@@ -13,6 +13,7 @@ import { MarkShippedDialog } from '@/app/pages/warehouse/MarkShippedDialog';
 export type QueueItem = {
   order_id: number; order_number: string; status: string; order_date: string;
   partial_fulfillment_allowed: boolean;
+  preferred_warehouse_id: number | null; preferred_warehouse_name: string | null;
   ship_to_name: string; ship_address_line1: string; ship_city: string; ship_country: string;
   customer_name: string;
   item_id: number; product_id: number; quantity: number; unit_price_usd: string;
@@ -25,6 +26,7 @@ export type QueueItem = {
 export type QueueOrder = {
   order_id: number; order_number: string; status: string; order_date: string;
   partial_fulfillment_allowed: boolean; customer_name: string;
+  preferred_warehouse_id: number | null; preferred_warehouse_name: string | null;
   ship_to_name: string; ship_city: string; ship_country: string;
   items: QueueItem[];
 };
@@ -79,6 +81,7 @@ export function FulfillmentTab() {
       o = {
         order_id: r.order_id, order_number: r.order_number, status: r.status,
         order_date: r.order_date, partial_fulfillment_allowed: r.partial_fulfillment_allowed,
+        preferred_warehouse_id: r.preferred_warehouse_id, preferred_warehouse_name: r.preferred_warehouse_name,
         customer_name: r.customer_name, ship_to_name: r.ship_to_name,
         ship_city: r.ship_city, ship_country: r.ship_country, items: [],
       };

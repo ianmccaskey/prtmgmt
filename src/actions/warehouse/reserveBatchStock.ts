@@ -24,6 +24,7 @@ function reserveBatchStock() {
           AND i.batch_id = {{params.batch_id}}::bigint
           AND pb.qc_status = 'passed'
           AND (i.quantity_on_hand - i.quantity_reserved) > 0
+          AND (COALESCE({{params.warehouse_id}}, '') = '' OR i.warehouse_id::text = {{params.warehouse_id}})
       ),
       calc AS (
         SELECT id,

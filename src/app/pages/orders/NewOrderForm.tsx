@@ -31,6 +31,7 @@ import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo';
 import reserveBatchStock from '@/actions/warehouse/reserveBatchStock';
 import listBatchStock from '@/actions/orders/listBatchStock';
+import listWarehouseAvailability from '@/actions/orders/listWarehouseAvailability';
 
 type Customer = {
   id: number; full_name: string; email: string; phone: string;
@@ -277,6 +278,10 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // picker only when its product has stock in 2+ batches.
   const [batchStockRaw] = useLoadAction(listBatchStock, [open], {}, { enabled: open });
   const batchesFor = (productId: number) => rows<BatchStock>(batchStockRaw).filter(b => b.product_id === productId);
+  // Per-product per-warehouse availability for the fulfillment-warehouse
+  // suggestion and override.
+  const [whAvailRaw] = useLoadAction(listWarehouseAvailability, [open], {}, { enabled: open });
+  const whAvail = rows<{ product_id: number; warehouse_id: number; warehouse_name: string; available: number }>(whAvailRaw);
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [channel, setChannel] = useState('telegram');
@@ -302,6 +307,8 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [blanketPct, setBlanketPct] = useState('');
+  // '' = Auto (suggested warehouse, or split/FIFO when none can fill all)
+  const [fulfillWarehouse, setFulfillWarehouse] = useState('');
 
   const applyBlanketDiscount = () => {
     const pct = Math.min(100, Math.max(0, parseFloat(blanketPct) || 0));
@@ -347,6 +354,28 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const subtotal = lines.reduce((s, l) => s + (l.product ? l.quantity * l.unit_price : 0), 0);
   const total = Math.max(0, subtotal - Number(discount) + Number(shipping));
 
+  // Fulfillment-warehouse coverage: demand per product (warehouse lines
+  // only) vs each warehouse's sellable stock. Suggested = the warehouse
+  // covering every line, tiebroken by most total stock on these products.
+  const whDemand = new Map<number, number>();
+  for (const l of lines) {
+    if (l.product && l.fulfillment_source === 'warehouse') {
+      whDemand.set(l.product.id, (whDemand.get(l.product.id) || 0) + l.quantity);
+    }
+  }
+  const warehouseOptions = [...new Map(whAvail.map(a => [a.warehouse_id, a.warehouse_name])).entries()]
+    .map(([id, name]) => {
+      const availFor = (pid: number) => whAvail.find(a => a.warehouse_id === id && a.product_id === pid)?.available || 0;
+      const fillsAll = whDemand.size > 0 && [...whDemand.entries()].every(([pid, qty]) => availFor(pid) >= qty);
+      const totalAvail = [...whDemand.keys()].reduce((s, pid) => s + availFor(pid), 0);
+      return { id, name, fillsAll, totalAvail };
+    })
+    .sort((a, b) => Number(b.fillsAll) - Number(a.fillsAll) || b.totalAvail - a.totalAvail || a.id - b.id);
+  const suggestedWh = warehouseOptions.find(w => w.fillsAll) || null;
+  const effectiveWh = fulfillWarehouse
+    ? warehouseOptions.find(w => String(w.id) === fulfillWarehouse) || null
+    : suggestedWh;
+
   const selectedWallet = rows<Wallet>(wallets).find(w => w.asset === payAsset && w.network === payNetwork);
 
   const copyWallet = () => {
@@ -388,6 +417,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       subtotalUsd: subtotal, customerShippingChargeUsd: Number(shipping), discountUsd: Number(discount), totalUsd: total,
       notes: notes || null, createdByUserId: profileId,
       salesRepUserProfileId: salesRepId ? Number(salesRepId) : null,
+      preferredWarehouseId: effectiveWh ? effectiveWh.id : null,
     }) as { id: number; order_number: string }[];
     if (!res?.[0]) return;
     const orderId = res[0].id;
@@ -404,14 +434,17 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       // product can't consume the pinned batch's stock before they run.
       const whLines = lines.filter(x => x.product && x.fulfillment_source === 'warehouse');
       const reserveOrder = [...whLines.filter(l => l.preferred_batch_id != null), ...whLines.filter(l => l.preferred_batch_id == null)];
+      // Reservations target the fulfillment warehouse when one is set;
+      // shortfalls there stay unreserved (backorder at that warehouse).
+      const whParam = effectiveWh ? String(effectiveWh.id) : '';
       for (const l of reserveOrder) {
         let remaining = l.quantity;
         if (l.preferred_batch_id != null) {
-          const got = await doReserveBatch({ order_id: orderId, product_id: l.product!.id, batch_id: l.preferred_batch_id, quantity: l.quantity }) as { reserved_qty: number }[];
+          const got = await doReserveBatch({ order_id: orderId, product_id: l.product!.id, batch_id: l.preferred_batch_id, quantity: l.quantity, warehouse_id: whParam }) as { reserved_qty: number }[];
           remaining -= (got || []).reduce((sum, r) => sum + Number(r?.reserved_qty || 0), 0);
         }
         if (remaining > 0) {
-          await doReserve({ order_id: orderId, product_id: l.product!.id, quantity: remaining });
+          await doReserve({ order_id: orderId, product_id: l.product!.id, quantity: remaining, warehouse_id: whParam });
         }
       }
     }
@@ -435,7 +468,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     setPartial(false); setLines([mkLine()]); setDiscount('0'); setShipping('0'); setNotes('');
     setOverrideNote(''); setShip({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
     setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx('');
-    setAddPay(false); setErrors([]); setSalesRepId('');
+    setAddPay(false); setErrors([]); setSalesRepId(''); setFulfillWarehouse('');
   };
 
   const isBlocked = !!customer?.is_blocked;
@@ -624,6 +657,45 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               </div>
             )}
           </div>
+
+          {/* Fulfillment warehouse — suggested, rep can override */}
+          {whDemand.size > 0 && (
+            <div className="border rounded p-3 mb-4 space-y-2">
+              <Label className="font-semibold">Fulfillment Warehouse</Label>
+              <Select value={fulfillWarehouse} onValueChange={setFulfillWarehouse}>
+                <SelectTrigger>
+                  <SelectValue placeholder={suggestedWh ? `Auto — ${suggestedWh.name}` : 'Auto — split across warehouses'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {warehouseOptions.map(w => (
+                    <SelectItem key={w.id} value={String(w.id)}>
+                      {w.name} {w.fillsAll ? '— fills all items' : '— partial stock'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {effectiveWh ? (
+                effectiveWh.fillsAll ? (
+                  <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded p-2">
+                    {fulfillWarehouse ? '' : 'Auto: '}<span className="font-medium">{effectiveWh.name}</span> can fill every item on this order.
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                    <span className="font-medium">{effectiveWh.name}</span> can&apos;t cover everything — unfilled quantities become a backorder at that warehouse.
+                  </p>
+                )
+              ) : (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                  No single warehouse can fill this order — stock will be reserved oldest-batch-first across warehouses (may ship split).
+                </p>
+              )}
+              {fulfillWarehouse && (
+                <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setFulfillWarehouse('')}>
+                  Reset to auto
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Totals */}
           <div className="border rounded p-3 mb-4 space-y-2 text-sm">

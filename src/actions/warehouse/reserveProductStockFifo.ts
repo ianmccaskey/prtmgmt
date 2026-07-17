@@ -11,6 +11,9 @@ import { action } from '@uibakery/data';
  * concurrent reservation that landed between snapshot and update makes this
  * row a no-op (slight under-reservation = backorder) instead of
  * over-reserving. Reserves min(quantity, total available).
+ *
+ * params.warehouse_id ('' = all warehouses) restricts candidates to the
+ * order's preferred fulfillment warehouse when one is set.
  */
 function reserveProductStockFifo() {
   return action('reserveProductStockFifo', 'SQL', {
@@ -26,6 +29,7 @@ function reserveProductStockFifo() {
         WHERE i.product_id = {{params.product_id}}::bigint
           AND pb.qc_status = 'passed'
           AND (i.quantity_on_hand - i.quantity_reserved) > 0
+          AND (COALESCE({{params.warehouse_id}}, '') = '' OR i.warehouse_id::text = {{params.warehouse_id}})
       ),
       calc AS (
         SELECT id,

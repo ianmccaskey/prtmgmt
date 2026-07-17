@@ -11,7 +11,7 @@ export function createOrder() {
         order_channel, is_free_order, free_order_reason_id, free_order_note,
         partial_fulfillment_allowed, status,
         subtotal_usd, customer_shipping_charge_usd, discount_usd, total_usd,
-        payment_status, notes
+        payment_status, notes, preferred_warehouse_id
       ) VALUES (
         'ORD-' || TO_CHAR(CURRENT_DATE, 'YYYY') || '-' || LPAD(NEXTVAL('sales_order_seq')::text, 4, '0'),
         {{params.customerId}}::bigint,
@@ -45,7 +45,8 @@ export function createOrder() {
         {{params.discountUsd}}::numeric,
         {{params.totalUsd}}::numeric,
         'unpaid',
-        {{params.notes}}
+        {{params.notes}},
+        {{params.preferredWarehouseId}}::bigint
       )
       RETURNING id, order_number
     `,

@@ -84,6 +84,8 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [shipping, setShipping] = useState('');
 
   const orderStatusConfirmedPlus = ['confirmed', 'partially_shipped'].includes(String(order.status));
+  // Reservations target the order's fulfillment warehouse when one is set.
+  const preferredWh = order.preferred_warehouse_id ? String(order.preferred_warehouse_id) : '';
 
   // Reservations are ledgered per (order, product) — a release wipes EVERY
   // line's reservation for that product. So any resync must re-reserve ALL
@@ -105,13 +107,13 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     for (const l of lineSpecs) {
       if (l.qty <= 0) continue;
       if (l.batchId != null) {
-        const got = await doReserveBatch({ order_id: orderId, product_id: productId, batch_id: l.batchId, quantity: l.qty }) as { reserved_qty: number }[];
+        const got = await doReserveBatch({ order_id: orderId, product_id: productId, batch_id: l.batchId, quantity: l.qty, warehouse_id: preferredWh }) as { reserved_qty: number }[];
         fifoQty += Math.max(0, l.qty - (got || []).reduce((s, r) => s + Number(r?.reserved_qty || 0), 0));
       } else {
         fifoQty += l.qty;
       }
     }
-    if (fifoQty > 0) await doReserve({ order_id: orderId, product_id: productId, quantity: fifoQty });
+    if (fifoQty > 0) await doReserve({ order_id: orderId, product_id: productId, quantity: fifoQty, warehouse_id: preferredWh });
   };
 
   const recalc = async (discountUsd?: number, shippingUsd?: number) => {
@@ -175,7 +177,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
       if (!it.available_warehouse) { setError(`${it.product_name} is not sellable through the warehouse channel.`); setBusy(false); return; }
       // Reserve first; block the switch when no stock at all (prompt rule).
       const reserved = orderStatusConfirmedPlus
-        ? await doReserve({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity) }) as { reserved_qty: number }[]
+        ? await doReserve({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity), warehouse_id: preferredWh }) as { reserved_qty: number }[]
         : [];
       if (orderStatusConfirmedPlus && (!reserved || reserved.length === 0)) {
         setError(`${it.product_name}: no warehouse stock available to reserve — line stays China-Direct.`);
@@ -212,7 +214,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     setBusy(true); setError('');
     await doCreateItem({ orderId, productId: p.id, quantity: qty, unitPriceUsd: price, lineTotalUsd: qty * price, fulfillmentSource: source, preferredBatchId: null });
     if (source === 'warehouse' && orderStatusConfirmedPlus) {
-      await doReserve({ order_id: orderId, product_id: p.id, quantity: qty });
+      await doReserve({ order_id: orderId, product_id: p.id, quantity: qty, warehouse_id: preferredWh });
     }
     await doAudit({ orderId, userId: profileId, changeType: 'line_item_added', fieldName: `line.${p.sku}`, oldValue: null, newValue: `${qty} @ $${price.toFixed(2)} (${source})`, note: null });
     await recalc();

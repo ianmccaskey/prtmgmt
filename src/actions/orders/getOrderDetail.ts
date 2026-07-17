@@ -15,11 +15,13 @@ export function getOrderDetail() {
         c.is_blocked,
         c.blocked_reason,
         fr.label AS free_order_reason_label,
-        rep.display_name AS sales_rep_name
+        rep.display_name AS sales_rep_name,
+        pw.name AS preferred_warehouse_name
       FROM sales_orders so
       JOIN customers c ON c.id = so.customer_id
       LEFT JOIN free_order_reasons fr ON fr.id = so.free_order_reason_id
       LEFT JOIN user_profiles rep ON rep.id = so.sales_rep_user_profile_id
+      LEFT JOIN warehouses pw ON pw.id = so.preferred_warehouse_id
       WHERE so.id = {{params.orderId}}::bigint
     `,
   });

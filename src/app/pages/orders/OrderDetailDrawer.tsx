@@ -36,6 +36,8 @@ import updateOrderStatus from '@/actions/orders/updateOrderStatus';
 import insertAuditLog from '@/actions/orders/insertAuditLog';
 import updateOrderSalesRep from '@/actions/orders/updateOrderSalesRep';
 import listSalesReps from '@/actions/orders/listSalesReps';
+import updateOrderPreferredWarehouse from '@/actions/orders/updateOrderPreferredWarehouse';
+import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 
 interface OrderDetailDrawerProps {
   orderId: number | null;
@@ -286,6 +288,8 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [notificationsRaw] = useLoadAction(getOrderNotifications, [orderId], { orderId }, { enabled: !!orderId });
   const [salesReps] = useLoadAction(listSalesReps, []);
   const [doUpdateRep] = useMutateAction(updateOrderSalesRep);
+  const [warehousesRaw] = useLoadAction(listWarehousesAction, [], {});
+  const [doUpdateWarehouse] = useMutateAction(updateOrderPreferredWarehouse);
   const [doSaveNotes] = useMutateAction(updateOrderNotes);
   const [doReserveDraft] = useMutateAction(reserveProductStockFifo);
   const [editingRep, setEditingRep] = useState(false);
@@ -310,10 +314,12 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
     const res = await doUpdateStatus({ orderId, status: next, cancellationReason: null }) as unknown[];
     if (res && res.length > 0) {
       if (next === 'confirmed') {
-        // Confirming a draft starts the reservation lifecycle for its
-        // warehouse lines, same as confirming at creation time.
+        // Confirming a quote starts the reservation lifecycle for its
+        // warehouse lines, targeted at the order's fulfillment warehouse
+        // when one is set (shortfall there = backorder at that warehouse).
+        const whParam = order?.preferred_warehouse_id ? String(order.preferred_warehouse_id) : '';
         for (const it of rows<OrderItemRow>(items).filter(i => i.fulfillment_source === 'warehouse')) {
-          await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity) });
+          await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity), warehouse_id: whParam });
         }
       }
       await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: status, newValue: next, note: null });
@@ -380,6 +386,28 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                         <button className="font-medium text-blue-600 hover:underline" onClick={() => setEditingRep(true)}>
                           {String(order.sales_rep_name || 'Unassigned')}
                         </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 text-sm">
+                      <span className="text-muted-foreground">Fulfills from:</span>
+                      {status === 'quote' ? (
+                        <Select
+                          value={order.preferred_warehouse_id ? String(order.preferred_warehouse_id) : 'auto'}
+                          onValueChange={async v => {
+                            await doUpdateWarehouse({ orderId, warehouseId: v === 'auto' ? null : Number(v) });
+                            reloadDetail();
+                          }}
+                        >
+                          <SelectTrigger className="h-7 w-52 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="auto">Auto (split / oldest batch first)</SelectItem>
+                            {rows<{ id: number; name: string }>(warehousesRaw).map(w => (
+                              <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="font-medium">{String(order.preferred_warehouse_name || 'Auto')}</span>
                       )}
                     </div>
                   </SheetHeader>

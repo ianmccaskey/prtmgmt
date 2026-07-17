@@ -79,8 +79,9 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
     for (const it of itemsOrdered) {
       let remaining = itemRemaining(it);
       const score = (r: FifoRow) =>
-        (it.preferred_batch_id != null && r.batch_id === it.preferred_batch_id ? 2 : 0) +
-        (Number(r.order_reserved) > 0 ? 1 : 0);
+        (it.preferred_batch_id != null && r.batch_id === it.preferred_batch_id ? 4 : 0) +
+        (Number(r.order_reserved) > 0 ? 2 : 0) +
+        (order.preferred_warehouse_id != null && r.warehouse_id === order.preferred_warehouse_id ? 1 : 0);
       const candidates = stock
         .filter(s => s.product_id === it.product_id)
         .slice()
@@ -189,8 +190,13 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
     <Dialog open onOpenChange={v => !v && !saving && onClose()}>
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 flex-wrap">
             <Truck className="h-4 w-4" /> Mark Shipped — {order.order_number}
+            {order.preferred_warehouse_name && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0 text-blue-600 border-blue-200 font-normal">
+                Fulfills from {order.preferred_warehouse_name}
+              </Badge>
+            )}
           </DialogTitle>
         </DialogHeader>
 
