@@ -6,6 +6,7 @@ import listProductsAction from '@/actions/products/listProducts';
 import listFactoriesAction from '@/actions/products/listFactories';
 import createProductAction from '@/actions/products/createProduct';
 import bulkUpdateListPriceAction from '@/actions/products/bulkUpdateListPrice';
+import listProductCategories from '@/actions/settings/listProductCategories';
 import { useAppUser } from '@/app/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,10 +30,11 @@ type Product = {
   image_file: string | null;
 };
 
-const CATEGORIES = ['research peptide', 'cosmetic peptide', 'blend', 'accessory'];
-
 export function ProductsPage() {
   const navigate = useNavigate();
+  const [catsRaw] = useLoadAction(listProductCategories, [], {});
+  // Filter includes inactive categories — existing products may still hold them.
+  const categoryNames = asRows<{ name: string }>(catsRaw).map(c => c.name);
   const { profileId, isAdmin } = useAppUser();
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [search, setSearch] = useState('');
@@ -91,7 +93,7 @@ export function ProductsPage() {
               <SelectTrigger className="w-44"><SelectValue placeholder="All categories" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="">All categories</SelectItem>
-                {CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
+                {categoryNames.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={factoryId} onValueChange={setFactoryId}>

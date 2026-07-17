@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { rows } from '@/lib/rows';
 import { useAppUser } from '@/app/AppContext';
 import createProductAction from '@/actions/products/createProduct';
+import listProductCategories from '@/actions/settings/listProductCategories';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,8 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-
-const CATEGORIES = ['research peptide', 'cosmetic peptide', 'blend', 'accessory'];
 
 type Props = {
   open: boolean;
@@ -28,6 +28,8 @@ export function NewProductDialog({ open, onClose, factories, onCreated }: Props)
     factory_id: '', low_stock_threshold: '10',
   });
   const [mutate, saving, error] = useMutateAction(createProductAction);
+  const [catsRaw] = useLoadAction(listProductCategories, [], {});
+  const categories = rows<{ name: string; is_active: boolean }>(catsRaw).filter(c => c.is_active).map(c => c.name);
 
   const set = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }));
 
@@ -76,7 +78,7 @@ export function NewProductDialog({ open, onClose, factories, onCreated }: Props)
               <Select value={form.category} onValueChange={v => set('category', v)}>
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
-                  {CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
+                  {categories.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

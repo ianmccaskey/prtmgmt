@@ -4,6 +4,7 @@ import { useLoadAction } from '@uibakery/data';
 import listInventoryAction from '@/actions/warehouse/listInventory';
 import listProductsAction from '@/actions/products/listProducts';
 import listBatchesAction from '@/actions/batches/listBatches';
+import listProductCategories from '@/actions/settings/listProductCategories';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -25,9 +26,6 @@ const QC_COLORS: Record<string, string> = {
   quarantine: 'bg-orange-100 text-orange-700',
 };
 
-// Must match the products.category CHECK constraint.
-const CATEGORIES = ['research peptide', 'cosmetic peptide', 'blend', 'accessory'];
-
 type Props = { warehouseId: string; warehouseList: { id: number; name: string }[] };
 
 export function InventoryTab({ warehouseId, warehouseList }: Props) {
@@ -46,6 +44,8 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
   const productList = asRows<{ id: number; name: string; sku: string }>(products);
   const [batches] = useLoadAction(listBatchesAction, [productId], { product_id: productId || null });
   const batchList = asRows<{ id: number; batch_number: string }>(batches);
+  const [catsRaw] = useLoadAction(listProductCategories, [], {});
+  const categoryNames = asRows<{ name: string }>(catsRaw).map(c => c.name);
 
   return (
     <Card>
@@ -74,7 +74,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
             <SelectTrigger className="w-40 h-8"><SelectValue placeholder="All categories" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="">All categories</SelectItem>
-              {CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
+              {categoryNames.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={qcStatus} onValueChange={setQcStatus}>

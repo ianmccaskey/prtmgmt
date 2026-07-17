@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { WarehousesTab } from './WarehousesTab';
 import { RatePlansTab } from './RatePlansTab';
 import { WalletsReasonsTab } from './WalletsReasonsTab';
+import { FactoriesCategoriesTab } from './FactoriesCategoriesTab';
 import { ReorderUsersTab } from './ReorderUsersTab';
 import { Settings } from 'lucide-react';
 
@@ -22,6 +23,7 @@ export function SettingsPage() {
           <TabsTrigger value="warehouses">Warehouses</TabsTrigger>
           <TabsTrigger value="rate_plans">Rate Plans</TabsTrigger>
           <TabsTrigger value="wallets">Wallets & Reasons</TabsTrigger>
+          <TabsTrigger value="factories">Factories & Categories</TabsTrigger>
           <TabsTrigger value="reorder">Reorder & Users</TabsTrigger>
         </TabsList>
 
@@ -35,6 +37,10 @@ export function SettingsPage() {
 
         <TabsContent value="wallets" className="mt-6">
           <WalletsReasonsTab />
+        </TabsContent>
+
+        <TabsContent value="factories" className="mt-6">
+          <FactoriesCategoriesTab />
         </TabsContent>
 
         <TabsContent value="reorder" className="mt-6">

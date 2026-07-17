@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { rows } from '@/lib/rows';
 import { useAppUser } from '@/app/AppContext';
 import updateProductAction from '@/actions/products/updateProduct';
+import listProductCategories from '@/actions/settings/listProductCategories';
 import { FileUpload } from '@/components/FileUpload';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,8 +15,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Edit2, Save, X } from 'lucide-react';
-
-const CATEGORIES = ['research peptide', 'cosmetic peptide', 'blend', 'accessory'];
 
 type Product = {
   id: number; sku: string; name: string; description: string; category: string;
@@ -30,6 +30,11 @@ type Props = { product: Product; factories: { id: number; name: string }[] };
 export function ProductDetailsTab({ product, factories }: Props) {
   const { profileId, isAdmin } = useAppUser();
   const [editing, setEditing] = useState(false);
+  const [catsRaw] = useLoadAction(listProductCategories, [], {});
+  // Active categories, plus the product's current one even if deactivated.
+  const categories = rows<{ name: string; is_active: boolean }>(catsRaw)
+    .filter(c => c.is_active || c.name === product.category)
+    .map(c => c.name);
   const factoryLocked = Number(product.batch_count) > 0; // immutable once batches exist (prompt rule)
   const [form, setForm] = useState({
     name: product.name, description: product.description || '',
@@ -94,7 +99,7 @@ export function ProductDetailsTab({ product, factories }: Props) {
                   <Label>Category</Label>
                   <Select value={form.category} onValueChange={v => set('category', v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}</SelectContent>
+                    <SelectContent>{categories.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
               </div>
