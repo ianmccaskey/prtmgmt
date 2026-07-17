@@ -11,6 +11,8 @@ function receiveShipmentLine() {
         discrepancy_notes = {{params.discrepancy_notes}},
         received_at = NOW()
       WHERE id = {{params.item_id}}
+        AND quantity_received IS NULL
+      RETURNING id
     `,
   });
 }

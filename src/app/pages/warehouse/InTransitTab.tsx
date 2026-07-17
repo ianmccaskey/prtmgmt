@@ -90,7 +90,7 @@ export function InTransitTab({ warehouseId }: Props) {
       {receiveShipmentId != null && (
         <ReceiveShipmentDialog
           open
-          onClose={() => setReceiveShipmentId(null)}
+          onClose={() => { setReceiveShipmentId(null); reload(); }}
           shipmentId={receiveShipmentId}
           items={receivableFor(receiveShipmentId)}
           onDone={() => { setReceiveShipmentId(null); reload(); }}

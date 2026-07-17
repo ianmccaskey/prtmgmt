@@ -82,6 +82,7 @@ export function ReceiveShipmentDialog({ open, onClose, shipmentId, items, onDone
     }
     setSaving(true);
     setError('');
+    const alreadyReceived: string[] = [];
     try {
       for (const item of items) {
         const s = lineStates[item.id];
@@ -89,13 +90,19 @@ export function ReceiveShipmentDialog({ open, onClose, shipmentId, items, onDone
         const isDiscrepancy = qtyReceived < item.quantity_shipped || s.condition_flag !== 'ok';
         const discrepancyQty = item.quantity_shipped - qtyReceived;
 
-        // Update line item
-        await doReceiveLine({
+        // Update line item — guarded (quantity_received IS NULL), so a line
+        // someone else received meanwhile returns zero rows and we skip its
+        // inventory/write-off/log side effects instead of double-crediting.
+        const updated = await doReceiveLine({
           item_id: item.id,
           quantity_received: qtyReceived,
           condition_flag: s.condition_flag,
           discrepancy_notes: s.discrepancy_notes || null,
-        });
+        }) as unknown[];
+        if (!updated || updated.length === 0) {
+          alreadyReceived.push(item.product_name);
+          continue;
+        }
 
         // Add to inventory (received qty)
         if (qtyReceived > 0) {
@@ -136,6 +143,11 @@ export function ReceiveShipmentDialog({ open, onClose, shipmentId, items, onDone
       // Flip shipment status
       await doFlipDelivered({ shipment_id: shipmentId });
 
+      if (alreadyReceived.length > 0) {
+        setError(`Already received by someone else (no double credit): ${alreadyReceived.join(', ')}. Everything else was processed.`);
+        setSaving(false);
+        return;
+      }
       onDone();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to process receipt');
