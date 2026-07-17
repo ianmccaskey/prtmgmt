@@ -49,9 +49,12 @@ export function ProductDetailsTab({ product, factories }: Props) {
     image_file: '',
   });
   const [mutate, saving] = useMutateAction(updateProductAction);
+  const [saveError, setSaveError] = useState('');
   const set = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
+    setSaveError('');
+    try {
     // updateProduct auto-inserts product_price_history rows on price change
     // and ignores factory_id once batches exist.
     await mutate({
@@ -69,12 +72,18 @@ export function ProductDetailsTab({ product, factories }: Props) {
       user_id: profileId,
     });
     setEditing(false);
+    } catch (e: unknown) {
+      // e.g. the category was renamed in Settings while this form was open
+      // (FK rejects) — keep editing open so nothing is silently lost.
+      setSaveError(e instanceof Error ? e.message : 'Failed to save product');
+    }
   };
 
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-2">
+          {saveError && editing && <p className="text-sm text-red-600 bg-red-50 rounded p-2 mb-2">{saveError}</p>}
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Specifications</CardTitle>
             {editing ? (

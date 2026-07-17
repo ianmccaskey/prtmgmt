@@ -9,7 +9,7 @@ function updateProductCategory() {
     datasourceName: 'Peptide Ops DB',
     query: `
       UPDATE product_categories
-      SET name = TRIM({{params.name}}), is_active = {{params.is_active}}::boolean
+      SET name = LOWER(TRIM({{params.name}})), is_active = {{params.is_active}}::boolean
       WHERE id = {{params.id}}::bigint
       RETURNING id
     `,

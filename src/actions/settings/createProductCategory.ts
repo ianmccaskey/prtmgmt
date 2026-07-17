@@ -6,7 +6,7 @@ function createProductCategory() {
     datasourceName: 'Peptide Ops DB',
     query: `
       INSERT INTO product_categories (name)
-      VALUES (TRIM({{params.name}}))
+      VALUES (LOWER(TRIM({{params.name}})))
       ON CONFLICT (name) DO NOTHING
       RETURNING id
     `,
