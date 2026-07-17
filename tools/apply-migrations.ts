@@ -38,6 +38,11 @@ if (!url) {
 
 const sql = new SQL(url);
 
+// Serialize runners: a second invocation blocks here until the first
+// finishes, so two runs can't both see the same file as pending and race
+// the check-then-add DO blocks. Released automatically on disconnect.
+await sql`SELECT pg_advisory_lock(74206942)`;
+
 const files = readdirSync(MIGRATIONS_DIR)
   .filter(f => /^\d+_.+\.sql$/.test(f))
   .sort((a, b) => Number(a.split('_')[0]) - Number(b.split('_')[0]));
