@@ -181,7 +181,7 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
                     <td className="px-4 py-2 text-right">{t.received_at ? '—' : Math.round(Number(t.days_in_transit))}</td>
                     <td className="px-4 py-2"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-600'}`}>{t.status}</span></td>
                     <td className="px-4 py-2">
-                      {t.status === 'initiated' && (
+                      {t.status === 'initiated' && !isLogistics && (
                         <div className="flex gap-1 justify-end">
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openReceive(t)}>
                             <CheckCircle className="h-3 w-3 mr-1" />Receive

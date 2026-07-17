@@ -246,7 +246,7 @@ export function CustomerDetailPage() {
           <Button size="sm" onClick={() => navigate(`/orders?customerId=${customerId}`)}>
             <ShoppingCart className="h-4 w-4 mr-1" /> New Order
           </Button>
-          {!editing ? (
+          {isLogistics ? null : !editing ? (
             <Button size="sm" variant="outline" onClick={startEdit}><Pencil className="h-4 w-4 mr-1" /> Edit</Button>
           ) : (
             <>

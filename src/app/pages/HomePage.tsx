@@ -144,13 +144,13 @@ function StatCard({
 
 const QUICK_LINKS = [
   { label: 'Sales Orders', href: '/orders', icon: ShoppingCart, desc: 'Manage and create orders' },
-  { label: 'Customers', href: '/customers', icon: Users, desc: 'Customer database', roles: ['admin', 'sales_rep'] },
+  { label: 'Customers', href: '/customers', icon: Users, desc: 'Customer database', roles: ['admin', 'sales_rep', 'logistics'] },
   { label: 'Products', href: '/products', icon: Package, desc: 'Peptide catalog' },
   { label: 'Batches', href: '/batches', icon: FlaskConical, desc: 'QC & batch tracking' },
   { label: 'Warehouse', href: '/warehouse', icon: Warehouse, desc: 'Inventory & fulfillment' },
   { label: 'Logistics', href: '/logistics', icon: Truck, desc: 'Inbound shipments' },
   { label: 'Reports', href: '/reports', icon: BarChart3, desc: 'Analytics & exports' },
-  { label: 'Commissions', href: '/commissions', icon: HandCoins, desc: 'Rep & warehouse payouts', roles: ['admin'] },
+  { label: 'Commissions', href: '/commissions', icon: HandCoins, desc: 'Rep & warehouse payouts', roles: ['admin', 'logistics'] },
   { label: 'Settings', href: '/settings', icon: Settings, desc: 'System configuration', roles: ['admin'] },
 ] as { label: string; href: string; icon: React.ComponentType<{ className?: string }>; desc: string; roles?: string[] }[];
 

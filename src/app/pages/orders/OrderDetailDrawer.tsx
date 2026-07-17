@@ -187,7 +187,7 @@ function RefundTaskForm({ orderId, onCreated }: { orderId: number; onCreated: ()
 }
 
 function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: () => void }) {
-  const { profileId } = useAppUser();
+  const { profileId, isLogistics } = useAppUser();
   const [flagOpen, setFlagOpen] = useState(false);
   const [issueFlag, setIssueFlag] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
@@ -209,9 +209,11 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
       {shipment.carrier && <p className="text-muted-foreground">{String(shipment.carrier)} · {String(shipment.tracking_number || '—')}</p>}
       {shipment.shipped_date && <p className="text-xs text-muted-foreground">Shipped: {String(shipment.shipped_date)}</p>}
       {shipment.issue_notes && <p className="text-xs text-red-600">{String(shipment.issue_notes)}</p>}
-      <Button size="sm" variant="outline" className="h-7 text-xs mt-1" onClick={() => { setFlagOpen(true); setIssueFlag(String(shipment.issue_flag || '')); setIssueNotes(String(shipment.issue_notes || '')); }}>
-        <Flag className="h-3 w-3 mr-1" /> Flag Issue
-      </Button>
+      {!isLogistics && (
+        <Button size="sm" variant="outline" className="h-7 text-xs mt-1" onClick={() => { setFlagOpen(true); setIssueFlag(String(shipment.issue_flag || '')); setIssueNotes(String(shipment.issue_notes || '')); }}>
+          <Flag className="h-3 w-3 mr-1" /> Flag Issue
+        </Button>
+      )}
 
       <Dialog open={flagOpen} onOpenChange={setFlagOpen}>
         <DialogContent className="max-w-sm">

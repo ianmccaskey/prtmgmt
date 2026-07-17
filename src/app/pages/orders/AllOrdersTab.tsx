@@ -99,7 +99,7 @@ export function AllOrdersTab() {
           <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full sm:w-[140px]" />
           <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full sm:w-[140px] col-span-2 sm:col-span-1" />
         </div>
-        {!isWarehouse && (
+        {!readOnlyOrders && (
           <Button className="w-full sm:w-auto" onClick={() => setNewOrderOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> New Order
           </Button>

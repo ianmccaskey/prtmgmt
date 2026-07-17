@@ -169,8 +169,8 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
         </Card>
       )}
 
-      {/* Price Change Log (admin only — audit surface) */}
-      {isAdmin && (
+      {/* Price Change Log (cost audit surface — admin + logistics view) */}
+      {seesCosts && (
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Price Change Log</CardTitle></CardHeader>
         <CardContent className="p-0">
