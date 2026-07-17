@@ -28,7 +28,7 @@ type Product = {
 type Props = { product: Product; factories: { id: number; name: string }[] };
 
 export function ProductDetailsTab({ product, factories }: Props) {
-  const { profileId, isAdmin } = useAppUser();
+  const { profileId, isAdmin, isLogistics } = useAppUser();
   const [editing, setEditing] = useState(false);
   const [catsRaw] = useLoadAction(listProductCategories, [], {});
   // Active categories, plus the product's current one even if deactivated.
@@ -91,9 +91,9 @@ export function ProductDetailsTab({ product, factories }: Props) {
                 <Button size="sm" variant="outline" onClick={() => setEditing(false)}><X className="h-3 w-3 mr-1" />Cancel</Button>
                 <Button size="sm" onClick={handleSave} disabled={saving}><Save className="h-3 w-3 mr-1" />{saving ? 'Saving…' : 'Save'}</Button>
               </div>
-            ) : (
+            ) : !isLogistics ? (
               <Button size="sm" variant="outline" onClick={() => setEditing(true)}><Edit2 className="h-3 w-3 mr-1" />Edit</Button>
-            )}
+            ) : null}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">

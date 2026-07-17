@@ -58,6 +58,7 @@ const ISSUE_TYPES = ['lost_in_transit', 'damaged_in_transit', 'returned_to_sende
 const PAYMENT_ISSUE_TYPES = ['underpaid', 'overpaid', 'wrong_asset', 'wrong_network', 'wallet_mismatch', 'unconfirmed_onchain', 'other'];
 
 function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; reload: () => void }) {
+  const { isLogistics } = useAppUser();
   const { profileId } = useAppUser();
   const [payments, loading, , reloadPay] = useLoadAction(getOrderPayments, [orderId], { orderId });
   const [verifyPayment, verifying] = useMutateAction(markPaymentVerified);
@@ -96,7 +97,7 @@ function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; rel
           <p className="text-muted-foreground">{p.amount_asset != null ? `${Number(p.amount_asset).toFixed(6)} ${String(p.asset)} · ` : ''}${Number(p.amount_usd).toFixed(2)}</p>
           {p.tx_hash && <p className="text-xs text-muted-foreground break-all">TX: {String(p.tx_hash)}</p>}
           {p.issue_type && <p className="text-xs text-red-600">Issue: {String(p.issue_type)} — {String(p.issue_notes)}</p>}
-          <div className="flex gap-2 pt-1">
+          {!isLogistics && <div className="flex gap-2 pt-1">
             {p.verification_status !== 'verified' && (
               <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => doVerify(Number(p.id))} disabled={verifying}>
                 <Check className="h-3 w-3 mr-1" /> Mark Verified
@@ -105,7 +106,7 @@ function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; rel
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setFlagOpen(Number(p.id)); setIssueType(String(p.issue_type || '')); setIssueNotes(String(p.issue_notes || '')); }}>
               <Flag className="h-3 w-3 mr-1" /> Flag Issue
             </Button>
-          </div>
+          </div>}
         </div>
       ))}
 
@@ -275,7 +276,7 @@ function CancelOrderDialog({ orderId, orderStatus, open, onClose, onDone }: {
 }
 
 export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDetailDrawerProps) {
-  const { profileId, isAdmin } = useAppUser();
+  const { profileId, isAdmin, isLogistics } = useAppUser();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [doUpdateStatus, updatingStatus] = useMutateAction(updateOrderStatus);
   const [doAudit] = useMutateAction(insertAuditLog);
@@ -283,7 +284,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [detail, detailLoading, , reloadDetail] = useLoadAction(getOrderDetail, [orderId], { orderId }, { enabled: !!orderId });
   const [items, itemsLoading, , reloadItems] = useLoadAction(getOrderItems, [orderId], { orderId }, { enabled: !!orderId });
   const [shipments, shipmentsLoading, , reloadShipments] = useLoadAction(getOrderShipments, [orderId], { orderId }, { enabled: !!orderId });
-  const [auditLog, auditLoading] = useLoadAction(getOrderAuditLog, [orderId], { orderId }, { enabled: !!orderId && isAdmin });
+  const [auditLog, auditLoading] = useLoadAction(getOrderAuditLog, [orderId], { orderId }, { enabled: !!orderId && (isAdmin || isLogistics) });
   const [allocationsRaw, , , reloadAllocations] = useLoadAction(getOrderItemAllocations, [orderId], { orderId }, { enabled: !!orderId });
   const [notificationsRaw] = useLoadAction(getOrderNotifications, [orderId], { orderId }, { enabled: !!orderId });
   const [salesReps] = useLoadAction(listSalesReps, []);
@@ -389,14 +390,14 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                           </SelectContent>
                         </Select>
                       ) : (
-                        <button className="font-medium text-blue-600 hover:underline" onClick={() => setEditingRep(true)}>
+                        isLogistics ? (<span className="font-medium">{String(order.sales_rep_name || 'Unassigned')}</span>) : (<button className="font-medium text-blue-600 hover:underline" onClick={() => setEditingRep(true)}>
                           {String(order.sales_rep_name || 'Unassigned')}
-                        </button>
+                        </button>)
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-1 text-sm">
                       <span className="text-muted-foreground">Fulfills from:</span>
-                      {status === 'quote' ? (
+                      {status === 'quote' && !isLogistics ? (
                         <Select
                           value={whOverride !== null ? (whOverride || 'auto') : (order.preferred_warehouse_id ? String(order.preferred_warehouse_id) : 'auto')}
                           onValueChange={async v => {
@@ -453,7 +454,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                     </div>
                   )}
 
-                  <div className="flex gap-2 flex-wrap">
+                  {!isLogistics && <div className="flex gap-2 flex-wrap">
                     {status === 'quote' && (
                       ['paid', 'partial_paid'].includes(String(order.payment_status)) ? (
                         <Button size="sm" className="h-7 text-xs" disabled={updatingStatus} onClick={() => handleStatusAction('confirmed')}>Confirm Order</Button>
@@ -474,7 +475,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                     {!isReadOnly && status !== 'shipped' && (
                       <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => setCancelOpen(true)}>Cancel Order</Button>
                     )}
-                  </div>
+                  </div>}
 
                   <Separator />
 
@@ -484,7 +485,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       <TabsTrigger value="payments" className="flex-1 min-w-[26%] sm:min-w-0">Payments</TabsTrigger>
                       <TabsTrigger value="shipments" className="flex-1 min-w-[26%] sm:min-w-0">Shipments</TabsTrigger>
                       <TabsTrigger value="notes" className="flex-1 min-w-[26%] sm:min-w-0">Notes</TabsTrigger>
-                      {isAdmin && <TabsTrigger value="audit" className="flex-1 min-w-[26%] sm:min-w-0">Audit Log</TabsTrigger>}
+                      {(isAdmin || isLogistics) && <TabsTrigger value="audit" className="flex-1 min-w-[26%] sm:min-w-0">Audit Log</TabsTrigger>}
                     </TabsList>
 
                     <TabsContent value="items" className="pt-3">
@@ -494,7 +495,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                           order={order}
                           items={rows<OrderItemRow>(items)}
                           allocations={allocations}
-                          isReadOnly={isReadOnly}
+                          isReadOnly={isReadOnly || isLogistics}
                           onChanged={reloadAll}
                         />
                       )}
@@ -502,7 +503,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
 
                     <TabsContent value="payments" className="pt-3 space-y-3">
                       <PaymentsPanel orderId={Number(orderId)} reload={reloadAll} />
-                      <RefundTaskForm orderId={Number(orderId)} onCreated={reloadAll} />
+                      {!isLogistics && <RefundTaskForm orderId={Number(orderId)} onCreated={reloadAll} />}
                     </TabsContent>
 
                     <TabsContent value="shipments" className="pt-3 space-y-2">
@@ -517,18 +518,19 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       <p className="text-xs text-muted-foreground">Internal notes — never shown to customers. Editable in every status.</p>
                       <Textarea
                         rows={5}
+                        disabled={isLogistics}
                         value={notesDraft ?? String(order.notes || '')}
                         onChange={e => setNotesDraft(e.target.value)}
                         placeholder="Internal notes about this order…"
                       />
-                      <div className="flex justify-end">
+                      {!isLogistics && <div className="flex justify-end">
                         <Button size="sm" className="h-7 text-xs" onClick={saveNotes} disabled={savingNotes || notesDraft == null}>
                           {savingNotes ? 'Saving…' : 'Save Notes'}
                         </Button>
-                      </div>
+                      </div>}
                     </TabsContent>
 
-                    {isAdmin && (
+                    {(isAdmin || isLogistics) && (
                       <TabsContent value="audit" className="pt-3">
                         {auditLoading ? <Skeleton className="h-20 w-full" /> : (
                           <div className="space-y-2">

@@ -23,7 +23,10 @@ type Stats = { total_skus: number; total_kits: number; total_retail_value: numbe
 type WHBreakdown = { warehouse_id: number; warehouse_name: string; city: string; skus_count: number; total_kits: number; reserved_kits: number; available_kits: number; retail_value: number };
 
 export function WarehousePage() {
-  const { isAdmin, isSalesRep, isWarehouse, assignedWarehouseId } = useAppUser();
+  const { isAdmin, isSalesRep, isWarehouse, isLogistics, assignedWarehouseId } = useAppUser();
+  // Logistics coordinators see every tab (admin-level visibility) but the
+  // tabs' mutation controls are gated off for them inside each tab.
+  const seesOps = isAdmin || isWarehouse || isLogistics;
   // Warehouse users are locked to their assigned warehouse (access matrix).
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(
     isWarehouse && assignedWarehouseId ? String(assignedWarehouseId) : ''
@@ -123,23 +126,23 @@ export function WarehousePage() {
       <Tabs defaultValue="inventory">
         <TabsList className="flex flex-wrap h-auto gap-1 w-full max-w-3xl justify-start">
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
-          {(isAdmin || isWarehouse) && <TabsTrigger value="fulfillment">Fulfillment</TabsTrigger>}
-          {(isAdmin || isSalesRep) && <TabsTrigger value="reorder">Reorder</TabsTrigger>}
+          {seesOps && <TabsTrigger value="fulfillment">Fulfillment</TabsTrigger>}
+          {(isAdmin || isSalesRep || isLogistics) && <TabsTrigger value="reorder">Reorder</TabsTrigger>}
           <TabsTrigger value="intransit">In-Transit</TabsTrigger>
-          {(isAdmin || isWarehouse) && <TabsTrigger value="transfers">Transfers</TabsTrigger>}
-          {isAdmin && <TabsTrigger value="payables">Payables</TabsTrigger>}
-          {(isAdmin || isWarehouse) && <TabsTrigger value="activity">Activity</TabsTrigger>}
+          {seesOps && <TabsTrigger value="transfers">Transfers</TabsTrigger>}
+          {(isAdmin || isLogistics) && <TabsTrigger value="payables">Payables</TabsTrigger>}
+          {seesOps && <TabsTrigger value="activity">Activity</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="inventory" className="mt-4">
           <InventoryTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
         </TabsContent>
-        {(isAdmin || isWarehouse) && (
+        {seesOps && (
           <TabsContent value="fulfillment" className="mt-4">
             <FulfillmentTab />
           </TabsContent>
         )}
-        {(isAdmin || isSalesRep) && (
+        {(isAdmin || isSalesRep || isLogistics) && (
           <TabsContent value="reorder" className="mt-4">
             <ReorderTab />
           </TabsContent>
@@ -147,17 +150,17 @@ export function WarehousePage() {
         <TabsContent value="intransit" className="mt-4">
           <InTransitTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
         </TabsContent>
-        {(isAdmin || isWarehouse) && (
+        {seesOps && (
           <TabsContent value="transfers" className="mt-4">
             <TransfersTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
           </TabsContent>
         )}
-        {isAdmin && (
+        {(isAdmin || isLogistics) && (
           <TabsContent value="payables" className="mt-4">
             <PayablesTab />
           </TabsContent>
         )}
-        {(isAdmin || isWarehouse) && (
+        {seesOps && (
           <TabsContent value="activity" className="mt-4">
             <ActivityTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
           </TabsContent>

@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertTriangle, Truck } from 'lucide-react';
 import { MarkShippedDialog } from '@/app/pages/warehouse/MarkShippedDialog';
+import { useAppUser } from '@/app/AppContext';
 
 export type QueueItem = {
   order_id: number; order_number: string; status: string; order_date: string;
@@ -71,6 +72,7 @@ export function gapProducts(o: QueueOrder): Set<number> {
 }
 
 export function FulfillmentTab() {
+  const { isLogistics } = useAppUser();
   const [queue, loading, , reload] = useLoadAction(listFulfillmentQueueAction, [], {});
   const rows: QueueItem[] = asRows(queue);
   const [shipOrder, setShipOrder] = useState<QueueOrder | null>(null);
@@ -159,7 +161,7 @@ export function FulfillmentTab() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span tabIndex={0}>
-                                <Button size="sm" variant={hasGap ? 'outline' : 'default'} className="h-7 text-xs" disabled={blocked} onClick={() => setShipOrder(o)}>
+                                <Button size="sm" variant={hasGap ? 'outline' : 'default'} className="h-7 text-xs" disabled={blocked || isLogistics} onClick={() => setShipOrder(o)}>
                                   <Truck className="h-3 w-3 mr-1" /> Mark Shipped
                                 </Button>
                               </span>

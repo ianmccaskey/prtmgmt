@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { useAppUser } from '@/app/AppContext';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import listBatchTestsAction from '@/actions/batches/listBatchTests';
 import createBatchTestsBulkAction from '@/actions/batches/createBatchTestsBulk';
@@ -60,6 +61,7 @@ function emptyRows(): RowForm[] {
 }
 
 export function BatchTestsPanel({ batchId }: { batchId: number }) {
+  const { isLogistics } = useAppUser();
   const [filterType, setFilterType] = useState('');
   const [tests, loading, , reload] = useLoadAction(listBatchTestsAction, [], { batch_id: batchId, test_type: filterType });
   const [createTestsBulk] = useMutateAction(createBatchTestsBulkAction);
@@ -153,7 +155,7 @@ export function BatchTestsPanel({ batchId }: { batchId: number }) {
                   {TEST_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowNew(true); }}><Plus className="h-3 w-3 mr-1" />Add Results</Button>
+              {!isLogistics && <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowNew(true); }}><Plus className="h-3 w-3 mr-1" />Add Results</Button>}
             </div>
           </div>
         </CardHeader>

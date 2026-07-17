@@ -34,7 +34,7 @@ const QC_STATUS_COLORS: Record<string, string> = {
 export function BatchDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isAdmin, isWarehouse } = useAppUser();
+  const { isAdmin, isWarehouse, isLogistics } = useAppUser();
   const [showReport, setShowReport] = useState(false);
   const [batch, loading, , reload] = useLoadAction(getBatchDetailAction, [], { id });
   const b: Batch | null = Array.isArray(batch) && batch.length > 0 ? batch[0] : null;
@@ -81,7 +81,7 @@ export function BatchDetailPage() {
         {[
           { label: 'Manufacture Date', val: b.manufacture_date ? new Date(b.manufacture_date).toLocaleDateString() : '—' },
           { label: 'Overall Purity', val: b.overall_purity_pct != null ? `${b.overall_purity_pct}%` : '—' },
-          ...(isAdmin ? [{ label: 'Effective Cost', val: `$${effectiveCost.toFixed(2)} ${b.cost_override != null ? '(override)' : '(standard)'}` }] : []),
+          ...((isAdmin || isLogistics) ? [{ label: 'Effective Cost', val: `$${effectiveCost.toFixed(2)} ${b.cost_override != null ? '(override)' : '(standard)'}` }] : []),
           { label: 'Notes', val: b.notes || '—' },
         ].map(({ label, val }) => (
           <Card key={label} className="p-3">

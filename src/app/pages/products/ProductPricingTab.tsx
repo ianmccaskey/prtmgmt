@@ -23,9 +23,10 @@ type Props = { productId: number; listPrice: number; standardCost: number };
 export function ProductPricingTab({ productId, listPrice, standardCost }: Props) {
   // Cost data + price history (an audit surface) are admin-only; sales reps see
   // list price and tiers read-only per the access matrix.
-  const { isAdmin } = useAppUser();
+  const { isAdmin, isLogistics } = useAppUser();
+  const seesCosts = isAdmin || isLogistics;
   const [tiers, tiersLoading, , reloadTiers] = useLoadAction(getProductPriceTiersAction, [], { product_id: productId });
-  const [history, histLoading] = useLoadAction(getProductPriceHistoryAction, [], { product_id: productId }, { enabled: isAdmin });
+  const [history, histLoading] = useLoadAction(getProductPriceHistoryAction, [], { product_id: productId }, { enabled: seesCosts });
   const [addTier] = useMutateAction(addPriceTierAction);
   const [updateTier] = useMutateAction(updatePriceTierAction);
   const [deleteTier] = useMutateAction(deletePriceTierAction);
@@ -150,7 +151,7 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
       </Card>
 
       {/* Price History Chart (admin only — exposes cost data) */}
-      {isAdmin && chartData.length > 0 && (
+      {seesCosts && chartData.length > 0 && (
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-base">Price History</CardTitle></CardHeader>
           <CardContent>

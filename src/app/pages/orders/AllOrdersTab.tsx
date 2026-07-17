@@ -36,7 +36,8 @@ const PAYMENT_OPTIONS = ['', 'unpaid', 'partial_paid', 'paid', 'refunded'];
 const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'other'];
 
 export function AllOrdersTab() {
-  const { isWarehouse, profileId } = useAppUser();
+  const { isWarehouse, isLogistics, profileId } = useAppUser();
+  const readOnlyOrders = isWarehouse || isLogistics;
   const [doUpdateStatus] = useMutateAction(updateOrderStatus);
   const [doAudit] = useMutateAction(insertAuditLog);
 
@@ -146,7 +147,7 @@ export function AllOrdersTab() {
                     </td>
                     <td className="p-3 text-muted-foreground text-xs whitespace-nowrap hidden md:table-cell">{new Date(order.order_date).toLocaleDateString()}</td>
                     <td className="p-3" onClick={e => e.stopPropagation()}>
-                      {!isWarehouse && INLINE_NEXT[order.status] ? (
+                      {!readOnlyOrders && INLINE_NEXT[order.status] ? (
                         <Select value={order.status} onValueChange={v => v !== order.status && inlineStatusChange(order, v)}>
                           <SelectTrigger className="h-7 w-36 text-xs border-dashed">
                             <StatusBadge status={order.status} />

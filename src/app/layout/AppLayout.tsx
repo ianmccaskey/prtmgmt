@@ -38,13 +38,13 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { label: 'Home', href: '/', icon: Home },
   { label: 'Sales Orders', href: '/orders', icon: ShoppingCart },
-  { label: 'Customers', href: '/customers', icon: Users, roles: ['admin', 'sales_rep'] },
+  { label: 'Customers', href: '/customers', icon: Users, roles: ['admin', 'sales_rep', 'logistics'] },
   { label: 'Products', href: '/products', icon: Package },
   { label: 'Batches', href: '/batches', icon: FlaskConical },
   { label: 'Warehouse', href: '/warehouse', icon: Warehouse },
   { label: 'Logistics', href: '/logistics', icon: Truck },
   { label: 'Reports', href: '/reports', icon: BarChart3 },
-  { label: 'Commissions', href: '/commissions', icon: HandCoins, roles: ['admin'] },
+  { label: 'Commissions', href: '/commissions', icon: HandCoins, roles: ['admin', 'logistics'] },
   { label: 'Settings', href: '/settings', icon: Settings, roles: ['admin'] },
 ];
 

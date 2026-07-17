@@ -129,7 +129,7 @@ function dueDateClass(task: RefundTask): string {
 const STATUS_OPTIONS = ['', 'owed', 'sent', 'verified'];
 
 export function RefundsTab() {
-  const { profileId } = useAppUser();
+  const { profileId, isLogistics } = useAppUser();
   const [statusFilter, setStatusFilter] = useState('owed');
   const [tasks, loading, , reload] = useLoadAction(getRefundTasks, [statusFilter], { status: statusFilter || null });
   const [stats] = useLoadAction(getRefundStats, []);
@@ -207,12 +207,12 @@ export function RefundsTab() {
                     </td>
                     <td className="p-3">
                       <div className="flex gap-1">
-                        {task.status === 'owed' && (
+                        {task.status === 'owed' && !isLogistics && (
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setSelectedTask(task); setSentOpen(true); }}>
                             <Send className="h-3 w-3 mr-1" /> Mark Sent
                           </Button>
                         )}
-                        {task.status === 'sent' && (
+                        {task.status === 'sent' && !isLogistics && (
                           <Button size="sm" variant="outline" className="h-7 text-xs text-green-700" onClick={() => handleVerify(task)} disabled={verifying}>
                             <CheckCircle className="h-3 w-3 mr-1" /> Mark Verified
                           </Button>

@@ -10,7 +10,9 @@ import { BarChart2 } from 'lucide-react';
 import { useAppUser } from '@/app/AppContext';
 
 export function ReportsPage() {
-  const { isAdmin, isWarehouse } = useAppUser();
+  const { isAdmin, isWarehouse, isLogistics } = useAppUser();
+  // Financial reports are part of the logistics coordinator's job.
+  const seesFinancials = isAdmin || isLogistics;
   const [preset, setPreset] = useState('this_year');
   const [range, setRange] = useState<DateRange>(() => getPresetRange('this_year'));
 
@@ -44,7 +46,7 @@ export function ReportsPage() {
           {!isWarehouse && <TabsTrigger value="revenue">Revenue Trends</TabsTrigger>}
           {!isWarehouse && <TabsTrigger value="tables">Top Customers & Products</TabsTrigger>}
           <TabsTrigger value="throughput">Warehouse Throughput</TabsTrigger>
-          {isAdmin && <TabsTrigger value="margin">Margin & Payments</TabsTrigger>}
+          {seesFinancials && <TabsTrigger value="margin">Margin & Payments</TabsTrigger>}
         </TabsList>
 
         {!isWarehouse && (
@@ -63,7 +65,7 @@ export function ReportsPage() {
           <WarehouseThroughputSection range={range} />
         </TabsContent>
 
-        {isAdmin && (
+        {seesFinancials && (
           <TabsContent value="margin" className="mt-6">
             <MarginPaymentSection range={range} />
           </TabsContent>

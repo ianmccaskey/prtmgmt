@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { useAppUser } from '@/app/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { useLoadAction } from '@uibakery/data';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ type Customer = {
 const CHANNELS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'other'];
 
 export function CustomersPage() {
+  const { isLogistics } = useAppUser();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [channel, setChannel] = useState('');
@@ -65,9 +67,9 @@ export function CustomersPage() {
           <Button variant="outline" size="sm" onClick={exportCSV}>
             <Download className="h-4 w-4 mr-1" /> Export CSV
           </Button>
-          <Button size="sm" onClick={() => setNewOpen(true)}>
+          {!isLogistics && <Button size="sm" onClick={() => setNewOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> New Customer
-          </Button>
+          </Button>}
         </div>
       </div>
 

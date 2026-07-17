@@ -14,7 +14,7 @@ type Payable = { warehouse_id: number; warehouse_name: string; owed_shipments_co
 type OwedShipment = { id: number; order_number: string; shipped_date: string; internal_shipping_cost_usd: number; total_kits: number; carrier: string; tracking_number: string };
 
 export function PayablesTab() {
-  const { profileId } = useAppUser();
+  const { profileId, isAdmin } = useAppUser();
   const [payables, loading, , reload] = useLoadAction(listWarehousePayablesAction, [], {});
   const rows: Payable[] = asRows(payables);
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -43,7 +43,7 @@ export function PayablesTab() {
           <DollarSign className="h-5 w-5 text-green-500" />
           <span className="font-semibold text-slate-700">Total Owed: <span className="text-green-600">${Number(totalOwed).toFixed(2)}</span></span>
         </div>
-        {selected.size > 0 && (
+        {selected.size > 0 && isAdmin && (
           <Button size="sm" onClick={handleMarkPaid} disabled={paying}>
             <CheckSquare className="h-4 w-4 mr-1" />{paying ? 'Marking Paid…' : `Mark ${selected.size} Paid`}
           </Button>

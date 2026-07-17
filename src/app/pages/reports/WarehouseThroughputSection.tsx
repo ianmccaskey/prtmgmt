@@ -21,7 +21,8 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'
 interface Props { range: DateRange }
 
 export function WarehouseThroughputSection({ range }: Props) {
-  const { isAdmin, isWarehouse, assignedWarehouseId } = useAppUser();
+  const { isAdmin, isWarehouse, isLogistics, assignedWarehouseId } = useAppUser();
+  const seesCosts = isAdmin || isLogistics;
   // Warehouse role only sees its own warehouse; internal costs are admin-only.
   const scopedWarehouseId = isWarehouse ? assignedWarehouseId : null;
   const params = { date_from: range.from || null, date_to: range.to || null, warehouse_id: scopedWarehouseId };
@@ -30,7 +31,7 @@ export function WarehouseThroughputSection({ range }: Props) {
 
   const rows = asRows<ThroughputRow>(throughput);
   const summaryRows = asRows<SummaryRow>(summary);
-  const exportRows = isAdmin
+  const exportRows = seesCosts
     ? summaryRows
     : summaryRows.map(({ total_shipping_cost: _c, avg_cost_per_kit: _a, ...rest }) => rest);
 
@@ -84,8 +85,8 @@ export function WarehouseThroughputSection({ range }: Props) {
                 <TableHead>Warehouse</TableHead>
                 <TableHead className="text-right">Total Kits Shipped</TableHead>
                 <TableHead className="text-right">Avg Kits/Month</TableHead>
-                {isAdmin && <TableHead className="text-right">Total Shipping Cost</TableHead>}
-                {isAdmin && <TableHead className="text-right">Avg Cost/Kit</TableHead>}
+                {seesCosts && <TableHead className="text-right">Total Shipping Cost</TableHead>}
+                {seesCosts && <TableHead className="text-right">Avg Cost/Kit</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -94,12 +95,12 @@ export function WarehouseThroughputSection({ range }: Props) {
                   <TableCell className="font-medium text-sm">{r.warehouse_name}</TableCell>
                   <TableCell className="text-right">{Number(r.total_kits_shipped).toLocaleString()}</TableCell>
                   <TableCell className="text-right">{Number(r.avg_kits_per_month).toLocaleString(undefined, { maximumFractionDigits: 1 })}</TableCell>
-                  {isAdmin && <TableCell className="text-right">${Number(r.total_shipping_cost).toLocaleString()}</TableCell>}
-                  {isAdmin && <TableCell className="text-right">${Number(r.avg_cost_per_kit).toFixed(2)}</TableCell>}
+                  {seesCosts && <TableCell className="text-right">${Number(r.total_shipping_cost).toLocaleString()}</TableCell>}
+                  {seesCosts && <TableCell className="text-right">${Number(r.avg_cost_per_kit).toFixed(2)}</TableCell>}
                 </TableRow>
               ))}
               {summaryRows.length === 0 && (
-                <TableRow><TableCell colSpan={isAdmin ? 5 : 3} className="text-center py-6 text-gray-400">No data</TableCell></TableRow>
+                <TableRow><TableCell colSpan={seesCosts ? 5 : 3} className="text-center py-6 text-gray-400">No data</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

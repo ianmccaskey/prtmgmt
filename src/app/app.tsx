@@ -28,8 +28,8 @@ function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/orders" element={<OrdersPage />} />
-            <Route path="/customers" element={<RequireRole roles={['admin', 'sales_rep']}><CustomersPage /></RequireRole>} />
-            <Route path="/customers/:id" element={<RequireRole roles={['admin', 'sales_rep']}><CustomerDetailPage /></RequireRole>} />
+            <Route path="/customers" element={<RequireRole roles={['admin', 'sales_rep', 'logistics']}><CustomersPage /></RequireRole>} />
+            <Route path="/customers/:id" element={<RequireRole roles={['admin', 'sales_rep', 'logistics']}><CustomerDetailPage /></RequireRole>} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/products/:id" element={<ProductDetailPage />} />
             <Route path="/batches" element={<BatchesPage />} />
@@ -38,7 +38,7 @@ function App() {
             <Route path="/logistics" element={<LogisticsPage />} />
             <Route path="/logistics/:id" element={<ShipmentDetailPage />} />
             <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/commissions" element={<RequireRole roles={['admin']}><CommissionsPage /></RequireRole>} />
+            <Route path="/commissions" element={<RequireRole roles={['admin', 'logistics']}><CommissionsPage /></RequireRole>} />
             <Route path="/settings" element={<RequireRole roles={['admin']}><SettingsPage /></RequireRole>} />
           </Routes>
         </AppLayout>

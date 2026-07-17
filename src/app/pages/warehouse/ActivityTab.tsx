@@ -34,7 +34,7 @@ const WRITEOFF_REASONS = ['damaged', 'expired', 'lost', 'qc_hold', 'customer_rep
 type Props = { warehouseId: string; warehouseList: { id: number; name: string }[] };
 
 export function ActivityTab({ warehouseId, warehouseList }: Props) {
-  const { profileId } = useAppUser();
+  const { profileId, isLogistics } = useAppUser();
   const [eventType, setEventType] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -105,8 +105,8 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
     <div className="space-y-4">
       {/* Action buttons */}
       <div className="flex gap-2">
-        <Button size="sm" variant="outline" onClick={() => setShowCorrection(true)}><Edit3 className="h-3 w-3 mr-1" />Inventory Count Correction</Button>
-        <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setShowWriteoff(true)}><Trash2 className="h-3 w-3 mr-1" />Write-off</Button>
+        {!isLogistics && <Button size="sm" variant="outline" onClick={() => setShowCorrection(true)}><Edit3 className="h-3 w-3 mr-1" />Inventory Count Correction</Button>}
+        {!isLogistics && <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setShowWriteoff(true)}><Trash2 className="h-3 w-3 mr-1" />Write-off</Button>}
       </div>
 
       <Card>

@@ -35,7 +35,7 @@ export function ProductsPage() {
   const [catsRaw] = useLoadAction(listProductCategories, [], {});
   // Filter includes inactive categories — existing products may still hold them.
   const categoryNames = asRows<{ name: string }>(catsRaw).map(c => c.name);
-  const { profileId, isAdmin } = useAppUser();
+  const { profileId, isAdmin, isLogistics } = useAppUser();
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
@@ -78,7 +78,7 @@ export function ProductsPage() {
           <h1 className="text-2xl font-bold text-slate-800">Products</h1>
           <p className="text-sm text-slate-500">{rows.length} peptide products</p>
         </div>
-        <Button onClick={() => setShowNew(true)}><Plus className="h-4 w-4 mr-1" /> New Product</Button>
+        {!isLogistics && <Button onClick={() => setShowNew(true)}><Plus className="h-4 w-4 mr-1" /> New Product</Button>}
       </div>
 
       {/* Filters */}

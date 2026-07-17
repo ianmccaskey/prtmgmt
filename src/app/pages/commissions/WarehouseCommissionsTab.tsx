@@ -29,7 +29,7 @@ type WarehouseShipment = {
 const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
 
 export function WarehouseCommissionsTab() {
-  const { profileId } = useAppUser();
+  const { profileId, isAdmin } = useAppUser();
   const [payDialogWh, setPayDialogWh] = useState<WarehouseBalance | null>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -117,9 +117,9 @@ export function WarehouseCommissionsTab() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openPay(wh); }}>
+                    {isAdmin && <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openPay(wh); }}>
                       Record Payment
-                    </Button>
+                    </Button>}
                   </TableCell>
                 </TableRow>
               ))}

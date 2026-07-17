@@ -26,7 +26,7 @@ type UserProfile = {
 type Warehouse = { id: number; name: string; is_active: boolean };
 type AppSetting = { key: string; value: string };
 
-const ROLES = ['admin', 'sales_rep', 'warehouse'];
+const ROLES = ['admin', 'sales_rep', 'warehouse', 'logistics'];
 
 function Initials({ name }: { name: string }) {
   const parts = (name || '?').split(' ');
@@ -131,6 +131,7 @@ export function ReorderUsersTab() {
     admin: 'bg-purple-100 text-purple-700',
     sales_rep: 'bg-blue-100 text-blue-700',
     warehouse: 'bg-amber-100 text-amber-700',
+    logistics: 'bg-cyan-100 text-cyan-700',
   };
 
   return (

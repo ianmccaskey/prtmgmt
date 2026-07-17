@@ -36,7 +36,7 @@ const STATUS_COLORS: Record<string, string> = {
 type Props = { warehouseId: string; warehouseList: { id: number; name: string; is_active?: boolean }[] };
 
 export function TransfersTab({ warehouseId, warehouseList }: Props) {
-  const { profileId } = useAppUser();
+  const { profileId, isLogistics } = useAppUser();
   const [statusFilter, setStatusFilter] = useState('initiated');
   const [transfers, loading, , reload] = useLoadAction(listTransfersAction, [], { status: statusFilter, warehouse_id: warehouseId });
   const rows: Transfer[] = asRows(transfers);
@@ -150,7 +150,7 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
-              <Button size="sm" variant="outline" onClick={() => setShowNew(true)}><Plus className="h-3 w-3 mr-1" />New Transfer</Button>
+              {!isLogistics && <Button size="sm" variant="outline" onClick={() => setShowNew(true)}><Plus className="h-3 w-3 mr-1" />New Transfer</Button>}
             </div>
           </div>
         </CardHeader>

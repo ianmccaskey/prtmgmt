@@ -33,7 +33,7 @@ type Note = { id: number; customer_id: number; note_text: string; created_at: st
 
 const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'other'];
 
-function NotesPanel({ customerId }: { customerId: number }) {
+function NotesPanel({ customerId, readOnly }: { customerId: number; readOnly?: boolean }) {
   const { profileId } = useAppUser();
   const [notes, loading, , reload] = useLoadAction(getCustomerNotes, [customerId], { customerId });
   const [newText, setNewText] = useState('');
@@ -62,14 +62,18 @@ function NotesPanel({ customerId }: { customerId: number }) {
   return (
     <div className="space-y-4">
       {/* Add new note */}
-      <div className="space-y-2">
-        <Label className="font-medium">Add Note</Label>
-        <Textarea value={newText} onChange={e => setNewText(e.target.value)} placeholder="Write an interaction note…" rows={3} />
-        <Button size="sm" onClick={addNote} disabled={creating || !newText.trim()}>
-          <Plus className="h-3 w-3 mr-1" /> Add Note
-        </Button>
-      </div>
-      <Separator />
+      {!readOnly && (
+        <>
+          <div className="space-y-2">
+            <Label className="font-medium">Add Note</Label>
+            <Textarea value={newText} onChange={e => setNewText(e.target.value)} placeholder="Write an interaction note…" rows={3} />
+            <Button size="sm" onClick={addNote} disabled={creating || !newText.trim()}>
+              <Plus className="h-3 w-3 mr-1" /> Add Note
+            </Button>
+          </div>
+          <Separator />
+        </>
+      )}
       {/* Notes list */}
       {loading ? <Skeleton className="h-20 w-full" /> : (
         <div className="space-y-3">
@@ -82,14 +86,16 @@ function NotesPanel({ customerId }: { customerId: number }) {
                   <span>·</span>
                   <span>{new Date(note.created_at).toLocaleString()}</span>
                 </div>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setEditId(note.id); setEditText(note.note_text); }}>
-                    <Pencil className="h-3 w-3" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600" onClick={() => deleteNote(note)}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
+                {!readOnly && (
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setEditId(note.id); setEditText(note.note_text); }}>
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600" onClick={() => deleteNote(note)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
               </div>
               {editId === note.id ? (
                 <div className="space-y-2">
@@ -140,8 +146,8 @@ function BlockDialog({ customer, open, onClose, onDone }: {
 export function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isAdmin, isSalesRep } = useAppUser();
-  const canSeeInternalNotes = isAdmin || isSalesRep;
+  const { isAdmin, isSalesRep, isLogistics } = useAppUser();
+  const canSeeInternalNotes = isAdmin || isSalesRep || isLogistics;
   const customerId = Number(id);
 
   const [detail, detailLoading, , reloadDetail] = useLoadAction(getCustomerDetail, [customerId], { customerId });
@@ -262,7 +268,7 @@ export function CustomerDetailPage() {
               {customer.blocked_at && <p className="text-xs text-muted-foreground">Blocked on {new Date(String(customer.blocked_at)).toLocaleDateString()}</p>}
             </div>
           </div>
-          <Button size="sm" variant="outline" onClick={handleUnblock} disabled={unblocking}>Unblock</Button>
+          {!isLogistics && <Button size="sm" variant="outline" onClick={handleUnblock} disabled={unblocking}>Unblock</Button>}
         </div>
       )}
 
@@ -280,7 +286,7 @@ export function CustomerDetailPage() {
             <div className="border rounded p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold text-sm">Contact Info</h2>
-                {!editing && !customer.is_blocked && (
+                {!editing && !customer.is_blocked && !isLogistics && (
                   <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => setBlockOpen(true)}>
                     <Ban className="h-3 w-3 mr-1" /> Block
                   </Button>
@@ -438,7 +444,7 @@ export function CustomerDetailPage() {
 
         {/* ---- NOTES ---- */}
         <TabsContent value="notes" className="pt-4">
-          <NotesPanel customerId={customerId} />
+          <NotesPanel customerId={customerId} readOnly={isLogistics} />
         </TabsContent>
       </Tabs>
 

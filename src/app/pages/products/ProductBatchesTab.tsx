@@ -32,7 +32,8 @@ const QC_STATUS_COLORS: Record<string, string> = {
 type Props = { productId: number; productName: string; hasExistingBatches: boolean };
 
 export function ProductBatchesTab({ productId, productName, hasExistingBatches }: Props) {
-  const { isAdmin } = useAppUser();
+  const { isAdmin, isLogistics } = useAppUser();
+  const seesCosts = isAdmin || isLogistics;
   const navigate = useNavigate();
   const [batches, loading, , reload] = useLoadAction(listBatchesAction, [], { product_id: String(productId) });
   const [factories] = useLoadAction(listFactoriesAction, [], {});
@@ -74,7 +75,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Batches for {productName}</CardTitle>
-            <Button size="sm" variant="outline" onClick={() => setShowNew(true)}><Plus className="h-3 w-3 mr-1" />Add Batch</Button>
+            {!isLogistics && <Button size="sm" variant="outline" onClick={() => setShowNew(true)}><Plus className="h-3 w-3 mr-1" />Add Batch</Button>}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -88,7 +89,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
                   <th className="text-right px-4 py-2 font-medium text-slate-600">Produced</th>
                   <th className="text-right px-4 py-2 font-medium text-slate-600">Net (mg)</th>
                   <th className="text-right px-4 py-2 font-medium text-slate-600">Remaining</th>
-                  {isAdmin && <th className="text-right px-4 py-2 font-medium text-slate-600">Cost</th>}
+                  {seesCosts && <th className="text-right px-4 py-2 font-medium text-slate-600">Cost</th>}
                   <th className="text-left px-4 py-2 font-medium text-slate-600">QC</th>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Purity</th>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">CoA</th>
@@ -103,7 +104,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
                     <td className="px-4 py-2 text-right">{b.quantity_produced}</td>
                     <td className="px-4 py-2 text-right">{b.net_content_mg != null ? Number(b.net_content_mg) : '—'}</td>
                     <td className="px-4 py-2 text-right">{b.qty_remaining}</td>
-                    {isAdmin && <td className="px-4 py-2 text-right">${Number(b.cost_override ?? b.standard_cost).toFixed(2)}</td>}
+                    {seesCosts && <td className="px-4 py-2 text-right">${Number(b.cost_override ?? b.standard_cost).toFixed(2)}</td>}
                     <td className="px-4 py-2"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${QC_STATUS_COLORS[b.qc_status] || 'bg-slate-100 text-slate-600'}`}>{b.qc_status}</span></td>
                     <td className="px-4 py-2 text-slate-600">{b.overall_purity_pct != null ? `${b.overall_purity_pct}%` : '—'}</td>
                     <td className="px-4 py-2" onClick={e => e.stopPropagation()}>

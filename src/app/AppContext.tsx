@@ -5,7 +5,7 @@ import { firstRow } from '@/lib/rows';
 import { Card, CardContent } from '@/components/ui/card';
 import { ShieldAlert, UserX } from 'lucide-react';
 
-export type AppRole = 'admin' | 'sales_rep' | 'warehouse';
+export type AppRole = 'admin' | 'sales_rep' | 'warehouse' | 'logistics';
 
 export interface AppUser {
   /** Effective role driving all access control (from user_profiles, not platform roles). */
@@ -19,6 +19,8 @@ export interface AppUser {
   isAdmin: boolean;
   isSalesRep: boolean;
   isWarehouse: boolean;
+  /** Admin-level visibility; may only edit inbound shipments + run reports. */
+  isLogistics: boolean;
   /** True when the logged-in platform user has no user_profiles row (bootstrap admin fallback). */
   profileMissing: boolean;
 }
@@ -73,6 +75,7 @@ export function AppUserProvider({ children }: { children: React.ReactNode }) {
         isAdmin: role === 'admin',
         isSalesRep: role === 'sales_rep',
         isWarehouse: role === 'warehouse',
+        isLogistics: role === 'logistics',
         profileMissing: false,
       };
     }
@@ -89,6 +92,7 @@ export function AppUserProvider({ children }: { children: React.ReactNode }) {
       isAdmin: true,
       isSalesRep: false,
       isWarehouse: false,
+      isLogistics: false,
       profileMissing: true,
     };
   }, [hasProfile, row, user.name, email]);

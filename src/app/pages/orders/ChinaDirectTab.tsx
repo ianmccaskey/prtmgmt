@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusBadge, PaymentBadge } from './OrderBadges';
+import { useAppUser } from '@/app/AppContext';
 import { Truck } from 'lucide-react';
 import getChinaDirectQueue from '@/actions/orders/getChinaDirectQueue';
 import getChinaDirectStats from '@/actions/orders/getChinaDirectStats';
@@ -64,6 +65,7 @@ function ShipFromChinaDialog({ order, open, onClose, onDone }: { order: ChinaOrd
 }
 
 export function ChinaDirectTab() {
+  const { isLogistics } = useAppUser();
   const [queue, loading, , reload] = useLoadAction(getChinaDirectQueue, []);
   const [stats] = useLoadAction(getChinaDirectStats, []);
   const [shipOpen, setShipOpen] = useState(false);
@@ -128,7 +130,7 @@ export function ChinaDirectTab() {
                     </td>
                     <td className="p-3">
                       <div className="flex gap-1">
-                        {order.status === 'confirmed' && (
+                        {order.status === 'confirmed' && !isLogistics && (
                           <Button size="sm" className="h-7 text-xs" onClick={() => { setSelectedOrder(order); setShipOpen(true); }}>
                             <Truck className="h-3 w-3 mr-1" /> Ship
                           </Button>

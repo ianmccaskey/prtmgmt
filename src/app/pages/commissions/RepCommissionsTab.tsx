@@ -29,7 +29,7 @@ type RepOrder = {
 const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
 
 export function RepCommissionsTab() {
-  const { profileId } = useAppUser();
+  const { profileId, isAdmin } = useAppUser();
   const [payDialogRep, setPayDialogRep] = useState<RepBalance | null>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -117,9 +117,9 @@ export function RepCommissionsTab() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openPay(rep); }}>
+                    {isAdmin && <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openPay(rep); }}>
                       Record Payment
-                    </Button>
+                    </Button>}
                   </TableCell>
                 </TableRow>
               ))}
