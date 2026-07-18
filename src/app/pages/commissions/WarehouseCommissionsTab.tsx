@@ -194,6 +194,25 @@ export function WarehouseCommissionsTab() {
             <p className="text-sm text-gray-500">
               Current balance owed: <span className="font-medium text-gray-900">{payDialogWh ? money(payDialogWh.balance_owed_usd) : ''}</span>
             </p>
+            {payoutAddresses.length > 0 ? (
+              <div className="bg-muted/40 rounded p-2 space-y-1.5">
+                <Label className="text-xs">Pay to (warehouse staff)</Label>
+                {payoutAddresses.map(pa => (
+                  <div key={pa.id} className="flex items-center gap-2 text-xs">
+                    <span className="shrink-0 text-muted-foreground">{pa.display_name}</span>
+                    <span className="font-mono font-medium shrink-0">{pa.asset}/{pa.network}</span>
+                    <code className="flex-1 break-all">{pa.address}</code>
+                    <Button size="sm" variant="ghost" className="h-6 text-xs shrink-0" onClick={() => copyAddr(pa)}>
+                      {copiedId === pa.id ? 'Copied' : 'Copy'}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                No payout address on file for this warehouse&apos;s staff — add one under Settings → Users.
+              </p>
+            )}
             <div>
               <Label>Payment Amount (USD)</Label>
               <Input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />

@@ -120,6 +120,7 @@ export function ReorderUsersTab() {
 
   const openAdd = () => {
     setEditUser(null); setUEmail(''); setUDisplayName(''); setURole('sales_rep'); setUWarehouse(''); setUError(''); setUAvatar('');
+    setPaCombo(''); setPaAddress(''); setPaLabel('');
     setShowAddUser(true);
   };
 
@@ -127,7 +128,10 @@ export function ReorderUsersTab() {
     setEditUser(u);
     setUEmail(u.email || ''); setUDisplayName(u.display_name); setURole(u.role);
     setUWarehouse(u.assigned_warehouse_id ? String(u.assigned_warehouse_id) : '');
-    setUError(''); setUAvatar(''); setShowAddUser(true);
+    setUError(''); setUAvatar('');
+    // Stale payout-form input must never carry over to another user.
+    setPaCombo(''); setPaAddress(''); setPaLabel('');
+    setShowAddUser(true);
   };
 
   const saveS3Endpoint = async () => {
