@@ -111,6 +111,10 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
       await reload();
       return;
     }
+    // Deliberate cross-warehouse touch: transit loss is recorded against the
+    // SOURCE warehouse (whose stock left and never arrived) as part of the
+    // destination's receive action — the receiver is the one who knows the
+    // shortfall, and skipping this would leave shrinkage unrecorded.
     if (missing > 0 && writeOffMissing) {
       await recordLoss({
         product_id: t.product_id, batch_id: t.batch_id, warehouse_id: t.source_warehouse_id,

@@ -11,6 +11,7 @@ function listWarehousePayables() {
       FROM shipments_outbound so
       JOIN warehouses w ON w.id = so.origin_warehouse_id
       WHERE so.payable_status = 'owed' AND so.origin = 'warehouse'
+        AND (COALESCE({{params.warehouse_id}}, '') = '' OR so.origin_warehouse_id::text = {{params.warehouse_id}})
       GROUP BY w.id, w.name
       ORDER BY owed_usd_total DESC
     `,

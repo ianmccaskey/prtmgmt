@@ -25,7 +25,10 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
   const [inventory, , , reloadInv] = useLoadAction(getBatchInventoryAction, [], { batch_id: batch.id });
   const [doWriteoff] = useMutateAction(warehouseWriteoffAtomicAction);
 
-  const invRows: InventoryRow[] = asRows(inventory);
+  const allInvRows: InventoryRow[] = asRows(inventory);
+  // Warehouse users act only on their own warehouse — the allowed set
+  // drives options, the selected-row lookup, AND the submit validation.
+  const invRows = allInvRows.filter(r => !isWarehouse || r.warehouse_id === assignedWarehouseId);
 
   const [form, setForm] = useState({
     warehouse_id: '', quantity: '', reason: '', notes: '', evidence_url: '', evidence_file: '',
@@ -42,6 +45,8 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.warehouse_id || !qty || !form.reason) return;
+    // Stale/foreign warehouse id can't slip through to the mutation.
+    if (!invRows.some(r => String(r.warehouse_id) === form.warehouse_id)) return;
     if (form.reason === 'other' && !form.notes.trim()) {
       alert('Notes are required when reason is "other".');
       return;
@@ -92,7 +97,7 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
               <Select value={form.warehouse_id} onValueChange={v => set('warehouse_id', v)} required>
                 <SelectTrigger><SelectValue placeholder="Select warehouse…" /></SelectTrigger>
                 <SelectContent>
-                  {invRows.filter(r => !isWarehouse || r.warehouse_id === assignedWarehouseId).map(r => (
+                  {invRows.map(r => (
                     <SelectItem key={r.warehouse_id} value={String(r.warehouse_id)}>
                       {r.warehouse_name} ({r.quantity_available} available)
                     </SelectItem>

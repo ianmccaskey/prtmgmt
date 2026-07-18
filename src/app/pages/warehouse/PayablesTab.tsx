@@ -15,10 +15,11 @@ type OwedShipment = { id: number; order_number: string; shipped_date: string; in
 
 export function PayablesTab() {
   const { profileId, isAdmin, isWarehouse, assignedWarehouseId } = useAppUser();
-  const [payables, loading, , reload] = useLoadAction(listWarehousePayablesAction, [], {});
-  const allRows: Payable[] = asRows(payables);
-  // Warehouse users see only what THEIR warehouse is owed.
-  const rows = isWarehouse ? allRows.filter(r => r.warehouse_id === assignedWarehouseId) : allRows;
+  // Warehouse users see only what THEIR warehouse is owed — filtered in
+  // the query, not just the render.
+  const whParam = isWarehouse && assignedWarehouseId ? String(assignedWarehouseId) : '';
+  const [payables, loading, , reload] = useLoadAction(listWarehousePayablesAction, [whParam], { warehouse_id: whParam });
+  const rows: Payable[] = asRows(payables);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [markPaid] = useMutateAction(markShipmentsPaidAction);
