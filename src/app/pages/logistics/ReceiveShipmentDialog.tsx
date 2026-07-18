@@ -11,10 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
-import receiveShipmentLine from '@/actions/logistics/receiveShipmentLine';
-import insertInventoryFromReceipt from '@/actions/logistics/insertInventoryFromReceipt';
-import writeOffDiscrepancy from '@/actions/logistics/writeOffDiscrepancy';
-import logReceiptActivity from '@/actions/logistics/logReceiptActivity';
+import receiveLineAtomic from '@/actions/logistics/receiveLineAtomic';
 import flipShipmentDelivered from '@/actions/logistics/flipShipmentDelivered';
 
 type ShipmentItem = {
@@ -57,10 +54,7 @@ export function ReceiveShipmentDialog({ open, onClose, shipmentId, items, onDone
   const [error, setError] = useState('');
   const [step, setStep] = useState<'fill' | 'confirm'>('fill');
 
-  const [doReceiveLine] = useMutateAction(receiveShipmentLine);
-  const [doInsertInventory] = useMutateAction(insertInventoryFromReceipt);
-  const [doWriteOff] = useMutateAction(writeOffDiscrepancy);
-  const [doLogActivity] = useMutateAction(logReceiptActivity);
+  const [doReceiveLine] = useMutateAction(receiveLineAtomic);
   const [doFlipDelivered] = useMutateAction(flipShipmentDelivered);
 
   const updateLine = (itemId: number, field: keyof LineReceiveState, value: string | boolean) =>
@@ -87,57 +81,21 @@ export function ReceiveShipmentDialog({ open, onClose, shipmentId, items, onDone
       for (const item of items) {
         const s = lineStates[item.id];
         const qtyReceived = Math.max(0, Number(s.quantity_received));
-        const isDiscrepancy = qtyReceived < item.quantity_shipped || s.condition_flag !== 'ok';
-        const discrepancyQty = item.quantity_shipped - qtyReceived;
 
-        // Update line item — guarded (quantity_received IS NULL), so a line
-        // someone else received meanwhile returns zero rows and we skip its
-        // inventory/write-off/log side effects instead of double-crediting.
+        // One atomic statement per line: guarded receive + inventory credit
+        // + shortage write-off + activity log. Zero rows = someone else
+        // received it meanwhile — skip, no side effects fired.
         const updated = await doReceiveLine({
           item_id: item.id,
           quantity_received: qtyReceived,
           condition_flag: s.condition_flag,
           discrepancy_notes: s.discrepancy_notes || null,
+          auto_writeoff: s.auto_writeoff,
+          user_id: profileId,
         }) as unknown[];
         if (!updated || updated.length === 0) {
           alreadyReceived.push(item.product_name);
-          continue;
         }
-
-        // Add to inventory (received qty)
-        if (qtyReceived > 0) {
-          await doInsertInventory({
-            product_id: item.product_id,
-            batch_id: item.batch_id,
-            warehouse_id: item.destination_warehouse_id,
-            quantity: qtyReceived,
-          });
-        }
-
-        // Auto write-off for discrepancy
-        if (isDiscrepancy && discrepancyQty > 0 && s.auto_writeoff) {
-          await doWriteOff({
-            product_id: item.product_id,
-            batch_id: item.batch_id,
-            warehouse_id: item.destination_warehouse_id,
-            quantity: discrepancyQty,
-            notes: s.discrepancy_notes || null,
-            receipt_item_id: item.id,
-            user_id: profileId,
-          });
-        }
-
-        // Log receipt activity
-        await doLogActivity({
-          warehouse_id: item.destination_warehouse_id,
-          user_id: profileId,
-          event_type: isDiscrepancy ? 'receipt_discrepancy' : 'receipt_delivered',
-          product_id: item.product_id,
-          batch_id: item.batch_id,
-          quantity_delta: qtyReceived,
-          item_id: item.id,
-          notes: isDiscrepancy ? s.discrepancy_notes : null,
-        });
       }
 
       // Flip shipment status
