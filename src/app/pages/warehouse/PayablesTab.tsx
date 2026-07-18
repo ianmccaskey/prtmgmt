@@ -14,9 +14,11 @@ type Payable = { warehouse_id: number; warehouse_name: string; owed_shipments_co
 type OwedShipment = { id: number; order_number: string; shipped_date: string; internal_shipping_cost_usd: number; total_kits: number; carrier: string; tracking_number: string };
 
 export function PayablesTab() {
-  const { profileId, isAdmin } = useAppUser();
+  const { profileId, isAdmin, isWarehouse, assignedWarehouseId } = useAppUser();
   const [payables, loading, , reload] = useLoadAction(listWarehousePayablesAction, [], {});
-  const rows: Payable[] = asRows(payables);
+  const allRows: Payable[] = asRows(payables);
+  // Warehouse users see only what THEIR warehouse is owed.
+  const rows = isWarehouse ? allRows.filter(r => r.warehouse_id === assignedWarehouseId) : allRows;
   const [expanded, setExpanded] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [markPaid] = useMutateAction(markShipmentsPaidAction);

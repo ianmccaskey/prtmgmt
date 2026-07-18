@@ -130,7 +130,7 @@ export function WarehousePage() {
           {(isAdmin || isSalesRep || isLogistics) && <TabsTrigger value="reorder">Reorder</TabsTrigger>}
           <TabsTrigger value="intransit">In-Transit</TabsTrigger>
           {seesOps && <TabsTrigger value="transfers">Transfers</TabsTrigger>}
-          {(isAdmin || isLogistics) && <TabsTrigger value="payables">Payables</TabsTrigger>}
+          {(isAdmin || isLogistics || isWarehouse) && <TabsTrigger value="payables">Payables</TabsTrigger>}
           {seesOps && <TabsTrigger value="activity">Activity</TabsTrigger>}
         </TabsList>
 

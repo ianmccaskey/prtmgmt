@@ -21,7 +21,7 @@ type InventoryRow = { id: number; warehouse_name: string; warehouse_id: number; 
 const WRITEOFF_REASONS = ['damaged', 'expired', 'lost', 'qc_hold', 'customer_replacement', 'other'];
 
 export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefresh: () => void }) {
-  const { profileId } = useAppUser();
+  const { profileId, isWarehouse, assignedWarehouseId } = useAppUser();
   const [inventory, , , reloadInv] = useLoadAction(getBatchInventoryAction, [], { batch_id: batch.id });
   const [doWriteoff] = useMutateAction(warehouseWriteoffAtomicAction);
 
@@ -92,7 +92,7 @@ export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefre
               <Select value={form.warehouse_id} onValueChange={v => set('warehouse_id', v)} required>
                 <SelectTrigger><SelectValue placeholder="Select warehouse…" /></SelectTrigger>
                 <SelectContent>
-                  {invRows.map(r => (
+                  {invRows.filter(r => !isWarehouse || r.warehouse_id === assignedWarehouseId).map(r => (
                     <SelectItem key={r.warehouse_id} value={String(r.warehouse_id)}>
                       {r.warehouse_name} ({r.quantity_available} available)
                     </SelectItem>

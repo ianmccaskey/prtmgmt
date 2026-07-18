@@ -36,7 +36,7 @@ const STATUS_COLORS: Record<string, string> = {
 type Props = { warehouseId: string; warehouseList: { id: number; name: string; is_active?: boolean }[] };
 
 export function TransfersTab({ warehouseId, warehouseList }: Props) {
-  const { profileId, isLogistics } = useAppUser();
+  const { profileId, isLogistics, isWarehouse, assignedWarehouseId } = useAppUser();
   const [statusFilter, setStatusFilter] = useState('initiated');
   const [transfers, loading, , reload] = useLoadAction(listTransfersAction, [], { status: statusFilter, warehouse_id: warehouseId });
   const rows: Transfer[] = asRows(transfers);
@@ -150,7 +150,7 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
-              {!isLogistics && <Button size="sm" variant="outline" onClick={() => setShowNew(true)}><Plus className="h-3 w-3 mr-1" />New Transfer</Button>}
+              {!isLogistics && <Button size="sm" variant="outline" onClick={() => { if (isWarehouse && assignedWarehouseId) setNewForm(f => ({ ...f, source_warehouse_id: String(assignedWarehouseId) })); setShowNew(true); }}><Plus className="h-3 w-3 mr-1" />New Transfer</Button>}
             </div>
           </div>
         </CardHeader>
@@ -183,12 +183,16 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
                     <td className="px-4 py-2">
                       {t.status === 'initiated' && !isLogistics && (
                         <div className="flex gap-1 justify-end">
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openReceive(t)}>
-                            <CheckCircle className="h-3 w-3 mr-1" />Receive
-                          </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-red-500" onClick={() => setShowCancel(t)}>
-                            <XCircle className="h-3 w-3 mr-1" />Cancel
-                          </Button>
+                          {(!isWarehouse || t.destination_warehouse_id === assignedWarehouseId) && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openReceive(t)}>
+                              <CheckCircle className="h-3 w-3 mr-1" />Receive
+                            </Button>
+                          )}
+                          {(!isWarehouse || t.source_warehouse_id === assignedWarehouseId) && (
+                            <Button size="sm" variant="ghost" className="h-7 text-xs text-red-500" onClick={() => setShowCancel(t)}>
+                              <XCircle className="h-3 w-3 mr-1" />Cancel
+                            </Button>
+                          )}
                         </div>
                       )}
                     </td>
@@ -209,9 +213,9 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Source Warehouse</Label>
-                <Select value={newForm.source_warehouse_id} onValueChange={v => setNewForm(f => ({ ...f, source_warehouse_id: v, product_batch_key: '' }))}>
+                <Select value={newForm.source_warehouse_id} onValueChange={v => setNewForm(f => ({ ...f, source_warehouse_id: v, product_batch_key: '' }))} disabled={isWarehouse}>
                   <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-                  <SelectContent>{warehouseList.map(w => <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>{warehouseList.filter(w => !isWarehouse || w.id === assignedWarehouseId).map(w => <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>

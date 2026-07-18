@@ -34,7 +34,9 @@ const WRITEOFF_REASONS = ['damaged', 'expired', 'lost', 'qc_hold', 'customer_rep
 type Props = { warehouseId: string; warehouseList: { id: number; name: string }[] };
 
 export function ActivityTab({ warehouseId, warehouseList }: Props) {
-  const { profileId, isLogistics } = useAppUser();
+  const { profileId, isLogistics, isWarehouse, assignedWarehouseId } = useAppUser();
+  // Warehouse users act only on their own warehouse.
+  const pickableWarehouses = warehouseList.filter(w => !isWarehouse || w.id === assignedWarehouseId);
   const [eventType, setEventType] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -166,9 +168,9 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
           <form onSubmit={handleCorrection} className="space-y-3">
             <div>
               <Label>Warehouse</Label>
-              <Select value={corrForm.warehouse_id} onValueChange={v => setCorrForm(f => ({ ...f, warehouse_id: v, product_batch_key: '' }))}>
+              <Select value={corrForm.warehouse_id} onValueChange={v => setCorrForm(f => ({ ...f, warehouse_id: v, product_batch_key: '' }))} disabled={isWarehouse}>
                 <SelectTrigger><SelectValue placeholder="Select warehouse…" /></SelectTrigger>
-                <SelectContent>{warehouseList.map(w => <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>)}</SelectContent>
+                <SelectContent>{pickableWarehouses.map(w => <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
@@ -202,9 +204,9 @@ export function ActivityTab({ warehouseId, warehouseList }: Props) {
           <form onSubmit={handleWriteoff} className="space-y-3">
             <div>
               <Label>Warehouse</Label>
-              <Select value={woForm.warehouse_id} onValueChange={v => setWoForm(f => ({ ...f, warehouse_id: v, product_batch_key: '' }))}>
+              <Select value={woForm.warehouse_id} onValueChange={v => setWoForm(f => ({ ...f, warehouse_id: v, product_batch_key: '' }))} disabled={isWarehouse}>
                 <SelectTrigger><SelectValue placeholder="Select warehouse…" /></SelectTrigger>
-                <SelectContent>{warehouseList.map(w => <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>)}</SelectContent>
+                <SelectContent>{pickableWarehouses.map(w => <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
