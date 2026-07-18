@@ -12,7 +12,7 @@ import { BatchTestsPanel } from '@/app/pages/batches/BatchTestsPanel';
 import { BatchQcPanel } from '@/app/pages/batches/BatchQcPanel';
 import { BatchInventoryPanel } from '@/app/pages/batches/BatchInventoryPanel';
 import { BatchLinkedDataPanel } from '@/app/pages/batches/BatchLinkedDataPanel';
-import { BatchWriteOffPanel } from '@/app/pages/batches/BatchWriteoffPanel';
+import { BatchWriteOffPanel } from '@/app/pages/batches/BatchWriteOffPanel';
 import { BatchTraceabilityReport } from '@/app/pages/batches/BatchTraceabilityReport';
 import { useAppUser } from '@/app/AppContext';
 
