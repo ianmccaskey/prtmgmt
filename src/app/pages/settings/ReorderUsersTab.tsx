@@ -9,7 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Settings, Users, Plus, Pencil } from 'lucide-react';
+import { Settings, Users, Plus, Pencil, Trash2, Wallet } from 'lucide-react';
+import listUserPayoutAddresses from '@/actions/settings/listUserPayoutAddresses';
+import createUserPayoutAddress from '@/actions/settings/createUserPayoutAddress';
+import deleteUserPayoutAddress from '@/actions/settings/deleteUserPayoutAddress';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 import listUserProfiles from '@/actions/settings/listUserProfiles';
@@ -25,8 +28,15 @@ type UserProfile = {
 };
 type Warehouse = { id: number; name: string; is_active: boolean };
 type AppSetting = { key: string; value: string };
+type PayoutAddress = { id: number; user_profile_id: number; asset: string; network: string; address: string; label: string | null };
 
 const ROLES = ['admin', 'sales_rep', 'warehouse', 'logistics'];
+const PAYOUT_COMBOS = [
+  { asset: 'USDC', network: 'ethereum' }, { asset: 'USDC', network: 'solana' },
+  { asset: 'USDT', network: 'ethereum' }, { asset: 'USDT', network: 'solana' },
+  { asset: 'ETH', network: 'ethereum' }, { asset: 'SOL', network: 'solana' },
+  { asset: 'BTC', network: 'bitcoin' },
+];
 
 function Initials({ name }: { name: string }) {
   const parts = (name || '?').split(' ');
@@ -65,6 +75,31 @@ export function ReorderUsersTab() {
   const [doUpsertSetting] = useMutateAction(upsertAppSetting);
   const [doUpsertUser] = useMutateAction(upsertUserProfile);
   const [doUpdateUser] = useMutateAction(updateUserProfileById);
+
+  // Payout addresses for the user being edited
+  const [paCombo, setPaCombo] = useState('');
+  const [paAddress, setPaAddress] = useState('');
+  const [paLabel, setPaLabel] = useState('');
+  const [paSaving, setPaSaving] = useState(false);
+  const [payoutRaw, , , reloadPayouts] = useLoadAction(listUserPayoutAddresses, [editUser?.id], { user_profile_id: editUser?.id ?? 0 }, { enabled: !!editUser });
+  const payoutList = asRows<PayoutAddress>(payoutRaw);
+  const [doCreatePayout] = useMutateAction(createUserPayoutAddress);
+  const [doDeletePayout] = useMutateAction(deleteUserPayoutAddress);
+
+  const addPayout = async () => {
+    if (!editUser || !paCombo || !paAddress.trim()) return;
+    const [asset, network] = paCombo.split('/');
+    setPaSaving(true);
+    try {
+      await doCreatePayout({ user_profile_id: editUser.id, asset, network, address: paAddress, label: paLabel || null });
+      setPaCombo(''); setPaAddress(''); setPaLabel('');
+      reloadPayouts();
+    } finally { setPaSaving(false); }
+  };
+  const removePayout = async (id: number) => {
+    await doDeletePayout({ id });
+    reloadPayouts();
+  };
 
   const settingRow = (asRows<AppSetting>(setting))[0];
   const userList = asRows<UserProfile>(users);
@@ -275,6 +310,38 @@ export function ReorderUsersTab() {
                 </SelectContent>
               </Select>
             </div>
+            {editUser && (
+              <div className="border rounded p-3 space-y-2">
+                <Label className="font-medium flex items-center gap-1.5"><Wallet className="h-3.5 w-3.5" /> Payout Addresses</Label>
+                <p className="text-xs text-muted-foreground">Where this user gets paid — shown when recording commission payments.</p>
+                {payoutList.map(pa => (
+                  <div key={pa.id} className="flex items-center gap-2 text-xs bg-muted/40 rounded p-2">
+                    <Badge variant="outline" className="px-1 py-0 font-mono shrink-0">{pa.asset}/{pa.network}</Badge>
+                    <code className="flex-1 break-all">{pa.address}</code>
+                    {pa.label && <span className="text-muted-foreground shrink-0">{pa.label}</span>}
+                    <Button size="icon" variant="ghost" className="h-6 w-6 text-red-400 shrink-0" onClick={() => removePayout(pa.id)}><Trash2 className="h-3 w-3" /></Button>
+                  </div>
+                ))}
+                {payoutList.length === 0 && <p className="text-xs text-muted-foreground">No addresses yet.</p>}
+                <div className="grid grid-cols-2 gap-2">
+                  <Select value={paCombo} onValueChange={setPaCombo}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Asset / network" /></SelectTrigger>
+                    <SelectContent>
+                      {PAYOUT_COMBOS.map(c => (
+                        <SelectItem key={`${c.asset}/${c.network}`} value={`${c.asset}/${c.network}`}>{c.asset} / {c.network}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input className="h-8 text-xs" placeholder="Label (optional)" value={paLabel} onChange={e => setPaLabel(e.target.value)} />
+                </div>
+                <div className="flex gap-2">
+                  <Input className="h-8 text-xs flex-1" placeholder="Address (0x… / bc1…)" value={paAddress} onChange={e => setPaAddress(e.target.value)} />
+                  <Button size="sm" className="h-8" onClick={addPayout} disabled={paSaving || !paCombo || !paAddress.trim()}>
+                    <Plus className="h-3 w-3 mr-1" /> Add
+                  </Button>
+                </div>
+              </div>
+            )}
             {uError && <p className="text-sm text-red-600">{uError}</p>}
           </div>
           <DialogFooter>

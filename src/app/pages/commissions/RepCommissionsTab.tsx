@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
+import listUserPayoutAddresses from '@/actions/settings/listUserPayoutAddresses';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,6 +32,15 @@ const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
 export function RepCommissionsTab() {
   const { profileId, isAdmin } = useAppUser();
   const [payDialogRep, setPayDialogRep] = useState<RepBalance | null>(null);
+  // Payee's crypto payout addresses (managed in Settings → Users).
+  const [payoutRaw] = useLoadAction(listUserPayoutAddresses, [payDialogRep?.sales_rep_user_profile_id], { user_profile_id: payDialogRep?.sales_rep_user_profile_id ?? 0 }, { enabled: !!payDialogRep });
+  const payoutAddresses = asRows<{ id: number; asset: string; network: string; address: string; label: string | null }>(payoutRaw);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const copyAddr = (pa: { id: number; address: string }) => {
+    navigator.clipboard.writeText(pa.address);
+    setCopiedId(pa.id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -186,6 +196,24 @@ export function RepCommissionsTab() {
             <p className="text-sm text-gray-500">
               Current balance owed: <span className="font-medium text-gray-900">{payDialogRep ? money(payDialogRep.balance_owed_usd) : ''}</span>
             </p>
+            {payoutAddresses.length > 0 ? (
+              <div className="bg-muted/40 rounded p-2 space-y-1.5">
+                <Label className="text-xs">Pay to</Label>
+                {payoutAddresses.map(pa => (
+                  <div key={pa.id} className="flex items-center gap-2 text-xs">
+                    <span className="font-mono font-medium shrink-0">{pa.asset}/{pa.network}</span>
+                    <code className="flex-1 break-all">{pa.address}</code>
+                    <Button size="sm" variant="ghost" className="h-6 text-xs shrink-0" onClick={() => copyAddr(pa)}>
+                      {copiedId === pa.id ? 'Copied' : 'Copy'}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                No payout address on file — add one under Settings → Users → edit this user.
+              </p>
+            )}
             <div>
               <Label>Payment Amount (USD)</Label>
               <Input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />

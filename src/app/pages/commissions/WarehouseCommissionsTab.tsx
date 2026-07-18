@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
+import listWarehousePayoutAddresses from '@/actions/commissions/listWarehousePayoutAddresses';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,6 +32,15 @@ const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
 export function WarehouseCommissionsTab() {
   const { profileId, isAdmin } = useAppUser();
   const [payDialogWh, setPayDialogWh] = useState<WarehouseBalance | null>(null);
+  // Payout addresses of users assigned to this warehouse (Settings → Users).
+  const [payoutRaw] = useLoadAction(listWarehousePayoutAddresses, [payDialogWh?.warehouse_id], { warehouse_id: payDialogWh?.warehouse_id ?? 0 }, { enabled: !!payDialogWh });
+  const payoutAddresses = asRows<{ id: number; asset: string; network: string; address: string; label: string | null; display_name: string }>(payoutRaw);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const copyAddr = (pa: { id: number; address: string }) => {
+    navigator.clipboard.writeText(pa.address);
+    setCopiedId(pa.id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
