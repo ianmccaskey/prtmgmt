@@ -57,10 +57,13 @@ if (mode === 'snapshot') {
   };
   await sql.begin(async tx => {
     for (const t of [...ORDER].reverse()) await tx.unsafe(`DELETE FROM ${t}`);
+    // GENERATED ALWAYS ... STORED columns must not be inserted explicitly
+    // (OVERRIDING SYSTEM VALUE covers identity columns only).
+    const GENERATED: Record<string, string[]> = { inventory_count_corrections: ['delta'] };
     for (const t of ORDER) {
       const rows = data[t] ?? [];
       if (rows.length === 0) continue;
-      const cols = Object.keys(rows[0]);
+      const cols = Object.keys(rows[0]).filter(c => !(GENERATED[t] || []).includes(c));
       const values = rows.map(r => `(${cols.map(c => lit(r[c])).join(', ')})`).join(',\n');
       await tx.unsafe(`INSERT INTO ${t} (${cols.join(', ')}) OVERRIDING SYSTEM VALUE VALUES\n${values}`);
     }
