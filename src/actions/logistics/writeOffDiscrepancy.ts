@@ -10,9 +10,9 @@ function writeOffDiscrepancy() {
       ) VALUES (
         {{params.product_id}}, {{params.batch_id}}, {{params.warehouse_id}},
         {{params.quantity}},
-        'receipt_discrepancy',
+        'receipt_shortage',
         {{params.notes}},
-        'receipt_discrepancy',
+        'auto_from_receipt',
         {{params.receipt_item_id}},
         {{params.user_id}},
         NOW()
