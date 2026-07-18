@@ -1,6 +1,9 @@
 import { action } from '@uibakery/data';
-import { paymentRollupSql } from './paymentRollupSql';
 
+/**
+ * Single-statement insert; callers chain recomputePaymentStatus after
+ * (multi-statement queries can't run as prepared statements).
+ */
 export function createOrderPayment() {
   return action('createOrderPayment', 'SQL', {
     datasourceName: 'Peptide Ops DB',
@@ -21,8 +24,8 @@ export function createOrderPayment() {
         {{params.amountUsd}}::numeric,
         {{params.txHash}},
         'pending'
-      );
-${paymentRollupSql('{{params.orderId}}::bigint')};
+      )
+      RETURNING id, sales_order_id
     `,
   });
 }

@@ -504,10 +504,10 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     }
     if (addPay && total > 0 && selectedWallet) {
       await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: null, amountAsset: null, amountUsd: total, txHash: payTx || null });
-    } else {
-      // Derive payment_status (free $0 orders roll straight to 'paid').
-      await doRecomputePayment({ orderId });
     }
+    // Derive payment_status (free $0 orders roll straight to 'paid').
+    // Chained here because actions are single-statement.
+    await doRecomputePayment({ orderId });
     if (s === 'confirmed' && customer?.is_blocked && overrideNote.trim()) {
       await doAudit({ orderId, userId: profileId, changeType: 'other', fieldName: 'blocked_override', oldValue: null, newValue: 'confirmed', note: overrideNote });
     }

@@ -1,10 +1,10 @@
 import { action } from '@uibakery/data';
-import { paymentRollupSql } from './paymentRollupSql';
 
 /**
  * Recompute subtotal/total from current line items plus the supplied
- * discount/shipping (pass the existing values when unchanged), then re-derive
- * payment_status against the new total.
+ * discount/shipping (pass the existing values when unchanged). Callers
+ * chain recomputePaymentStatus after — multi-statement queries can't run
+ * as prepared statements.
  */
 export function recalcOrderTotals() {
   return action('recalcOrderTotals', 'SQL', {
@@ -19,8 +19,8 @@ export function recalcOrderTotals() {
         SELECT COALESCE(SUM(line_total_usd), 0) AS subtotal
         FROM sales_order_items WHERE sales_order_id = {{params.orderId}}::bigint
       ) sub
-      WHERE so.id = {{params.orderId}}::bigint;
-${paymentRollupSql('{{params.orderId}}::bigint')};
+      WHERE so.id = {{params.orderId}}::bigint
+      RETURNING so.id
     `,
   });
 }

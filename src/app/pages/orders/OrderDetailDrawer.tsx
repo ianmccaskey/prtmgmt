@@ -37,6 +37,7 @@ import insertAuditLog from '@/actions/orders/insertAuditLog';
 import updateOrderSalesRep from '@/actions/orders/updateOrderSalesRep';
 import listSalesReps from '@/actions/orders/listSalesReps';
 import updateOrderPreferredWarehouse from '@/actions/orders/updateOrderPreferredWarehouse';
+import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 
 interface OrderDetailDrawerProps {
@@ -63,12 +64,15 @@ function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; rel
   const [payments, loading, , reloadPay] = useLoadAction(getOrderPayments, [orderId], { orderId });
   const [verifyPayment, verifying] = useMutateAction(markPaymentVerified);
   const [flagPayment, flagging] = useMutateAction(flagPaymentIssue);
+  const [recomputePayment] = useMutateAction(recomputePaymentStatus);
   const [flagOpen, setFlagOpen] = useState<number | null>(null);
   const [issueType, setIssueType] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
 
   const doVerify = async (payId: number) => {
     await verifyPayment({ paymentId: payId, userId: profileId });
+    // Verify is single-statement; the payment-status rollup chains here.
+    await recomputePayment({ orderId });
     reloadPay();
     parentReload();
   };

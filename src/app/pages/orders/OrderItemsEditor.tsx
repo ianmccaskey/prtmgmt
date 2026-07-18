@@ -22,6 +22,7 @@ import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo
 import reserveBatchStock from '@/actions/warehouse/reserveBatchStock';
 import listWarehouseAvailability from '@/actions/orders/listWarehouseAvailability';
 import releaseProductReservation from '@/actions/warehouse/releaseProductReservation';
+import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 
 export type OrderItemRow = {
   id: number; sales_order_id: number; product_id: number; quantity: number;
@@ -64,6 +65,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [doReserve] = useMutateAction(reserveProductStockFifo);
   const [doReserveBatch] = useMutateAction(reserveBatchStock);
   const [doRelease] = useMutateAction(releaseProductReservation);
+  const [doRecomputePayment] = useMutateAction(recomputePaymentStatus);
 
   const [editId, setEditId] = useState<number | null>(null);
   const [editQty, setEditQty] = useState('');
@@ -135,6 +137,8 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
       discountUsd: discountUsd ?? (Number(order.discount_usd) || 0),
       shippingUsd: shippingUsd ?? (Number(order.customer_shipping_charge_usd) || 0),
     });
+    // Totals changed → payment_status re-derives (chained: single-statement actions).
+    await doRecomputePayment({ orderId });
   };
 
   const startEdit = (it: OrderItemRow) => {

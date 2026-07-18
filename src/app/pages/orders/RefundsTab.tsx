@@ -16,6 +16,7 @@ import getRefundTasks from '@/actions/orders/getRefundTasks';
 import getRefundStats from '@/actions/orders/getRefundStats';
 import markRefundSent from '@/actions/orders/markRefundSent';
 import markRefundVerified from '@/actions/orders/markRefundVerified';
+import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 
 type RefundTask = {
   id: number; order_number: string; customer_name: string;
@@ -136,11 +137,14 @@ export function RefundsTab() {
   const [selectedTask, setSelectedTask] = useState<RefundTask | null>(null);
   const [sentOpen, setSentOpen] = useState(false);
   const [doVerify, verifying] = useMutateAction(markRefundVerified);
+  const [doRecompute] = useMutateAction(recomputePaymentStatus);
 
   const statRow = (stats as Stats[])[0];
 
   const handleVerify = async (task: RefundTask) => {
-    await doVerify({ taskId: task.id, userId: profileId });
+    const res = await doVerify({ taskId: task.id, userId: profileId }) as { sales_order_id: number }[];
+    // Verify is single-statement; the payment-status rollup chains here.
+    if (res?.[0]?.sales_order_id) await doRecompute({ orderId: res[0].sales_order_id });
     reload();
   };
 
