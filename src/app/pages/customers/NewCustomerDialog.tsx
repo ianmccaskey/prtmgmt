@@ -17,7 +17,7 @@ interface NewCustomerDialogProps {
   onCreated: (c: CreatedCustomer) => void;
 }
 
-const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'other'];
+const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
 
 const initForm = {
   full_name: '', email: '', phone: '', preferred_channel: 'telegram', channel_handle: '',

@@ -33,7 +33,7 @@ type Order = {
 
 const STATUS_OPTIONS = ['', 'quote', 'confirmed', 'partially_shipped', 'shipped', 'delivered', 'cancelled'];
 const PAYMENT_OPTIONS = ['', 'unpaid', 'partial_paid', 'paid', 'refunded'];
-const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'other'];
+const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
 
 export function AllOrdersTab() {
   const { isWarehouse, isLogistics, profileId } = useAppUser();

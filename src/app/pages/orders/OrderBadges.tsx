@@ -70,6 +70,7 @@ export function ChannelBadge({ channel }: { channel?: string }) {
     signal: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     discord: 'bg-violet-50 text-violet-700 border-violet-200',
     whatsapp: 'bg-green-50 text-green-700 border-green-200',
+    root: 'bg-amber-50 text-amber-700 border-amber-200',
     other: 'bg-gray-50 text-gray-600 border-gray-200',
   };
   if (!channel) return null;

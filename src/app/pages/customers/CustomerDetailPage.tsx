@@ -32,7 +32,7 @@ type CustomerDetail = Record<string, string | number | boolean | null>;
 type Order = Record<string, string | number | boolean | null>;
 type Note = { id: number; customer_id: number; note_text: string; created_at: string; author_user_id: string; author_name: string };
 
-const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'other'];
+const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
 
 function NotesPanel({ customerId, readOnly }: { customerId: number; readOnly?: boolean }) {
   const { profileId } = useAppUser();

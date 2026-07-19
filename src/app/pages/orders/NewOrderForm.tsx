@@ -61,7 +61,7 @@ type BatchStock = {
 type Wallet = { id: number; asset: string; network: string; address: string; label: string };
 type FreeReason = { id: number; label: string };
 
-const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'other'];
+const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
 const ASSETS = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
 // Network values match the receive_wallets.network CHECK constraint — the
 // wallet lookup and the order_payments insert both depend on these exact

@@ -21,7 +21,7 @@ type Customer = {
   total_orders: string; lifetime_value: string; last_order_date: string;
 };
 
-const CHANNELS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'other'];
+const CHANNELS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
 
 export function CustomersPage() {
   const { isLogistics } = useAppUser();
