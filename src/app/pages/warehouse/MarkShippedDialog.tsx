@@ -423,7 +423,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
 
   return (
     <Dialog open onOpenChange={v => !v && guardedClose()}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl w-[calc(100vw-1rem)] sm:w-full max-h-[92vh] sm:max-h-[85vh] overflow-y-auto p-4 sm:p-6 rounded-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 flex-wrap">
             <Truck className="h-4 w-4" /> Mark Shipped — {order.order_number}
@@ -478,7 +478,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                       return (
                         <div key={a.key} className="flex items-center gap-2 mb-1.5">
                           <Select value={a.inventory_id != null ? String(a.inventory_id) : ''} onValueChange={v => upAlloc(a.key, { inventory_id: Number(v) })}>
-                            <SelectTrigger className="flex-1 h-8 text-xs"><SelectValue placeholder="Pick batch / warehouse…" /></SelectTrigger>
+                            <SelectTrigger className="flex-1 min-w-0 h-8 text-xs"><SelectValue placeholder="Pick batch / warehouse…" /></SelectTrigger>
                             <SelectContent>
                               {productRows.map(s => (
                                 <SelectItem key={s.inventory_id} value={String(s.inventory_id)}>
@@ -489,11 +489,11 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                           </Select>
                           <Input
                             type="number" min={0} max={r ? rowUsable(r) : undefined}
-                            className="w-24 h-8 text-xs"
+                            className="w-16 sm:w-24 h-8 text-xs shrink-0"
                             value={a.qty || ''}
                             onChange={e => upAlloc(a.key, { qty: Math.max(0, parseInt(e.target.value) || 0) })}
                           />
-                          <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500" onClick={() => rmAlloc(a.key)}><Trash2 className="h-3 w-3" /></Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-red-500" onClick={() => rmAlloc(a.key)}><Trash2 className="h-3 w-3" /></Button>
                         </div>
                       );
                     })}

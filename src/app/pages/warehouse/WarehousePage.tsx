@@ -139,7 +139,7 @@ export function WarehousePage() {
         </TabsContent>
         {seesOps && (
           <TabsContent value="fulfillment" className="mt-4">
-            <FulfillmentTab />
+            <FulfillmentTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
           </TabsContent>
         )}
         {(isAdmin || isSalesRep || isLogistics) && (

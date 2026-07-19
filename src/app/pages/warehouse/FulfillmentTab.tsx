@@ -74,7 +74,9 @@ export function gapProducts(o: QueueOrder): Set<number> {
   return gaps;
 }
 
-export function FulfillmentTab() {
+type Props = { warehouseId: string; warehouseList: { id: number; name: string }[] };
+
+export function FulfillmentTab({ warehouseId, warehouseList }: Props) {
   const { isLogistics } = useAppUser();
   const [queue, loading, , reload] = useLoadAction(listFulfillmentQueueAction, [], {});
   const rows: QueueItem[] = asRows(queue);
@@ -99,6 +101,18 @@ export function FulfillmentTab() {
     o.items.push(r);
   }
 
+  // Scope the queue to the page's warehouse switcher: keep orders with at
+  // least one line preferring it (line preference falls back to the order's),
+  // or — when a line has no preference — with stock for that product there.
+  const whName = warehouseList.find(w => String(w.id) === warehouseId)?.name;
+  const visibleOrders = !warehouseId ? orders : orders.filter(o =>
+    o.items.some(it => {
+      const pref = it.line_preferred_warehouse_id ?? o.preferred_warehouse_id;
+      if (pref != null) return String(pref) === String(warehouseId);
+      return whName ? parseWarehouses(it.fulfill_warehouses).includes(whName) : true;
+    })
+  );
+
   return (
     <div className="space-y-4">
       <Card>
@@ -112,7 +126,7 @@ export function FulfillmentTab() {
           {loading ? <div className="p-4"><Skeleton className="h-24 w-full" /></div> : (<>
             {/* Mobile: stacked cards */}
             <div className="sm:hidden divide-y">
-              {orders.map(o => {
+              {visibleOrders.map(o => {
                 const gaps = gapProducts(o);
                 const gapItems = o.items.filter(it => gaps.has(it.product_id));
                 const hasGap = gaps.size > 0;
@@ -161,7 +175,11 @@ export function FulfillmentTab() {
                   </div>
                 );
               })}
-              {orders.length === 0 && <div className="text-center py-8 text-slate-400 text-sm">Nothing waiting to ship</div>}
+              {visibleOrders.length === 0 && (
+                <div className="text-center py-8 text-slate-400 text-sm">
+                  Nothing waiting to ship{whName ? ` for ${whName}` : ''}
+                </div>
+              )}
             </div>
             {/* Desktop: table */}
             <div className="hidden sm:block overflow-x-auto"><table className="w-full text-sm">
@@ -176,7 +194,7 @@ export function FulfillmentTab() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map(o => {
+                {visibleOrders.map(o => {
                   const gaps = gapProducts(o);
                   const gapItems = o.items.filter(it => gaps.has(it.product_id));
                   const hasGap = gaps.size > 0;
@@ -239,7 +257,7 @@ export function FulfillmentTab() {
                     </tr>
                   );
                 })}
-                {orders.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-400">Nothing waiting to ship</td></tr>}
+                {visibleOrders.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-400">Nothing waiting to ship{whName ? ` for ${whName}` : ''}</td></tr>}
               </tbody>
             </table></div>
           </>)}
