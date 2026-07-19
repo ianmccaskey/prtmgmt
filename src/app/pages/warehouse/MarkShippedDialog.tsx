@@ -299,6 +299,10 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
       // A reserved pinned row still ranks highest (4+2). The warehouse
       // preference is per line (split shipments) falling back to the order's.
       const prefWh = it.line_preferred_warehouse_id ?? order.preferred_warehouse_id;
+      // Warehouse staff: never auto-claim a line pinned to ANOTHER warehouse.
+      // They can still allocate it manually (preferences are overridable by
+      // design), but shipping someone else's line must not happen by default.
+      if (isWarehouse && assignedWarehouseId && prefWh != null && Number(prefWh) !== Number(assignedWarehouseId)) continue;
       const score = (r: FifoRow) =>
         (Number(r.order_reserved) > 0 ? 4 : 0) +
         (it.preferred_batch_id != null && r.batch_id === it.preferred_batch_id ? 2 : 0) +
