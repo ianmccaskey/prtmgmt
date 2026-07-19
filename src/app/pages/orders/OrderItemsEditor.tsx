@@ -439,7 +439,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
             <div><Label>Name</Label><Input value={shipForm.name} onChange={e => setShipForm(f => ({ ...f, name: e.target.value }))} /></div>
             <div><Label>Address Line 1</Label><Input value={shipForm.line1} onChange={e => setShipForm(f => ({ ...f, line1: e.target.value }))} /></div>
             <div><Label>Address Line 2</Label><Input value={shipForm.line2} onChange={e => setShipForm(f => ({ ...f, line2: e.target.value }))} /></div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div><Label>City</Label><Input value={shipForm.city} onChange={e => setShipForm(f => ({ ...f, city: e.target.value }))} /></div>
               <div><Label>State</Label><Input value={shipForm.state} onChange={e => setShipForm(f => ({ ...f, state: e.target.value }))} /></div>
               <div><Label>Postal</Label><Input value={shipForm.postal} onChange={e => setShipForm(f => ({ ...f, postal: e.target.value }))} /></div>

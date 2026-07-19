@@ -64,7 +64,7 @@ export function ReorderTab() {
       </CardHeader>
       <CardContent className="p-0">
         {loading ? <div className="p-4"><Skeleton className="h-20 w-full" /></div> : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-slate-50 border-b">
               <tr>
                 <th className="px-4 py-2 w-8">
@@ -121,7 +121,7 @@ export function ReorderTab() {
               })}
               {rows.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">No reorder needed — all products above threshold</td></tr>}
             </tbody>
-          </table>
+          </table></div>
         )}
       </CardContent>
     </Card>

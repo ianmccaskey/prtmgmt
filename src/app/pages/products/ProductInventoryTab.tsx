@@ -41,7 +41,7 @@ export function ProductInventoryTab({ productId }: { productId: number }) {
       </CardHeader>
       <CardContent className="p-0">
         {loading ? <div className="p-4"><Skeleton className="h-20 w-full" /></div> : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-slate-50 border-b">
               <tr>
                 <th className="text-left px-4 py-2 font-medium text-slate-600">Batch #</th>
@@ -67,7 +67,7 @@ export function ProductInventoryTab({ productId }: { productId: number }) {
               ))}
               {rows.length === 0 && <tr><td colSpan={7} className="text-center py-6 text-slate-400">No inventory records</td></tr>}
             </tbody>
-          </table>
+          </table></div>
         )}
       </CardContent>
     </Card>

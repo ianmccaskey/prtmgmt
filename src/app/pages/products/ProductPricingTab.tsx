@@ -84,7 +84,7 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
         </CardHeader>
         <CardContent className="p-0">
           {tiersLoading ? <div className="p-4"><Skeleton className="h-20 w-full" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-slate-50 border-b">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Min Quantity</th>
@@ -145,7 +145,7 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
                   <tr><td colSpan={4} className="text-center py-4 text-slate-400 text-sm">No price tiers. Base price: ${Number(listPrice).toFixed(2)}</td></tr>
                 )}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>
@@ -175,7 +175,7 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
         <CardHeader className="pb-2"><CardTitle className="text-base">Price Change Log</CardTitle></CardHeader>
         <CardContent className="p-0">
           {histLoading ? <div className="p-4"><Skeleton className="h-20 w-full" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-slate-50 border-b">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Date</th>
@@ -197,7 +197,7 @@ export function ProductPricingTab({ productId, listPrice, standardCost }: Props)
                 ))}
                 {histRows.length === 0 && <tr><td colSpan={5} className="text-center py-4 text-slate-400">No price history yet</td></tr>}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>

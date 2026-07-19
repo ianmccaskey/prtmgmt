@@ -93,7 +93,7 @@ export function NewProductDialog({ open, onClose, factories, onCreated }: Props)
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <Label>Vial Size (mL)</Label>
               <Input type="number" step="0.01" value={form.vial_size_ml} onChange={e => set('vial_size_ml', e.target.value)} placeholder="5" />

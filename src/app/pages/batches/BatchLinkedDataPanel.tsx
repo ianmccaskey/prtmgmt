@@ -35,7 +35,7 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
         <CardHeader className="pb-2"><CardTitle className="text-base">Inbound Shipments ({shipRows.length})</CardTitle></CardHeader>
         <CardContent className="p-0">
           {shipLoading ? <div className="p-4"><Skeleton className="h-12 w-full" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-slate-50 border-b">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Reference</th>
@@ -61,7 +61,7 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
                 ))}
                 {shipRows.length === 0 && <tr><td colSpan={7} className="text-center py-4 text-slate-400">No inbound shipments</td></tr>}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>
@@ -71,7 +71,7 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
         <CardHeader className="pb-2"><CardTitle className="text-base">Consuming Sales Orders ({orderRows.length})</CardTitle></CardHeader>
         <CardContent className="p-0">
           {ordersLoading ? <div className="p-4"><Skeleton className="h-12 w-full" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-slate-50 border-b">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Order #</th>
@@ -93,7 +93,7 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
                 ))}
                 {orderRows.length === 0 && <tr><td colSpan={5} className="text-center py-4 text-slate-400">No orders consuming this batch</td></tr>}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>
@@ -103,7 +103,7 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
         <CardHeader className="pb-2"><CardTitle className="text-base">Write-offs ({woRows.length})</CardTitle></CardHeader>
         <CardContent className="p-0">
           {woLoading ? <div className="p-4"><Skeleton className="h-12 w-full" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-slate-50 border-b">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Date</th>
@@ -125,7 +125,7 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
                 ))}
                 {woRows.length === 0 && <tr><td colSpan={5} className="text-center py-4 text-slate-400">No write-offs</td></tr>}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>
@@ -135,7 +135,7 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
         <CardHeader className="pb-2"><CardTitle className="text-base">Inter-Warehouse Transfers ({transRows.length})</CardTitle></CardHeader>
         <CardContent className="p-0">
           {transLoading ? <div className="p-4"><Skeleton className="h-12 w-full" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-slate-50 border-b">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Date</th>
@@ -157,7 +157,7 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
                 ))}
                 {transRows.length === 0 && <tr><td colSpan={5} className="text-center py-4 text-slate-400">No transfers</td></tr>}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>

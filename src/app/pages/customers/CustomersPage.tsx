@@ -58,7 +58,7 @@ export function CustomersPage() {
 
   return (
     <div className="space-y-4 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl font-semibold">Customers</h1>
           <p className="text-sm text-muted-foreground">Customer database with VIP status, interaction logs, and order history</p>

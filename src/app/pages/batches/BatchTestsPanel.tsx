@@ -161,7 +161,7 @@ export function BatchTestsPanel({ batchId }: { batchId: number }) {
         </CardHeader>
         <CardContent className="p-0">
           {loading ? <div className="p-4"><Skeleton className="h-20 w-full" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-slate-50 border-b">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Type</th>
@@ -193,7 +193,7 @@ export function BatchTestsPanel({ batchId }: { batchId: number }) {
                 ))}
                 {rows.length === 0 && <tr><td colSpan={8} className="text-center py-6 text-slate-400">No test results yet</td></tr>}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>
@@ -202,7 +202,7 @@ export function BatchTestsPanel({ batchId }: { batchId: number }) {
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Add Test Results</DialogTitle></DialogHeader>
           <form onSubmit={handleSaveAll} className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div><Label>Test Date</Label><Input type="date" value={testDate} onChange={e => setTestDate(e.target.value)} /></div>
               <div><Label>Lab Name</Label><Input value={labName} onChange={e => setLabName(e.target.value)} placeholder="e.g. Janoshik Analytical" /></div>
               <div><Label>Test Report URL</Label><Input type="url" placeholder="https://…" value={testReportUrl} onChange={e => setTestReportUrl(e.target.value)} /></div>
@@ -221,39 +221,39 @@ export function BatchTestsPanel({ batchId }: { batchId: number }) {
                       <span className="font-medium text-sm text-slate-700">{meta.label}</span>
                     </label>
                     {r.enabled && (
-                      <div className="mt-2 grid grid-cols-12 gap-2 items-end">
+                      <div className="mt-2 grid grid-cols-2 sm:grid-cols-12 gap-2 items-end">
                         {isIdRow && (
-                          <div className="col-span-4">
+                          <div className="col-span-2 sm:col-span-4">
                             <Label className="text-xs">Identity (e.g. Tirzepatide)</Label>
                             <Input value={r.identity} onChange={e => setRow(idx, { identity: e.target.value })} placeholder="Tirzepatide" />
                           </div>
                         )}
                         {isCompound ? (
-                          <div className="col-span-8">
+                          <div className="col-span-2 sm:col-span-8">
                             <Label className="text-xs">Result (e.g. TAMC/Pass; TYMC Pass)</Label>
                             <Input value={r.identity} onChange={e => setRow(idx, { identity: e.target.value })} placeholder="TAMC/Pass; TYMC Pass" />
                           </div>
                         ) : (
                           <>
-                            <div className="col-span-3">
+                            <div className="col-span-1 sm:col-span-3">
                               <Label className="text-xs">Value</Label>
                               <Input type="number" step="0.001" value={r.result_value} onChange={e => setRow(idx, { result_value: e.target.value })} />
                             </div>
-                            <div className="col-span-2">
+                            <div className="col-span-1 sm:col-span-2">
                               <Label className="text-xs">Units</Label>
                               <Input value={r.result_units} onChange={e => setRow(idx, { result_units: e.target.value })} />
                             </div>
-                            <div className="col-span-2">
+                            <div className="col-span-1 sm:col-span-2">
                               <Label className="text-xs">Spec Min</Label>
                               <Input type="number" step="0.001" value={r.spec_min} onChange={e => setRow(idx, { spec_min: e.target.value })} />
                             </div>
-                            <div className="col-span-2">
+                            <div className="col-span-1 sm:col-span-2">
                               <Label className="text-xs">Spec Max</Label>
                               <Input type="number" step="0.001" value={r.spec_max} onChange={e => setRow(idx, { spec_max: e.target.value })} />
                             </div>
                           </>
                         )}
-                        <div className="col-span-3">
+                        <div className="col-span-1 sm:col-span-3">
                           <Label className="text-xs">Pass/Fail</Label>
                           <Select value={r.pass_fail} onValueChange={v => setRow(idx, { pass_fail: v })}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
@@ -264,7 +264,7 @@ export function BatchTestsPanel({ batchId }: { batchId: number }) {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className={isCompound || isIdRow ? 'col-span-9' : 'col-span-12'}>
+                        <div className={isCompound || isIdRow ? 'col-span-2 sm:col-span-9' : 'col-span-2 sm:col-span-12'}>
                           <Label className="text-xs">Notes</Label>
                           <Input value={r.notes} onChange={e => setRow(idx, { notes: e.target.value })} placeholder="optional" />
                         </div>

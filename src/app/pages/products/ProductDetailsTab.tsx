@@ -116,12 +116,12 @@ export function ProductDetailsTab({ product, factories }: Props) {
                 <Label>Description</Label>
                 <Textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2} />
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div><Label>Vial Size (mL)</Label><Input type="number" step="0.01" value={form.vial_size_ml} onChange={e => set('vial_size_ml', e.target.value)} /></div>
                 <div><Label>Vials per Kit</Label><Input type="number" value={form.vials_per_unit} onChange={e => set('vials_per_unit', e.target.value)} /></div>
                 <div><Label>Low Stock Threshold</Label><Input type="number" value={form.low_stock_threshold} onChange={e => set('low_stock_threshold', e.target.value)} /></div>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <Label>List Price (USD)</Label>
                   <Input type="number" step="0.01" min={0} value={form.list_price} onChange={e => set('list_price', e.target.value)} />

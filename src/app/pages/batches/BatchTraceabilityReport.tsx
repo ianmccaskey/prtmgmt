@@ -33,7 +33,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | number)[][] }) {
   if (rows.length === 0) return <p className="text-xs text-slate-500 italic">None recorded.</p>;
   return (
-    <table className="w-full text-xs border-collapse">
+    <div className="overflow-x-auto print:overflow-visible"><table className="w-full text-xs border-collapse">
       <thead>
         <tr>{headers.map(h => <th key={h} className="text-left border-b border-slate-200 py-1 pr-3 font-semibold">{h}</th>)}</tr>
       </thead>
@@ -42,7 +42,7 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
           <tr key={i}>{r.map((c, j) => <td key={j} className="border-b border-slate-100 py-1 pr-3">{c}</td>)}</tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 

@@ -79,7 +79,7 @@ export function PayablesTab() {
                   {expanded === r.warehouse_id && (
                     <div className="bg-slate-50 border-t">
                       {shipmentsLoading ? <div className="p-4"><Skeleton className="h-12 w-full" /></div> : (
-                        <table className="w-full text-sm">
+                        <div className="overflow-x-auto"><table className="w-full text-sm">
                           <thead>
                             <tr>
                               <th className="text-left px-6 py-2 font-medium text-slate-500 text-xs">Order</th>
@@ -101,7 +101,7 @@ export function PayablesTab() {
                             ))}
                             {shipmentRows.length === 0 && <tr><td colSpan={5} className="text-center py-4 text-slate-400">No shipments</td></tr>}
                           </tbody>
-                        </table>
+                        </table></div>
                       )}
                     </div>
                   )}

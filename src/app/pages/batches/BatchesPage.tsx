@@ -54,12 +54,12 @@ export function BatchesPage() {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Batches</h1>
           <p className="text-sm text-slate-500">{rows.length} batches</p>
         </div>
-        <div className="flex gap-4 text-sm">
+        <div className="flex flex-wrap gap-2 text-sm">
           <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 font-medium">{statCounts.passed} Passed</span>
           <span className="px-3 py-1 rounded-full bg-yellow-100 text-yellow-700 font-medium">{statCounts.pending} Pending</span>
           <span className="px-3 py-1 rounded-full bg-orange-100 text-orange-700 font-medium">{statCounts.quarantine} Quarantined</span>

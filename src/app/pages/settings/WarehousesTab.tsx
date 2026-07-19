@@ -256,7 +256,7 @@ export function WarehousesTab() {
                           {whAddrs.length === 0 ? (
                             <p className="text-xs text-gray-400">None yet — inbound lines default to the ship-from address.</p>
                           ) : (
-                            <table className="w-full text-xs">
+                            <div className="overflow-x-auto"><table className="w-full text-xs">
                               <thead>
                                 <tr className="text-left text-gray-500">
                                   <th className="py-1 pr-3 font-medium">Label</th>
@@ -277,7 +277,7 @@ export function WarehousesTab() {
                                   </tr>
                                 ))}
                               </tbody>
-                            </table>
+                            </table></div>
                           )}
                         </div>
                       </TableCell>

@@ -52,13 +52,13 @@ export function WarehousePage() {
   return (
     <div className="p-6 space-y-4">
       {/* Header + warehouse switcher */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Warehouse</h1>
           <p className="text-sm text-slate-500">Inventory, fulfillment, transfers & payables</p>
         </div>
         <Select value={selectedWarehouseId} onValueChange={setSelectedWarehouseId} disabled={isWarehouse}>
-          <SelectTrigger className="w-52">
+          <SelectTrigger className="w-full sm:w-52">
             <SelectValue placeholder="All Warehouses" />
           </SelectTrigger>
           <SelectContent>
@@ -91,7 +91,7 @@ export function WarehousePage() {
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-600">Per-Warehouse Breakdown</CardTitle></CardHeader>
           <CardContent className="p-0">
             {breakdownLoading ? <div className="p-4"><Skeleton className="h-16 w-full" /></div> : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b">
                   <tr>
                     <th className="text-left px-4 py-2 font-medium text-slate-600">Warehouse</th>
@@ -115,7 +115,7 @@ export function WarehousePage() {
                   ))}
                   {breakdownRows.length === 0 && <tr><td colSpan={6} className="text-center py-4 text-slate-400">No warehouse data</td></tr>}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </CardContent>
         </Card>

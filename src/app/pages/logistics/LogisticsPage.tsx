@@ -100,7 +100,7 @@ export function LogisticsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Logistics</h1>
           <p className="text-sm text-gray-500 mt-1">Inbound shipments from factories</p>

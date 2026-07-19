@@ -615,7 +615,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
           )}
 
           {/* Channel + Partial */}
-          <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div className="space-y-1">
               <Label>Order Channel</Label>
               <Select value={channel} onValueChange={setChannel}>
@@ -681,7 +681,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                       <Trash2 className="h-3.5 w-3.5 text-red-400" />
                     </Button>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     <div><Label className="text-xs">Qty (kits)</Label>
                       <Input type="number" min={1} value={line.quantity} onChange={e => upLine(line.key, { quantity: Number(e.target.value) })} className="h-8" /></div>
                     <div><Label className="text-xs">Unit Price</Label>
