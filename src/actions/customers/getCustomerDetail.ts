@@ -6,6 +6,7 @@ export function getCustomerDetail() {
     query: `
       SELECT
         c.*,
+        '#' || c.ship_postal_code AS ship_postal_code,
         COUNT(so.id) AS total_orders,
         COALESCE(SUM(so.total_usd), 0) AS lifetime_value,
         MAX(so.order_date) AS last_order_date,

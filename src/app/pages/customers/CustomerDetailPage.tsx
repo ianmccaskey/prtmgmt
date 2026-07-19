@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { dbText } from '@/lib/dbText';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
@@ -180,7 +181,7 @@ export function CustomerDetailPage() {
       ship_address_line2: String(customer.ship_address_line2 || ''),
       ship_city: String(customer.ship_city || ''),
       ship_state: String(customer.ship_state || ''),
-      ship_postal_code: String(customer.ship_postal_code || ''),
+      ship_postal_code: dbText(customer.ship_postal_code),
       ship_country: String(customer.ship_country || 'US'),
       notes: String(customer.notes || ''),
       internal_notes: String(customer.internal_notes || ''),
@@ -347,7 +348,7 @@ export function CustomerDetailPage() {
                     <>
                       <p>{String(customer.ship_address_line1)}</p>
                       {customer.ship_address_line2 && <p>{String(customer.ship_address_line2)}</p>}
-                      <p>{String(customer.ship_city || '')}{customer.ship_state ? `, ${String(customer.ship_state)}` : ''} {String(customer.ship_postal_code || '')}</p>
+                      <p>{String(customer.ship_city || '')}{customer.ship_state ? `, ${String(customer.ship_state)}` : ''} {dbText(customer.ship_postal_code)}</p>
                       <p>{String(customer.ship_country || '')}</p>
                     </>
                   ) : (

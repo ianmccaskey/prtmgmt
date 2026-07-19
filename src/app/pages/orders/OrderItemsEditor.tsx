@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { dbText } from '@/lib/dbText';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { Button } from '@/components/ui/button';
@@ -256,7 +257,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     setShipForm({
       name: String(order.ship_to_name || ''), line1: String(order.ship_address_line1 || ''),
       line2: String(order.ship_address_line2 || ''), city: String(order.ship_city || ''),
-      state: String(order.ship_state || ''), postal: String(order.ship_postal_code || ''),
+      state: String(order.ship_state || ''), postal: dbText(order.ship_postal_code),
       country: String(order.ship_country || 'US'),
     });
     setShipToOpen(true);
@@ -401,7 +402,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
           <span className="text-muted-foreground">Ship To</span>
           {!isReadOnly && <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-600" onClick={openShipTo}><Pencil className="h-3 w-3 mr-1" />Edit</Button>}
         </div>
-        <p>{String(order.ship_to_name || '')} · {String(order.ship_address_line1 || '')}, {String(order.ship_city || '')} {String(order.ship_state || '')} {String(order.ship_postal_code || '')}, {String(order.ship_country || '')}</p>
+        <p>{String(order.ship_to_name || '')} · {String(order.ship_address_line1 || '')}, {String(order.ship_city || '')} {String(order.ship_state || '')} {dbText(order.ship_postal_code)}, {String(order.ship_country || '')}</p>
       </div>
 
       {/* Add Item Dialog */}

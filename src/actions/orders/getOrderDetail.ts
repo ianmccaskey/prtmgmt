@@ -6,6 +6,7 @@ export function getOrderDetail() {
     query: `
       SELECT
         so.*,
+        '#' || so.ship_postal_code AS ship_postal_code,
         c.full_name AS customer_name,
         c.email AS customer_email,
         c.phone AS customer_phone,

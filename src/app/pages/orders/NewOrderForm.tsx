@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { rows, firstRow } from '@/lib/rows';
+import { dbText } from '@/lib/dbText';
 import { useAppUser } from '@/app/AppContext';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -352,7 +353,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const pickCustomer = (c: Customer) => {
     setCustomer(c);
     setChannel(c.preferred_channel || 'telegram');
-    setShip({ name: c.full_name, line1: c.ship_address_line1 || '', line2: c.ship_address_line2 || '', city: c.ship_city || '', state: c.ship_state || '', postal: c.ship_postal_code || '', country: c.ship_country || 'US' });
+    setShip({ name: c.full_name, line1: c.ship_address_line1 || '', line2: c.ship_address_line2 || '', city: c.ship_city || '', state: c.ship_state || '', postal: dbText(c.ship_postal_code), country: c.ship_country || 'US' });
   };
 
   const addLine = (p: Product) => {

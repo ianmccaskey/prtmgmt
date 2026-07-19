@@ -7,7 +7,7 @@ export function searchCustomers() {
       SELECT
         id, full_name, email, phone, preferred_channel, channel_handle,
         is_vip, is_blocked, blocked_reason,
-        ship_address_line1, ship_address_line2, ship_city, ship_state, ship_postal_code, ship_country
+        ship_address_line1, ship_address_line2, ship_city, ship_state, '#' || ship_postal_code AS ship_postal_code, ship_country
       FROM customers
       WHERE
         full_name ILIKE {{ '%' + params.q + '%' }}

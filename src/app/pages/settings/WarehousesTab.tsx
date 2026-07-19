@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { dbText } from '@/lib/dbText';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -120,7 +121,7 @@ export function WarehousesTab() {
   };
 
   const fmtAddr = (a: { address_line1: string; address_line2?: string | null; city?: string | null; state?: string | null; postal_code?: string | null }, nameLine?: string | null) =>
-    [nameLine, a.address_line1, a.address_line2, a.city, a.state, a.postal_code].filter(Boolean).join(', ');
+    [nameLine, a.address_line1, a.address_line2, a.city, a.state, dbText(a.postal_code)].filter(Boolean).join(', ');
 
   return (
     <Card>
