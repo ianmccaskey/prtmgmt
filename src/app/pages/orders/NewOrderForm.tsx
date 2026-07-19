@@ -323,6 +323,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [newCustName, setNewCustName] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  // Set when Confirm was clicked but the server gate refused: the order
+  // EXISTS as a quote — lock the save buttons so it can't be re-created.
+  const [savedAsQuote, setSavedAsQuote] = useState('');
   const [blanketPct, setBlanketPct] = useState('');
   // '' = Auto (suggested warehouse, or split/FIFO when none can fill all)
   const [fulfillWarehouse, setFulfillWarehouse] = useState('');
@@ -493,11 +496,14 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     // Free/$0 orders are created confirmed directly (createOrder allows it);
     // paid orders confirm through the same server-side gate as the drawer.
     let confirmed = s === 'confirmed' && (isFree || total === 0);
+    let gateRefused = false;
     if (s === 'confirmed' && !confirmed) {
       const up = await doStatus({ orderId, status: 'confirmed', cancellationReason: null }) as unknown[];
       confirmed = !!up && up.length > 0;
       if (confirmed) {
         await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: 'quote', newValue: 'confirmed', note: 'Confirmed at creation (payment verified)' });
+      } else {
+        gateRefused = true;
       }
     }
     if (confirmed) {
@@ -526,8 +532,15 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
         }
       }
     }
-    if (s === 'confirmed' && customer?.is_blocked && overrideNote.trim()) {
+    if (confirmed && customer?.is_blocked && overrideNote.trim()) {
       await doAudit({ orderId, userId: profileId, changeType: 'other', fieldName: 'blocked_override', oldValue: null, newValue: 'confirmed', note: overrideNote });
+    }
+    if (gateRefused) {
+      // Everything saved, but the order stayed a quote. Refresh the list and
+      // tell the user instead of silently closing as if it confirmed.
+      onSaved();
+      setSavedAsQuote(res[0].order_number);
+      return;
     }
     onSaved(); onClose(); reset();
     } finally {
@@ -898,7 +911,15 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
           {/* Footer actions. Confirmation requires paid/partial-paid — a
               verified payment added above satisfies it in the same pass;
               free/$0 orders derive straight to paid. */}
+          {savedAsQuote && (
+            <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-3 text-sm text-amber-800">
+              Order <span className="font-mono font-medium">{savedAsQuote}</span> was saved as a <span className="font-medium">quote</span> — the payment doesn&apos;t yet cover the paid/partial-paid requirement. Verify it from the order drawer, then confirm there.
+            </div>
+          )}
           <div className="flex gap-2 justify-end flex-wrap">
+            {savedAsQuote ? (
+              <Button onClick={() => { onClose(); reset(); setSavedAsQuote(''); }}>Close</Button>
+            ) : (<>
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button variant="secondary" onClick={() => save('quote')} disabled={creating || saving}>{saving ? 'Saving…' : 'Save as Quote'}</Button>
             {canConfirm && (isFree || total === 0 || (addPay && !!selectedWallet && payVerified)) ? (
@@ -919,6 +940,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                 </Tooltip>
               </TooltipProvider>
             )}
+            </>)}
           </div>
         </SheetContent>
       </Sheet>
