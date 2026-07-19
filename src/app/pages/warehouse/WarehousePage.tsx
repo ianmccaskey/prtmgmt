@@ -177,7 +177,7 @@ export function WarehousePage() {
         )}
         {(isAdmin || isLogistics || isWarehouse) && (
           <TabsContent value="payables" className="mt-4">
-            <PayablesTab />
+            <PayablesTab warehouseId={selectedWarehouseId} />
           </TabsContent>
         )}
         {seesOps && (

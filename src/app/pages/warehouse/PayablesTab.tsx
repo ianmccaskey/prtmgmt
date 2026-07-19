@@ -27,11 +27,12 @@ type ShipmentRow = {
  * per-shipment "mark paid" — payments are recorded as lump sums on the
  * Commissions page and net against the balance here.
  */
-export function PayablesTab() {
-  const { isAdmin, isWarehouse, assignedWarehouseId } = useAppUser();
+export function PayablesTab({ warehouseId }: { warehouseId: string }) {
+  const { isAdmin } = useAppUser();
   const navigate = useNavigate();
-  // Warehouse users see only their own warehouse's ledger — filtered in the query.
-  const whParam = isWarehouse && assignedWarehouseId ? String(assignedWarehouseId) : '';
+  // Follows the page's warehouse switcher ('' = all). Warehouse users are
+  // scoped automatically — their switcher is locked to their warehouse.
+  const whParam = warehouseId;
   const [balancesRaw, loading] = useLoadAction(listWarehouseBalances, [whParam], { warehouse_id: whParam });
   const rows: Balance[] = asRows<Balance>(balancesRaw).filter(r => Number(r.commission_earned_usd) > 0 || Number(r.paid_total_usd) > 0);
   const [expanded, setExpanded] = useState<number | null>(null);
