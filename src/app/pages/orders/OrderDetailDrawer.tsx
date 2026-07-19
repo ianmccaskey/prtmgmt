@@ -453,12 +453,19 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                             {String(s.carrier || '—')} · <span className="font-mono font-medium break-all">{dbText(s.tracking_number) || 'no tracking'}</span>
                             <span className="text-xs text-blue-600 ml-1.5">({String(s.origin) === 'china' ? 'China' : String(s.warehouse_name || 'Warehouse')})</span>
                           </span>
-                          {s.tracking_number != null && (
-                            <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-700"
-                              onClick={() => navigator.clipboard.writeText(`${s.carrier || ''} ${dbText(s.tracking_number)}`.trim())}>
-                              Copy
-                            </Button>
-                          )}
+                          <span className="flex items-center gap-1 shrink-0">
+                            {s.label_url != null && (
+                              <a href={String(s.label_url)} target="_blank" rel="noreferrer" className="text-xs text-blue-700 underline">
+                                Label
+                              </a>
+                            )}
+                            {s.tracking_number != null && (
+                              <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-700"
+                                onClick={() => navigator.clipboard.writeText(`${s.carrier || ''} ${dbText(s.tracking_number)}`.trim())}>
+                                Copy
+                              </Button>
+                            )}
+                          </span>
                         </div>
                       ))}
                     </div>

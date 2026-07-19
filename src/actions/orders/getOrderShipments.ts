@@ -13,6 +13,7 @@ export function getOrderShipments() {
         so2.delivered_date,
         so2.status,
         so2.internal_shipping_cost_usd,
+        so2.label_url,
         so2.payable_status,
         so2.issue_flag,
         so2.issue_notes,

@@ -11,10 +11,11 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, MapPin, ChevronDown, ChevronRight, Home } from 'lucide-react';
+import { Plus, MapPin, ChevronDown, ChevronRight, Home, Tag } from 'lucide-react';
 import listWarehouses from '@/actions/settings/listWarehouses';
 import createWarehouse from '@/actions/settings/createWarehouse';
 import updateWarehouseActive from '@/actions/settings/updateWarehouseActive';
+import updateWarehouseShippo from '@/actions/settings/updateWarehouseShippo';
 import listReceiveAddresses from '@/actions/warehouse/listReceiveAddresses';
 import createReceiveAddress from '@/actions/warehouse/createReceiveAddress';
 import setReceiveAddressActive from '@/actions/warehouse/setReceiveAddressActive';
@@ -23,6 +24,7 @@ type Warehouse = {
   id: number; name: string; ship_from_name: string | null; city: string; state: string; country: string;
   address_line1: string; address_line2: string; postal_code: string;
   notes: string; is_active: boolean;
+  ship_from_phone: string | null; has_shippo_key: boolean;
 };
 type ReceiveAddress = {
   id: number; warehouse_id: number; label: string; address_name: string | null;
@@ -52,10 +54,18 @@ export function WarehousesTab() {
   const [addrSaving, setAddrSaving] = useState(false);
   const [addrError, setAddrError] = useState('');
 
+  // Shippo config per warehouse (API key is write-only: we only read whether one exists)
+  const [shippoFor, setShippoFor] = useState<Warehouse | null>(null);
+  const [shippoKey, setShippoKey] = useState('');
+  const [shippoPhone, setShippoPhone] = useState('');
+  const [shippoSaving, setShippoSaving] = useState(false);
+  const [shippoError, setShippoError] = useState('');
+
   const [warehouses, , , reload] = useLoadAction(listWarehouses, [], {});
   const [addresses, , , reloadAddresses] = useLoadAction(listReceiveAddresses, [], {});
   const [doCreate] = useMutateAction(createWarehouse);
   const [doToggle] = useMutateAction(updateWarehouseActive);
+  const [doShippo] = useMutateAction(updateWarehouseShippo);
   const [doCreateAddr] = useMutateAction(createReceiveAddress);
   const [doToggleAddr] = useMutateAction(setReceiveAddressActive);
 
@@ -120,6 +130,32 @@ export function WarehousesTab() {
     reloadAddresses();
   };
 
+  const openShippo = (w: Warehouse) => {
+    setShippoFor(w);
+    setShippoKey('');
+    setShippoPhone(w.ship_from_phone || '');
+    setShippoError('');
+  };
+
+  // api_key: null = keep current, '' = remove, else replace.
+  const saveShippo = async (removeKey = false) => {
+    if (!shippoFor) return;
+    setShippoSaving(true); setShippoError('');
+    try {
+      await doShippo({
+        id: shippoFor.id,
+        api_key: removeKey ? '' : (shippoKey.trim() || null),
+        ship_from_phone: shippoPhone.trim() || null,
+      });
+      setShippoFor(null);
+      reload();
+    } catch (e: unknown) {
+      setShippoError(e instanceof Error ? e.message : 'Failed to save Shippo settings');
+    } finally {
+      setShippoSaving(false);
+    }
+  };
+
   const fmtAddr = (a: { address_line1: string; address_line2?: string | null; city?: string | null; state?: string | null; postal_code?: string | null }, nameLine?: string | null) =>
     [nameLine, a.address_line1, a.address_line2, a.city, a.state, dbText(a.postal_code)].filter(Boolean).join(', ');
 
@@ -179,6 +215,17 @@ export function WarehousesTab() {
                             <Home className="h-3 w-3" />
                             <span className="font-medium">Ship-From:</span>
                             <span>{fmtAddr(w, w.ship_from_name) || 'No address set'}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-gray-600">
+                            <Tag className="h-3 w-3" />
+                            <span className="font-medium">Shippo:</span>
+                            {w.has_shippo_key
+                              ? <Badge variant="outline" className="text-xs text-green-600 border-green-300">API key configured</Badge>
+                              : <span className="text-gray-400">no API key — labels entered manually</span>}
+                            {w.ship_from_phone && <span className="text-gray-400">· phone {w.ship_from_phone}</span>}
+                            <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-600" onClick={() => openShippo(w)}>
+                              {w.has_shippo_key ? 'Update' : 'Configure'}
+                            </Button>
                           </div>
                           <div className="flex items-center justify-between">
                             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Receive Addresses</p>
@@ -248,6 +295,39 @@ export function WarehousesTab() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
             <Button onClick={handleAdd} disabled={saving}>{saving ? 'Saving…' : 'Create'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Shippo Config Dialog */}
+      <Dialog open={!!shippoFor} onOpenChange={v => !v && setShippoFor(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Shippo — {shippoFor?.name}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500">
+              With an API key set, this warehouse can quote rates and buy shipping labels directly in
+              the Mark Shipped dialog, billed to its own Shippo account. Find the key under
+              Shippo → Settings → API.
+            </p>
+            <div>
+              <Label>API Key {shippoFor?.has_shippo_key && <span className="text-gray-400 font-normal">(leave blank to keep the current key)</span>}</Label>
+              <Input
+                type="password" value={shippoKey} onChange={e => setShippoKey(e.target.value)}
+                placeholder={shippoFor?.has_shippo_key ? '••••••••••••' : 'shippo_live_…'}
+              />
+            </div>
+            <div>
+              <Label>Ship-From Phone <span className="text-gray-400 font-normal">(some carriers require one)</span></Label>
+              <Input value={shippoPhone} onChange={e => setShippoPhone(e.target.value)} placeholder="+1 555 000 0000" />
+            </div>
+            {shippoError && <p className="text-sm text-red-600">{shippoError}</p>}
+          </div>
+          <DialogFooter className="gap-2">
+            {shippoFor?.has_shippo_key && (
+              <Button variant="destructive" onClick={() => saveShippo(true)} disabled={shippoSaving}>Remove Key</Button>
+            )}
+            <Button variant="outline" onClick={() => setShippoFor(null)}>Cancel</Button>
+            <Button onClick={() => saveShippo(false)} disabled={shippoSaving}>{shippoSaving ? 'Saving…' : 'Save'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -5,6 +5,7 @@ import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import getFifoStockAction from '@/actions/warehouse/getFifoStock';
 import getActiveRatePlanAction from '@/actions/warehouse/getActiveRatePlan';
+import listWarehouseShipFromAction from '@/actions/warehouse/listWarehouseShipFrom';
 import createOutboundShipmentAction from '@/actions/warehouse/createOutboundShipment';
 import shipAllocationAtomicAction from '@/actions/warehouse/shipAllocationAtomic';
 import markOrderShippedFromWarehouseAction from '@/actions/warehouse/markOrderShippedFromWarehouse';
@@ -16,9 +17,12 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Trash2, Truck } from 'lucide-react';
+import { ExternalLink, Plus, Trash2, Truck } from 'lucide-react';
 import { calcShippingCost, RatePlan } from '@/lib/shippingCost';
 import { QueueOrder, itemRemaining } from '@/app/pages/warehouse/FulfillmentTab';
+import {
+  ShippoAddress, ShippoRate, getShippoRates, buyShippoLabel, providerToCarrier, toIsoCountry,
+} from '@/lib/shippo';
 
 type FifoRow = {
   inventory_id: number; product_id: number; batch_id: number; warehouse_id: number;
@@ -35,6 +39,156 @@ type AllocRow = {
 };
 
 const CARRIERS = ['USPS', 'UPS', 'FedEx', 'DHL', 'other'];
+
+type ShipFromRow = {
+  id: number; name: string; ship_from_name: string | null;
+  address_line1: string | null; address_line2: string | null;
+  city: string | null; state: string | null; postal_code: string | null; country: string | null;
+  ship_from_phone: string | null; shippo_api_key: string | null;
+};
+
+export type PurchasedLabel = {
+  label_url: string; transaction_id: string; cost: number; tracking_number: string;
+};
+
+/**
+ * Quote & purchase a Shippo label for one shipment group, on the origin
+ * warehouse's own Shippo account. Quoting state is local; the purchased
+ * label is lifted to the dialog so Confirm records it on the shipment.
+ */
+function ShippoSection({ wh, order, onPurchased }: {
+  wh: ShipFromRow; order: QueueOrder; onPurchased: (carrier: string, label: PurchasedLabel) => void;
+}) {
+  const [parcel, setParcel] = useState({ length: '10', width: '8', height: '6', weight: '' });
+  const [rates, setRates] = useState<ShippoRate[]>([]);
+  const [messages, setMessages] = useState<string[]>([]);
+  const [selRate, setSelRate] = useState('');
+  const [busy, setBusy] = useState<'quote' | 'buy' | null>(null);
+  const [err, setErr] = useState('');
+
+  const addressOk = !!(wh.address_line1 && wh.city && dbText(wh.postal_code));
+  const parcelOk = ['length', 'width', 'height', 'weight'].every(k => Number(parcel[k as keyof typeof parcel]) > 0);
+  const shipToOk = !!(order.ship_address_line1 && order.ship_city && dbText(order.ship_postal_code));
+
+  const quote = async () => {
+    if (!wh.shippo_api_key) return;
+    setBusy('quote'); setErr(''); setRates([]); setSelRate(''); setMessages([]);
+    try {
+      const from: ShippoAddress = {
+        name: wh.ship_from_name || wh.name,
+        street1: wh.address_line1 || '',
+        street2: wh.address_line2 || undefined,
+        city: wh.city || '',
+        state: wh.state || undefined,
+        zip: dbText(wh.postal_code),
+        country: toIsoCountry(wh.country),
+        phone: wh.ship_from_phone || undefined,
+      };
+      const to: ShippoAddress = {
+        name: order.ship_to_name || order.customer_name,
+        street1: order.ship_address_line1,
+        street2: order.ship_address_line2 || undefined,
+        city: order.ship_city,
+        state: order.ship_state || undefined,
+        zip: dbText(order.ship_postal_code),
+        country: toIsoCountry(order.ship_country),
+      };
+      const res = await getShippoRates(wh.shippo_api_key, from, to, {
+        length: parcel.length, width: parcel.width, height: parcel.height,
+        distance_unit: 'in', weight: parcel.weight, mass_unit: 'lb',
+      });
+      setRates(res.rates);
+      setMessages(res.messages);
+      if (res.rates.length > 0) setSelRate(res.rates[0].object_id);
+      else setErr(res.messages.length ? '' : 'Shippo returned no rates — check the addresses and parcel size.');
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Failed to get rates');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const buy = async () => {
+    const rate = rates.find(r => r.object_id === selRate);
+    if (!wh.shippo_api_key || !rate) return;
+    setBusy('buy'); setErr('');
+    try {
+      const label = await buyShippoLabel(wh.shippo_api_key, rate.object_id);
+      onPurchased(providerToCarrier(rate.provider), {
+        label_url: label.label_url,
+        transaction_id: label.object_id,
+        cost: Number(rate.amount),
+        tracking_number: label.tracking_number,
+      });
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Label purchase failed');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const selected = rates.find(r => r.object_id === selRate);
+
+  return (
+    <div className="border-t pt-2 space-y-2">
+      <p className="text-xs font-medium text-slate-600">Shippo label</p>
+      {!addressOk && (
+        <p className="text-xs text-amber-700">
+          Ship-from address is incomplete — fill it in under Settings → Warehouses to quote rates.
+        </p>
+      )}
+      {!shipToOk && <p className="text-xs text-amber-700">The order&apos;s ship-to address is incomplete.</p>}
+      <div className="grid grid-cols-4 gap-1.5">
+        {([['length', 'L (in)'], ['width', 'W (in)'], ['height', 'H (in)'], ['weight', 'Wt (lb)']] as const).map(([k, lbl]) => (
+          <div key={k}>
+            <Label className="text-[10px] text-slate-500">{lbl}</Label>
+            <Input
+              type="number" min={0} step="0.1" className="h-7 text-xs"
+              value={parcel[k]}
+              onChange={e => setParcel(p => ({ ...p, [k]: e.target.value }))}
+            />
+          </div>
+        ))}
+      </div>
+      <Button
+        size="sm" variant="outline" className="h-7 text-xs w-full"
+        disabled={busy !== null || !addressOk || !parcelOk || !shipToOk}
+        onClick={quote}
+      >
+        {busy === 'quote' ? 'Getting rates…' : rates.length > 0 ? 'Re-quote rates' : 'Get rates'}
+      </Button>
+      {messages.length > 0 && (
+        <ul className="text-[11px] text-amber-700 bg-amber-50 rounded p-2 space-y-0.5">
+          {messages.map((m, i) => <li key={i}>{m}</li>)}
+        </ul>
+      )}
+      {rates.length > 0 && (
+        <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+          {rates.map(r => (
+            <label key={r.object_id} className={`flex items-center gap-2 text-xs rounded border px-2 py-1.5 cursor-pointer ${selRate === r.object_id ? 'border-blue-400 bg-blue-50' : 'bg-white'}`}>
+              <input
+                type="radio" name={`shippo-rate-${wh.id}`}
+                checked={selRate === r.object_id}
+                onChange={() => setSelRate(r.object_id)}
+              />
+              <span className="flex-1">
+                <span className="font-medium">{r.provider}</span> {r.servicelevel?.name}
+                {r.estimated_days != null && <span className="text-slate-400"> · ~{r.estimated_days}d</span>}
+              </span>
+              <span className="font-semibold">${Number(r.amount).toFixed(2)}</span>
+            </label>
+          ))}
+        </div>
+      )}
+      {selected && (
+        <Button size="sm" className="h-7 text-xs w-full" disabled={busy !== null} onClick={buy}>
+          {busy === 'buy' ? 'Purchasing…' : `Buy label — $${Number(selected.amount).toFixed(2)} (${selected.provider})`}
+        </Button>
+      )}
+      {err && <p className="text-[11px] text-red-600 bg-red-50 rounded p-2">{err}</p>}
+    </div>
+  );
+}
 
 /** Kits this order can pull from a row: free stock + its own ledgered reservation. */
 function rowUsable(r: FifoRow): number {
@@ -77,6 +231,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
   const { profileId, isWarehouse, assignedWarehouseId } = useAppUser();
   const [stockRaw, stockLoading] = useLoadAction(getFifoStockAction, [order.order_id], { order_id: order.order_id });
   const [planRaw, planLoading] = useLoadAction(getActiveRatePlanAction, [], {});
+  const [shipFromRaw] = useLoadAction(listWarehouseShipFromAction, [], {});
 
   const [createShipment] = useMutateAction(createOutboundShipmentAction);
   const [shipAllocation] = useMutateAction(shipAllocationAtomicAction);
@@ -94,8 +249,26 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
   const [allocs, setAllocs] = useState<AllocRow[]>([]);
   const [carriers, setCarriers] = useState<Record<number, string>>({});
   const [trackings, setTrackings] = useState<Record<number, string>>({});
+  // Labels purchased via Shippo this session, keyed by warehouse — recorded
+  // on the shipment row at Confirm.
+  const [labels, setLabels] = useState<Record<number, PurchasedLabel>>({});
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const shipFroms = useMemo(() => asRows<ShipFromRow>(shipFromRaw), [shipFromRaw]);
+  const shipFromFor = (whId: number) => shipFroms.find(w => Number(w.id) === whId);
+
+  // A purchased label already cost real money — closing without confirming
+  // would leave it unrecorded, so double-check the intent.
+  const guardedClose = () => {
+    if (saving) return;
+    if (Object.keys(labels).length > 0 && !saved &&
+        !window.confirm('A shipping label was already purchased but the shipment is not recorded yet. Close anyway? (The label stays valid on Shippo, but the app will have no record of it.)')) {
+      return;
+    }
+    onClose();
+  };
 
   // Default allocation, per line: rows of the line's pinned batch first,
   // then rows holding this order's reservations, then the rest FIFO
@@ -191,6 +364,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
     try {
       for (const g of shipmentGroups) {
         const cost = calcShippingCost(plan, g.kits);
+        const label = labels[g.warehouse_id];
         const res = await createShipment({
           order_id: order.order_id,
           warehouse_id: g.warehouse_id,
@@ -198,6 +372,9 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
           tracking_number: trackings[g.warehouse_id].trim(),
           cost_usd: cost,
           rate_plan_id: plan.id,
+          label_url: label?.label_url ?? null,
+          shippo_transaction_id: label?.transaction_id ?? null,
+          label_cost_usd: label?.cost ?? null,
         }) as { id: number }[];
         const shipmentId = res?.[0]?.id;
         if (!shipmentId) throw new Error(`Failed to create shipment for ${g.warehouse_name}`);
@@ -215,6 +392,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
         await createNotification({ shipment_id: shipmentId });
       }
       await markShipped({ order_id: order.order_id });
+      setSaved(true);
       onDone();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Shipping failed — some steps may have completed. Reload and re-run; remaining lines stay in the queue.');
@@ -224,7 +402,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
   };
 
   return (
-    <Dialog open onOpenChange={v => !v && !saving && onClose()}>
+    <Dialog open onOpenChange={v => !v && guardedClose()}>
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 flex-wrap">
@@ -332,12 +510,46 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                         <Label className="text-xs">Tracking Number *</Label>
                         <Input className="h-8 text-xs" value={trackings[g.warehouse_id] || ''} onChange={e => setTrackings(t => ({ ...t, [g.warehouse_id]: e.target.value }))} placeholder="Tracking #" />
                       </div>
+                      {labels[g.warehouse_id] ? (
+                        <div className="border-t pt-2 text-xs bg-green-50 -mx-3 -mb-3 px-3 pb-3 rounded-b-lg space-y-1">
+                          <p className="font-medium text-green-700">
+                            Label purchased — ${labels[g.warehouse_id].cost.toFixed(2)}
+                          </p>
+                          <p className="text-green-700 font-mono break-all">{labels[g.warehouse_id].tracking_number}</p>
+                          <a
+                            href={labels[g.warehouse_id].label_url} target="_blank" rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-600 underline"
+                          >
+                            <ExternalLink className="h-3 w-3" /> Open label (PDF)
+                          </a>
+                          <p className="text-green-800/70">Recorded on the shipment when you confirm below.</p>
+                        </div>
+                      ) : (() => {
+                        const wh = shipFromFor(g.warehouse_id);
+                        return wh?.shippo_api_key ? (
+                          <ShippoSection
+                            wh={wh} order={order}
+                            onPurchased={(carrier, label) => {
+                              setLabels(l => ({ ...l, [g.warehouse_id]: label }));
+                              setCarriers(c => ({ ...c, [g.warehouse_id]: carrier }));
+                              setTrackings(t => ({ ...t, [g.warehouse_id]: label.tracking_number }));
+                            }}
+                          />
+                        ) : null;
+                      })()}
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
+            {Object.keys(labels).some(whId => !shipmentGroups.some(g => g.warehouse_id === Number(whId))) && (
+              <p className="text-xs text-amber-700 bg-amber-50 rounded p-3">
+                A label was purchased for a warehouse that no longer has any allocation — it won&apos;t be
+                recorded unless an allocation ships from that warehouse again. (The label itself stays
+                valid on Shippo and can be voided there.)
+              </p>
+            )}
             {problems.length > 0 && (
               <ul className="text-xs text-red-600 bg-red-50 rounded p-3 space-y-1">
                 {problems.map((p, i) => <li key={i}>• {p}</li>)}
@@ -348,7 +560,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="outline" onClick={guardedClose} disabled={saving}>Cancel</Button>
           <Button onClick={confirm} disabled={!canConfirm}>
             {saving ? 'Shipping…' : `Confirm & Create ${shipmentGroups.length || ''} Shipment${shipmentGroups.length === 1 ? '' : 's'}`}
           </Button>
