@@ -133,7 +133,7 @@ export function WarehousesTab() {
   const openShippo = (w: Warehouse) => {
     setShippoFor(w);
     setShippoKey('');
-    setShippoPhone(w.ship_from_phone || '');
+    setShippoPhone(dbText(w.ship_from_phone));
     setShippoError('');
   };
 
@@ -222,7 +222,7 @@ export function WarehousesTab() {
                             {w.has_shippo_key
                               ? <Badge variant="outline" className="text-xs text-green-600 border-green-300">API key configured</Badge>
                               : <span className="text-gray-400">no API key — labels entered manually</span>}
-                            {w.ship_from_phone && <span className="text-gray-400">· phone {w.ship_from_phone}</span>}
+                            {w.ship_from_phone != null && <span className="text-gray-400">· phone {dbText(w.ship_from_phone)}</span>}
                             <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-600" onClick={() => openShippo(w)}>
                               {w.has_shippo_key ? 'Update' : 'Configure'}
                             </Button>

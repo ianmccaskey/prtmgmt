@@ -84,7 +84,7 @@ function ShippoSection({ wh, order, onPurchased }: {
         state: wh.state || undefined,
         zip: dbText(wh.postal_code),
         country: toIsoCountry(wh.country),
-        phone: wh.ship_from_phone || undefined,
+        phone: dbText(wh.ship_from_phone) || undefined,
       };
       const to: ShippoAddress = {
         name: order.ship_to_name || order.customer_name,
