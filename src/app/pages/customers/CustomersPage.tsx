@@ -101,8 +101,46 @@ export function CustomersPage() {
         </Select>
       </div>
 
-      {/* Table */}
-      <div className="rounded-md border overflow-hidden">
+      {/* Mobile: stacked cards */}
+      <div className="sm:hidden rounded-md border overflow-hidden divide-y">
+        {loading ? (
+          <div className="p-4 space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+        ) : asRows<Customer>(customers).length === 0 ? (
+          <div className="text-center p-8 text-muted-foreground text-sm">No customers found</div>
+        ) : (
+          pgCust.pageRows.map(c => (
+            <div key={c.id} className="p-3 space-y-1 active:bg-muted/40" onClick={() => navigate(`/customers/${c.id}`)}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                  <span className="font-medium text-sm">{c.full_name}</span>
+                  {c.is_vip && (
+                    <Badge className="bg-yellow-100 text-yellow-700 border-yellow-300 text-xs px-1 py-0">
+                      <Crown className="h-3 w-3 mr-0.5 inline" />VIP
+                    </Badge>
+                  )}
+                  {c.is_blocked && (
+                    <Badge className="bg-red-100 text-red-700 border-red-200 text-xs px-1 py-0">
+                      <Ban className="h-3 w-3 mr-0.5 inline" />Blocked
+                    </Badge>
+                  )}
+                </div>
+                <span className="font-medium text-sm shrink-0">${Number(c.lifetime_value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {c.preferred_channel && <span className="capitalize">{c.preferred_channel}{c.channel_handle ? ` ${c.channel_handle}` : ''} · </span>}
+                {c.email || c.phone || '—'}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {c.total_orders} orders · last {c.last_order_date ? new Date(c.last_order_date).toLocaleDateString() : '—'}
+              </div>
+            </div>
+          ))
+        )}
+        <PaginationFooter {...pgCust} />
+      </div>
+
+      {/* Desktop: table */}
+      <div className="hidden sm:block rounded-md border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 border-b">

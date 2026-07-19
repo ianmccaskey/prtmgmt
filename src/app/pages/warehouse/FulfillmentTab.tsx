@@ -109,8 +109,62 @@ export function FulfillmentTab() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          {loading ? <div className="p-4"><Skeleton className="h-24 w-full" /></div> : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+          {loading ? <div className="p-4"><Skeleton className="h-24 w-full" /></div> : (<>
+            {/* Mobile: stacked cards */}
+            <div className="sm:hidden divide-y">
+              {orders.map(o => {
+                const gaps = gapProducts(o);
+                const gapItems = o.items.filter(it => gaps.has(it.product_id));
+                const hasGap = gaps.size > 0;
+                const blocked = hasGap && !o.partial_fulfillment_allowed;
+                const totalRemaining = o.items.reduce((s, it) => s + itemRemaining(it), 0);
+                const warehouses = [...new Set(o.items.flatMap(it => parseWarehouses(it.fulfill_warehouses)))];
+                return (
+                  <div key={o.order_id} className={`p-3 space-y-2 ${hasGap ? 'bg-red-50/60' : ''}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <button className="font-mono font-medium text-blue-600" onClick={() => setDetailOrderId(o.order_id)}>
+                        {o.order_number}
+                      </button>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[o.status] || 'bg-slate-100 text-slate-600'}`}>{o.status.replace('_', ' ')}</span>
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-medium">{o.customer_name}</span>
+                      <span className="text-xs text-slate-400 ml-1.5">{o.ship_city}, {o.ship_country} · {new Date(o.order_date).toLocaleDateString()}</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      {o.items.map(it => {
+                        const rem = itemRemaining(it);
+                        const gap = gaps.has(it.product_id);
+                        const shippable = Number(it.stock_available) + Number(it.order_reserved_qty);
+                        return (
+                          <div key={it.item_id} className={`text-xs flex items-center gap-1 ${gap ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
+                            {gap && <AlertTriangle className="h-3 w-3" />}
+                            {rem}× {it.product_name}
+                            {gap && <span className="text-red-400">({shippable} shippable)</span>}
+                          </div>
+                        );
+                      })}
+                      <div className="text-xs text-slate-400">{totalRemaining} kits total</div>
+                    </div>
+                    <div className="text-xs">
+                      {warehouses.length > 0 ? warehouses.map(w => <Badge key={w} variant="outline" className="mr-1 text-xs">{w}</Badge>) : <span className="text-red-500">no stock</span>}
+                    </div>
+                    <Button size="sm" variant={hasGap ? 'outline' : 'default'} className="w-full h-8 text-xs" disabled={blocked || isLogistics} onClick={() => setShipOrder(o)}>
+                      <Truck className="h-3 w-3 mr-1" /> Mark Shipped
+                    </Button>
+                    {blocked && (
+                      <p className="text-xs text-red-500">
+                        Insufficient stock for {gapItems.map(g => g.product_name).join(', ')} and this order requires
+                        complete fulfillment (&quot;hold until all in stock&quot;).
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+              {orders.length === 0 && <div className="text-center py-8 text-slate-400 text-sm">Nothing waiting to ship</div>}
+            </div>
+            {/* Desktop: table */}
+            <div className="hidden sm:block overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-slate-50 border-b">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium text-slate-600">Order</th>
@@ -188,7 +242,7 @@ export function FulfillmentTab() {
                 {orders.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-400">Nothing waiting to ship</td></tr>}
               </tbody>
             </table></div>
-          )}
+          </>)}
         </CardContent>
       </Card>
 

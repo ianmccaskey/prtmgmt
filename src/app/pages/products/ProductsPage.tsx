@@ -142,11 +142,15 @@ export function ProductsPage() {
         </Card>
       )}
 
-      {/* Content */}
+      {/* Content — the table is desktop-only; phones always get the card grid */}
       {loading ? (
         <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-14 w-full" />)}</div>
-      ) : view === 'table' ? (
-        <Card>
+      ) : view === 'table' ? (<>
+        <div className="sm:hidden">
+          <ProductCardGrid products={pgProd.pageRows} total={rows.length} navigate={navigate} />
+          <PaginationFooter {...pgProd} />
+        </div>
+        <Card className="hidden sm:block">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -219,36 +223,10 @@ export function ProductsPage() {
             <PaginationFooter {...pgProd} />
           </CardContent>
         </Card>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {pgProd.pageRows.map(p => (
-            <Card key={p.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/products/${p.id}`)}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-                    <Package className="h-5 w-5 text-blue-500" />
-                  </div>
-                  <Badge variant={p.is_active ? 'default' : 'secondary'} className="text-xs">{p.is_active ? 'Active' : 'Inactive'}</Badge>
-                </div>
-                <div className="font-semibold text-slate-800 text-sm leading-tight mb-0.5">{p.name}</div>
-                <div className="text-xs text-slate-400 mb-2">{p.sku}</div>
-                <div className="text-xs text-slate-500 mb-3">{p.category} · {p.vial_size_ml}mL × {p.vials_per_unit}</div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-bold text-slate-800">${Number(p.list_price).toFixed(2)}</span>
-                  <span className={`text-xs font-medium ${Number(p.total_available) <= Number(p.low_stock_threshold) ? 'text-red-600' : 'text-slate-500'}`}>
-                    {p.total_available} avail
-                  </span>
-                </div>
-                <div className="flex gap-1 mt-2">
-                  {p.available_warehouse && <Badge variant="outline" className="text-xs">WH</Badge>}
-                  {p.available_china_direct && <Badge variant="outline" className="text-xs">CN</Badge>}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          {rows.length === 0 && (
-            <div className="col-span-full text-center py-12 text-slate-400">No products found</div>
-          )}
+      </>) : (
+        <div className="space-y-3">
+          <ProductCardGrid products={pgProd.pageRows} total={rows.length} navigate={navigate} />
+          <PaginationFooter {...pgProd} />
         </div>
       )}
 
@@ -258,6 +236,44 @@ export function ProductsPage() {
         factories={factoryList}
         onCreated={(id) => { setShowNew(false); navigate(`/products/${id}`); }}
       />
+    </div>
+  );
+}
+
+/** Card grid — the explicit grid view on desktop, and the only view on phones. */
+function ProductCardGrid({ products, total, navigate }: {
+  products: Product[]; total: number; navigate: (path: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {products.map(p => (
+        <Card key={p.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/products/${p.id}`)}>
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between mb-2">
+              <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                <Package className="h-5 w-5 text-blue-500" />
+              </div>
+              <Badge variant={p.is_active ? 'default' : 'secondary'} className="text-xs">{p.is_active ? 'Active' : 'Inactive'}</Badge>
+            </div>
+            <div className="font-semibold text-slate-800 text-sm leading-tight mb-0.5">{p.name}</div>
+            <div className="text-xs text-slate-400 mb-2">{p.sku}</div>
+            <div className="text-xs text-slate-500 mb-3">{p.category} · {p.vial_size_ml}mL × {p.vials_per_unit}</div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-bold text-slate-800">${Number(p.list_price).toFixed(2)}</span>
+              <span className={`text-xs font-medium ${Number(p.total_available) <= Number(p.low_stock_threshold) ? 'text-red-600' : 'text-slate-500'}`}>
+                {p.total_available} avail
+              </span>
+            </div>
+            <div className="flex gap-1 mt-2">
+              {p.available_warehouse && <Badge variant="outline" className="text-xs">WH</Badge>}
+              {p.available_china_direct && <Badge variant="outline" className="text-xs">CN</Badge>}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+      {total === 0 && (
+        <div className="col-span-full text-center py-12 text-slate-400">No products found</div>
+      )}
     </div>
   );
 }

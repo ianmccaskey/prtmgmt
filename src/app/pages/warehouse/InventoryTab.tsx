@@ -90,8 +90,52 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        {loading ? <div className="p-4 space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
-          <div className="overflow-x-auto">
+        {loading ? <div className="p-4 space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div> : (<>
+          {/* Mobile: stacked cards */}
+          <div className="sm:hidden divide-y">
+            {rows.map(r => {
+              const isLowStock = Number(r.product_total_available) <= Number(r.low_stock_threshold);
+              return (
+                <div key={r.id} className={`p-3 space-y-2 ${isLowStock ? 'bg-red-50/40' : ''}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium text-slate-800 text-sm">{r.product_name}</div>
+                      <div className="text-xs text-slate-400">{r.sku} · <span className="font-mono">{r.batch_number}</span></div>
+                    </div>
+                    <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium ${QC_COLORS[r.qc_status] || 'bg-slate-100 text-slate-600'}`}>{r.qc_status}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    {r.warehouse_name}
+                    {isLowStock && <Badge className="text-xs bg-red-100 text-red-700">Low Stock</Badge>}
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 text-center">
+                    <div className="rounded bg-slate-50 py-1">
+                      <div className="text-sm font-medium text-slate-700">{r.quantity_on_hand}</div>
+                      <div className="text-[10px] text-slate-400">On Hand</div>
+                    </div>
+                    <div className="rounded bg-slate-50 py-1">
+                      <div className="text-sm font-medium text-orange-600">{r.quantity_reserved}</div>
+                      <div className="text-[10px] text-slate-400">Reserved</div>
+                    </div>
+                    <div className="rounded bg-slate-50 py-1">
+                      <div className={`text-sm font-medium ${r.quantity_available === 0 ? 'text-slate-400' : 'text-green-600'}`}>{r.quantity_available}</div>
+                      <div className="text-[10px] text-slate-400">Available</div>
+                    </div>
+                    <div className="rounded bg-slate-50 py-1">
+                      <div className="text-sm font-medium text-purple-600">{r.in_transit_inbound > 0 ? r.in_transit_inbound : '—'}</div>
+                      <div className="text-[10px] text-slate-400">In-Transit</div>
+                    </div>
+                  </div>
+                  {r.next_arrival_date && (
+                    <div className="text-xs text-slate-400">Next arrival {new Date(r.next_arrival_date).toLocaleDateString()}</div>
+                  )}
+                </div>
+              );
+            })}
+            {rows.length === 0 && <div className="text-center py-8 text-slate-400 text-sm">No inventory records</div>}
+          </div>
+          {/* Desktop: table */}
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b">
                 <tr>
@@ -131,7 +175,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
               </tbody>
             </table>
           </div>
-        )}
+        </>)}
       </CardContent>
     </Card>
   );
