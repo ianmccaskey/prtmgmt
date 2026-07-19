@@ -15,7 +15,7 @@ function listWarehouseShipFrom() {
         ship_from_phone, shippo_api_key
       FROM warehouses
       WHERE is_active = true
-        AND ({{params.warehouse_id}}::text = '' OR id = {{params.warehouse_id}}::bigint)
+        AND (COALESCE({{params.warehouse_id}}, '') = '' OR id::text = {{params.warehouse_id}})
     `,
   });
 }
