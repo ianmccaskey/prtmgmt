@@ -9,13 +9,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertTriangle, Truck } from 'lucide-react';
 import { MarkShippedDialog } from '@/app/pages/warehouse/MarkShippedDialog';
+import { OrderDetailDrawer } from '@/app/pages/orders/OrderDetailDrawer';
 import { useAppUser } from '@/app/AppContext';
 
 export type QueueItem = {
   order_id: number; order_number: string; status: string; order_date: string;
   partial_fulfillment_allowed: boolean;
   preferred_warehouse_id: number | null; preferred_warehouse_name: string | null;
-  ship_to_name: string; ship_address_line1: string; ship_city: string; ship_country: string;
+  ship_to_name: string; ship_address_line1: string; ship_address_line2: string | null;
+  ship_city: string; ship_state: string | null; ship_postal_code: string | null; ship_country: string;
   customer_name: string;
   item_id: number; product_id: number; quantity: number; unit_price_usd: string;
   preferred_batch_id: number | null; preferred_batch_number: string | null;
@@ -29,7 +31,8 @@ export type QueueOrder = {
   order_id: number; order_number: string; status: string; order_date: string;
   partial_fulfillment_allowed: boolean; customer_name: string;
   preferred_warehouse_id: number | null; preferred_warehouse_name: string | null;
-  ship_to_name: string; ship_city: string; ship_country: string;
+  ship_to_name: string; ship_address_line1: string; ship_address_line2: string | null;
+  ship_city: string; ship_state: string | null; ship_postal_code: string | null; ship_country: string;
   items: QueueItem[];
 };
 
@@ -76,6 +79,7 @@ export function FulfillmentTab() {
   const [queue, loading, , reload] = useLoadAction(listFulfillmentQueueAction, [], {});
   const rows: QueueItem[] = asRows(queue);
   const [shipOrder, setShipOrder] = useState<QueueOrder | null>(null);
+  const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
 
   const orders: QueueOrder[] = [];
   for (const r of rows) {
@@ -86,7 +90,9 @@ export function FulfillmentTab() {
         order_date: r.order_date, partial_fulfillment_allowed: r.partial_fulfillment_allowed,
         preferred_warehouse_id: r.preferred_warehouse_id, preferred_warehouse_name: r.preferred_warehouse_name,
         customer_name: r.customer_name, ship_to_name: r.ship_to_name,
-        ship_city: r.ship_city, ship_country: r.ship_country, items: [],
+        ship_address_line1: r.ship_address_line1, ship_address_line2: r.ship_address_line2,
+        ship_city: r.ship_city, ship_state: r.ship_state, ship_postal_code: r.ship_postal_code,
+        ship_country: r.ship_country, items: [],
       };
       orders.push(o);
     }
@@ -126,7 +132,9 @@ export function FulfillmentTab() {
                   return (
                     <tr key={o.order_id} className={`border-b ${hasGap ? 'bg-red-50/60' : 'hover:bg-slate-50'}`}>
                       <td className="px-4 py-2">
-                        <div className="font-mono font-medium text-blue-600">{o.order_number}</div>
+                        <button className="font-mono font-medium text-blue-600 hover:underline" onClick={() => setDetailOrderId(o.order_id)}>
+                          {o.order_number}
+                        </button>
                         <div className="text-xs text-slate-400">{new Date(o.order_date).toLocaleDateString()}</div>
                       </td>
                       <td className="px-4 py-2">
@@ -191,6 +199,13 @@ export function FulfillmentTab() {
           onDone={() => { setShipOrder(null); reload(); }}
         />
       )}
+
+      <OrderDetailDrawer
+        orderId={detailOrderId}
+        open={detailOrderId != null}
+        onClose={() => setDetailOrderId(null)}
+        onRefresh={reload}
+      />
     </div>
   );
 }

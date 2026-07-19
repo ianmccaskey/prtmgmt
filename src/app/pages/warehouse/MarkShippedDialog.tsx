@@ -40,6 +40,36 @@ function rowUsable(r: FifoRow): number {
   return Math.max(0, Number(r.quantity_available)) + Number(r.order_reserved);
 }
 
+/** Full ship-to address with one-click copy, label-formatted. */
+function ShipToBlock({ order }: { order: QueueOrder }) {
+  const [copied, setCopied] = useState(false);
+  const lines = [
+    order.ship_to_name || order.customer_name,
+    order.ship_address_line1,
+    order.ship_address_line2,
+    [order.ship_city, order.ship_state, order.ship_postal_code].filter(Boolean).join(', '),
+    order.ship_country,
+  ].filter((l): l is string => !!l && String(l).trim() !== '');
+  const copy = () => {
+    navigator.clipboard.writeText(lines.join('\n'));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="rounded-lg border bg-slate-50 p-3 flex items-start justify-between gap-3">
+      <div>
+        <p className="text-xs font-medium text-slate-500 mb-1">Ship To</p>
+        {lines.map((l, i) => (
+          <p key={i} className={`text-sm ${i === 0 ? 'font-medium' : 'text-slate-600'}`}>{l}</p>
+        ))}
+      </div>
+      <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={copy}>
+        {copied ? 'Copied' : 'Copy address'}
+      </Button>
+    </div>
+  );
+}
+
 export function MarkShippedDialog({ order, onClose, onDone }: {
   order: QueueOrder; onClose: () => void; onDone: () => void;
 }) {
@@ -208,6 +238,8 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
 
         {stockLoading || planLoading ? <Skeleton className="h-40 w-full" /> : (
           <div className="space-y-5">
+            {/* Ship-to address — everything needed for a shipping label */}
+            <ShipToBlock order={order} />
             {!plan && (
               <p className="text-sm text-red-600 bg-red-50 rounded p-3">
                 No active shipping rate plan exists — add one under Settings → Rate Plans before shipping.
