@@ -155,7 +155,7 @@ export function WarehousePage() {
             <TransfersTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
           </TabsContent>
         )}
-        {(isAdmin || isLogistics) && (
+        {(isAdmin || isLogistics || isWarehouse) && (
           <TabsContent value="payables" className="mt-4">
             <PayablesTab />
           </TabsContent>

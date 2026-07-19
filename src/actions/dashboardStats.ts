@@ -31,7 +31,10 @@ export function getDashboardStats() {
         (SELECT COALESCE(SUM(amount_usd_owed),0) FROM refund_tasks WHERE status = 'owed') AS refunds_owed_usd,
         (SELECT COUNT(*) FROM refund_tasks WHERE status = 'owed' AND due_date < CURRENT_DATE) AS overdue_refunds,
         (SELECT COUNT(*) FROM shipments_outbound WHERE issue_flag IS NOT NULL) AS outbound_issues,
-        (SELECT COALESCE(SUM(internal_shipping_cost_usd),0) FROM shipments_outbound WHERE payable_status = 'owed' AND origin = 'warehouse') AS warehouse_payables_usd,
+        (
+          (SELECT COALESCE(SUM(internal_shipping_cost_usd),0) FROM shipments_outbound WHERE origin = 'warehouse')
+          - (SELECT COALESCE(SUM(amount_usd),0) FROM commission_payments WHERE payee_type = 'warehouse')
+        ) AS warehouse_payables_usd,
         (SELECT COUNT(DISTINCT soi.sales_order_id) FROM sales_order_items soi
           JOIN sales_orders so ON so.id = soi.sales_order_id
           WHERE soi.fulfillment_source = 'china_direct' AND so.status = 'confirmed'
