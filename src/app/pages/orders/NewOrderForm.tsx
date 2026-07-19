@@ -29,6 +29,7 @@ import createCustomer from '@/actions/orders/createCustomer';
 import checkDuplicateCustomer from '@/actions/orders/checkDuplicateCustomer';
 import insertAuditLog from '@/actions/orders/insertAuditLog';
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
+import updateOrderStatus from '@/actions/orders/updateOrderStatus';
 import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo';
 import reserveBatchStock from '@/actions/warehouse/reserveBatchStock';
 import listBatchStock from '@/actions/orders/listBatchStock';
@@ -314,6 +315,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [payNetwork, setPayNetwork] = useState('ethereum');
   const [payTx, setPayTx] = useState('');
   const [addPay, setAddPay] = useState(false);
+  // "Payment already received" — inserts the payment as verified so the
+  // order can be confirmed in the same pass (no quote round-trip).
+  const [payVerified, setPayVerified] = useState(true);
   const [copiedWallet, setCopiedWallet] = useState(false);
   const [newCustOpen, setNewCustOpen] = useState(false);
   const [newCustName, setNewCustName] = useState('');
@@ -335,6 +339,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [doItem] = useMutateAction(createOrderItem);
   const [doPayment] = useMutateAction(createOrderPayment);
   const [doAudit] = useMutateAction(insertAuditLog);
+  const [doStatus] = useMutateAction(updateOrderStatus);
   const [doReserve] = useMutateAction(reserveProductStockFifo);
   const [doReserveBatch] = useMutateAction(reserveBatchStock);
   const [doRecomputePayment] = useMutateAction(recomputePaymentStatus);
@@ -477,7 +482,25 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
         preferredWarehouseId: splitMode && l.fulfillment_source === 'warehouse' ? l.preferred_warehouse_id : null,
       });
     }
-    if (s === 'confirmed') {
+    // Payment + rollup BEFORE any confirm attempt, so a verified payment
+    // satisfies the paid/partial-paid gate in the same pass.
+    if (addPay && total > 0 && selectedWallet) {
+      await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: null, amountAsset: null, amountUsd: total, txHash: payTx || null, verified: payVerified, userId: profileId });
+    }
+    // Derive payment_status (free $0 orders roll straight to 'paid').
+    // Chained here because actions are single-statement.
+    await doRecomputePayment({ orderId });
+    // Free/$0 orders are created confirmed directly (createOrder allows it);
+    // paid orders confirm through the same server-side gate as the drawer.
+    let confirmed = s === 'confirmed' && (isFree || total === 0);
+    if (s === 'confirmed' && !confirmed) {
+      const up = await doStatus({ orderId, status: 'confirmed', cancellationReason: null }) as unknown[];
+      confirmed = !!up && up.length > 0;
+      if (confirmed) {
+        await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: 'quote', newValue: 'confirmed', note: 'Confirmed at creation (payment verified)' });
+      }
+    }
+    if (confirmed) {
       // Confirming reserves stock for warehouse-sourced lines, recorded in
       // the reservation ledger. A pinned batch is reserved first; any
       // shortfall (and unpinned lines) falls back to FIFO across passed-QC
@@ -503,12 +526,6 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
         }
       }
     }
-    if (addPay && total > 0 && selectedWallet) {
-      await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: null, amountAsset: null, amountUsd: total, txHash: payTx || null });
-    }
-    // Derive payment_status (free $0 orders roll straight to 'paid').
-    // Chained here because actions are single-statement.
-    await doRecomputePayment({ orderId });
     if (s === 'confirmed' && customer?.is_blocked && overrideNote.trim()) {
       await doAudit({ orderId, userId: profileId, changeType: 'other', fieldName: 'blocked_override', oldValue: null, newValue: 'confirmed', note: overrideNote });
     }
@@ -523,7 +540,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     setPartial(false); setLines([mkLine()]); setDiscount('0'); setShipping('0'); setNotes('');
     setOverrideNote(''); setShip({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
     setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx('');
-    setAddPay(false); setErrors([]); setSalesRepId(''); setFulfillWarehouse('');
+    setAddPay(false); setPayVerified(true); setErrors([]); setSalesRepId(''); setFulfillWarehouse('');
   };
 
   const isBlocked = !!customer?.is_blocked;
@@ -834,6 +851,17 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                 )}
                 <div><Label className="text-xs">TX Hash (optional)</Label>
                   <Input placeholder="0x…" value={payTx} onChange={e => setPayTx(e.target.value)} className="h-8" /></div>
+                <div className="flex items-center gap-2">
+                  <Switch checked={payVerified} onCheckedChange={setPayVerified} />
+                  <Label className="text-xs">
+                    Payment received — record as <span className="font-medium">verified</span> (lets you confirm the order right now)
+                  </Label>
+                </div>
+                {!payVerified && (
+                  <p className="text-xs text-muted-foreground">
+                    Payment will be recorded as pending — the order saves as a quote and confirms after verification.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -867,14 +895,13 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
             <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Notes…" />
           </div>
 
-          {/* Footer actions. Confirmation requires paid/partial-paid, and a
-              crypto payment added here is pending until verified — so
-              non-free orders always start as quotes; only $0/free orders
-              (payment_status derives straight to 'paid') confirm here. */}
+          {/* Footer actions. Confirmation requires paid/partial-paid — a
+              verified payment added above satisfies it in the same pass;
+              free/$0 orders derive straight to paid. */}
           <div className="flex gap-2 justify-end flex-wrap">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button variant="secondary" onClick={() => save('quote')} disabled={creating || saving}>{saving ? 'Saving…' : 'Save as Quote'}</Button>
-            {canConfirm && (isFree || total === 0) ? (
+            {canConfirm && (isFree || total === 0 || (addPay && !!selectedWallet && payVerified)) ? (
               <Button onClick={() => save('confirmed')} disabled={creating || saving}>{saving ? 'Saving…' : 'Confirm Order'}</Button>
             ) : (
               <TooltipProvider>
@@ -886,7 +913,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                     <p className="text-xs max-w-[240px]">
                       {!canConfirm
                         ? 'Customer is blocked. Admins can confirm with an override note.'
-                        : 'Orders confirm once payment is verified (paid / partial paid). Save as Quote, verify the payment, then confirm from the order.'}
+                        : 'To confirm now, add the crypto payment above and leave it marked verified. Otherwise Save as Quote and confirm after the payment is verified.'}
                     </p>
                   </TooltipContent>
                 </Tooltip>
