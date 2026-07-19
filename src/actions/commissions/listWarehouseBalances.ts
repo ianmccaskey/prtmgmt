@@ -26,6 +26,7 @@ function listWarehouseBalances() {
         WHERE payee_type = 'warehouse'
         GROUP BY warehouse_id
       ) payments ON payments.warehouse_id = w.id
+      WHERE (COALESCE({{params.warehouse_id}}, '') = '' OR w.id::text = {{params.warehouse_id}})
       ORDER BY balance_owed_usd DESC
     `,
   });

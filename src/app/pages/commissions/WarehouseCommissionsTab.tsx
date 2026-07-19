@@ -47,7 +47,7 @@ export function WarehouseCommissionsTab() {
   const [error, setError] = useState('');
   const [selectedWhId, setSelectedWhId] = useState<number | null>(null);
 
-  const [balances, , , reloadBalances] = useLoadAction(listWarehouseBalances, [], {});
+  const [balances, , , reloadBalances] = useLoadAction(listWarehouseBalances, [], { warehouse_id: '' });
   const [shipments] = useLoadAction(listWarehouseCommissionShipments, [selectedWhId], {
     warehouse_id: selectedWhId, date_from: null, date_to: null,
   }, { enabled: selectedWhId !== null });
