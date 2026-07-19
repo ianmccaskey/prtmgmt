@@ -16,7 +16,9 @@ function listTrackableShipments() {
         AND so2.tracking_number IS NOT NULL
         AND so2.carrier IN ('USPS', 'UPS', 'FedEx', 'DHL')
         AND (so2.tracking_checked_at IS NULL OR so2.tracking_checked_at < NOW() - INTERVAL '30 minutes')
+        AND (so2.tracking_status IS NULL OR so2.tracking_status NOT IN ('RETURNED', 'FAILURE'))
       ORDER BY so2.id
+      LIMIT 50
     `,
   });
 }

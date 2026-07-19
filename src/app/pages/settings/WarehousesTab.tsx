@@ -71,7 +71,8 @@ export function WarehousesTab() {
   const [doShippo] = useMutateAction(updateWarehouseShippo);
   // Which warehouse's key tracks ALL shipped orders (read-only tracking API)
   const [trackSettingRaw, , , reloadTrackSetting] = useLoadAction(getAppSetting, [], { key: 'shippo_tracking_warehouse_id' });
-  const trackingWhId = asRows<{ value: string }>(trackSettingRaw)[0]?.value || '';
+  // String(): the datasource numeric-parses digit-only values like '3'
+  const trackingWhId = String(asRows<{ value: string | number }>(trackSettingRaw)[0]?.value ?? '');
   const [doUpsertSetting] = useMutateAction(upsertAppSetting);
   const [doCreateAddr] = useMutateAction(createReceiveAddress);
   const [doToggleAddr] = useMutateAction(setReceiveAddressActive);
