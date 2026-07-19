@@ -159,11 +159,18 @@ function ShippoSection({ wh, order, onPurchased }: {
       >
         {busy === 'quote' ? 'Getting rates…' : rates.length > 0 ? 'Re-quote rates' : 'Get rates'}
       </Button>
-      {messages.length > 0 && (
+      {messages.length > 0 && (rates.length > 0 ? (
+        <details className="text-[11px]">
+          <summary className="cursor-pointer text-slate-500">Carrier notices ({messages.length})</summary>
+          <ul className="mt-1 text-amber-700 bg-amber-50 rounded p-2 space-y-0.5">
+            {messages.map((m, i) => <li key={i}>{m}</li>)}
+          </ul>
+        </details>
+      ) : (
         <ul className="text-[11px] text-amber-700 bg-amber-50 rounded p-2 space-y-0.5">
           {messages.map((m, i) => <li key={i}>{m}</li>)}
         </ul>
-      )}
+      ))}
       {rates.length > 0 && (
         <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
           {rates.map(r => (

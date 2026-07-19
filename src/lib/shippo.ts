@@ -53,13 +53,38 @@ function collectMessages(data: unknown): string[] {
   if (Array.isArray(d.messages)) {
     for (const m of d.messages) if (m && typeof m.text === 'string') out.push(m.text);
   }
-  // Field-level validation errors come back as { field: ["msg", ...] }.
+  return [...new Set(out)];
+}
+
+/**
+ * Field-level validation errors come back as { field: ["msg", ...] }. Only
+ * scan error responses — success payloads legitimately contain string arrays
+ * (e.g. carrier_accounts) that aren't messages.
+ */
+function collectFieldErrors(data: unknown): string[] {
+  if (!data || typeof data !== 'object') return [];
+  const out: string[] = [];
   for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
     if (k === 'messages' || k === 'detail') continue;
-    if (Array.isArray(v) && v.every(x => typeof x === 'string')) out.push(`${k}: ${(v as string[]).join(' ')}`);
+    if (Array.isArray(v) && v.length > 0 && v.every(x => typeof x === 'string')) {
+      out.push(`${k}: ${(v as string[]).join(' ')}`);
+    }
   }
   return out;
 }
+
+/**
+ * Per-carrier chatter Shippo emits on every successful quote (accounts that
+ * simply returned no rate, boilerplate reference-rate alerts). Hidden when
+ * rates exist; when nothing quoted these ARE the explanation, so keep them.
+ */
+const NOISE_PATTERNS = [
+  /carrier account .+ (doesn'?t|does not) support/i,
+  /master account (doesn'?t|does not) support/i,
+  /out of (the )?service area/i,
+  /RatedShipmentAlert: Your invoice may vary/i,
+  /RatedShipmentAlert: Modifier is applied/i,
+];
 
 async function post(apiKey: string, path: string, body: unknown): Promise<Record<string, unknown>> {
   let res: Response;
@@ -74,7 +99,7 @@ async function post(apiKey: string, path: string, body: unknown): Promise<Record
   }
   const data = await res.json().catch(() => null);
   if (!res.ok) {
-    const msgs = collectMessages(data);
+    const msgs = [...collectMessages(data), ...collectFieldErrors(data)];
     throw new Error(msgs.length ? msgs.join(' · ') : `Shippo request failed (HTTP ${res.status}).`);
   }
   return (data ?? {}) as Record<string, unknown>;
@@ -93,7 +118,9 @@ export async function getShippoRates(
   const rates = (Array.isArray(shipment.rates) ? shipment.rates as ShippoRate[] : [])
     .slice()
     .sort((a, b) => Number(a.amount) - Number(b.amount));
-  return { rates, messages: collectMessages(shipment) };
+  let messages = collectMessages(shipment);
+  if (rates.length > 0) messages = messages.filter(m => !NOISE_PATTERNS.some(p => p.test(m)));
+  return { rates, messages };
 }
 
 /** Purchase a label for a previously quoted rate. Throws with Shippo's reasons on failure. */
