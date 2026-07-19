@@ -452,6 +452,9 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                           <span className="text-blue-900 min-w-0">
                             {String(s.carrier || '—')} · <span className="font-mono font-medium break-all">{dbText(s.tracking_number) || 'no tracking'}</span>
                             <span className="text-xs text-blue-600 ml-1.5">({String(s.origin) === 'china' ? 'China' : String(s.warehouse_name || 'Warehouse')})</span>
+                            {s.tracking_status != null && String(s.status) !== 'delivered' && (
+                              <span className="text-xs text-blue-500/80 ml-1.5 lowercase">{String(s.tracking_status).replace(/_/g, ' ')}</span>
+                            )}
                           </span>
                           <span className="flex items-center gap-1 shrink-0">
                             {s.label_url != null && (

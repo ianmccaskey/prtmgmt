@@ -16,6 +16,8 @@ import listWarehouses from '@/actions/settings/listWarehouses';
 import createWarehouse from '@/actions/settings/createWarehouse';
 import updateWarehouseActive from '@/actions/settings/updateWarehouseActive';
 import updateWarehouseShippo from '@/actions/settings/updateWarehouseShippo';
+import getAppSetting from '@/actions/settings/getAppSetting';
+import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 import listReceiveAddresses from '@/actions/warehouse/listReceiveAddresses';
 import createReceiveAddress from '@/actions/warehouse/createReceiveAddress';
 import setReceiveAddressActive from '@/actions/warehouse/setReceiveAddressActive';
@@ -60,12 +62,17 @@ export function WarehousesTab() {
   const [shippoPhone, setShippoPhone] = useState('');
   const [shippoSaving, setShippoSaving] = useState(false);
   const [shippoError, setShippoError] = useState('');
+  const [shippoTracking, setShippoTracking] = useState(false);
 
   const [warehouses, , , reload] = useLoadAction(listWarehouses, [], {});
   const [addresses, , , reloadAddresses] = useLoadAction(listReceiveAddresses, [], {});
   const [doCreate] = useMutateAction(createWarehouse);
   const [doToggle] = useMutateAction(updateWarehouseActive);
   const [doShippo] = useMutateAction(updateWarehouseShippo);
+  // Which warehouse's key tracks ALL shipped orders (read-only tracking API)
+  const [trackSettingRaw, , , reloadTrackSetting] = useLoadAction(getAppSetting, [], { key: 'shippo_tracking_warehouse_id' });
+  const trackingWhId = asRows<{ value: string }>(trackSettingRaw)[0]?.value || '';
+  const [doUpsertSetting] = useMutateAction(upsertAppSetting);
   const [doCreateAddr] = useMutateAction(createReceiveAddress);
   const [doToggleAddr] = useMutateAction(setReceiveAddressActive);
 
@@ -134,6 +141,7 @@ export function WarehousesTab() {
     setShippoFor(w);
     setShippoKey('');
     setShippoPhone(dbText(w.ship_from_phone));
+    setShippoTracking(trackingWhId === String(w.id));
     setShippoError('');
   };
 
@@ -147,6 +155,14 @@ export function WarehousesTab() {
         api_key: removeKey ? '' : (shippoKey.trim() || null),
         ship_from_phone: shippoPhone.trim() || null,
       });
+      const wasTracking = trackingWhId === String(shippoFor.id);
+      const wantsTracking = !removeKey && shippoTracking;
+      if (wantsTracking && !wasTracking) {
+        await doUpsertSetting({ key: 'shippo_tracking_warehouse_id', value: String(shippoFor.id) });
+      } else if (!wantsTracking && wasTracking) {
+        await doUpsertSetting({ key: 'shippo_tracking_warehouse_id', value: '' });
+      }
+      reloadTrackSetting();
       setShippoFor(null);
       reload();
     } catch (e: unknown) {
@@ -222,6 +238,9 @@ export function WarehousesTab() {
                             {w.has_shippo_key
                               ? <Badge variant="outline" className="text-xs text-green-600 border-green-300">API key configured</Badge>
                               : <span className="text-gray-400">no API key — labels entered manually</span>}
+                            {w.has_shippo_key && trackingWhId === String(w.id) && (
+                              <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">tracks all orders</Badge>
+                            )}
                             {w.ship_from_phone != null && <span className="text-gray-400">· phone {dbText(w.ship_from_phone)}</span>}
                             <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-600" onClick={() => openShippo(w)}>
                               {w.has_shippo_key ? 'Update' : 'Configure'}
@@ -319,6 +338,17 @@ export function WarehousesTab() {
             <div>
               <Label>Ship-From Phone <span className="text-gray-400 font-normal">(some carriers require one)</span></Label>
               <Input value={shippoPhone} onChange={e => setShippoPhone(e.target.value)} placeholder="+1 555 000 0000" />
+            </div>
+            <div className="flex items-start gap-2 rounded border bg-slate-50 p-2">
+              <Switch checked={shippoTracking} onCheckedChange={setShippoTracking} />
+              <div className="text-xs text-gray-600">
+                <p className="font-medium">Use this key to track all shipped orders</p>
+                <p className="text-gray-400">
+                  Tracking is read-only and works for every warehouse&apos;s shipments; label purchases
+                  still use each warehouse&apos;s own key. Orders flip to Delivered automatically once
+                  tracking reports delivery. Only one warehouse can be the tracking key.
+                </p>
+              </div>
             </div>
             {shippoError && <p className="text-sm text-red-600">{shippoError}</p>}
           </div>

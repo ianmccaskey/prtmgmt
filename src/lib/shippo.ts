@@ -137,6 +137,56 @@ export async function buyShippoLabel(apiKey: string, rateObjectId: string): Prom
   return tx as unknown as ShippoLabel;
 }
 
+export type ShippoTracking = {
+  /** Shippo tracking statuses: PRE_TRANSIT, TRANSIT, DELIVERED, RETURNED, FAILURE, UNKNOWN */
+  status: string;
+  statusDate: string | null;
+  statusDetails: string | null;
+};
+
+/** Map our carrier CHECK values onto Shippo tracking carrier tokens. null = not trackable. */
+export function trackingCarrierToken(carrier: string | null | undefined): string | null {
+  switch (carrier) {
+    case 'USPS': return 'usps';
+    case 'UPS': return 'ups';
+    case 'FedEx': return 'fedex';
+    case 'DHL': return 'dhl_express';
+    default: return null;
+  }
+}
+
+/**
+ * Fetch tracking for one shipment. Tracking is account-agnostic on Shippo's
+ * side — any valid API key can track any carrier/number — so the app uses a
+ * single designated key for this regardless of which warehouse shipped.
+ * Returns null when the carrier isn't trackable or Shippo has no data yet.
+ */
+export async function getShippoTracking(
+  apiKey: string, carrier: string | null | undefined, trackingNumber: string,
+): Promise<ShippoTracking | null> {
+  const token = trackingCarrierToken(carrier);
+  if (!token || !trackingNumber.trim()) return null;
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/tracks/${token}/${encodeURIComponent(trackingNumber.trim())}`, {
+      headers: { Authorization: `ShippoToken ${apiKey}` },
+    });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null) as {
+    tracking_status?: { status?: string; status_date?: string; status_details?: string } | null;
+  } | null;
+  const ts = data?.tracking_status;
+  if (!ts || !ts.status) return null;
+  return {
+    status: ts.status,
+    statusDate: ts.status_date || null,
+    statusDetails: ts.status_details || null,
+  };
+}
+
 /** Map a Shippo provider name onto the shipments_outbound.carrier CHECK values. */
 export function providerToCarrier(provider: string): 'USPS' | 'UPS' | 'FedEx' | 'DHL' | 'other' {
   const p = provider.toLowerCase();
