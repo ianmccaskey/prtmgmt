@@ -429,7 +429,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
     <Dialog open onOpenChange={v => !v && guardedClose()}>
       <DialogContent className="max-w-3xl w-[calc(100vw-1rem)] sm:w-full max-h-[92vh] sm:max-h-[85vh] overflow-y-auto p-4 sm:p-6 rounded-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 flex-wrap">
+          <DialogTitle className="flex items-center gap-2 flex-wrap pr-6">
             <Truck className="h-4 w-4" /> Mark Shipped — {order.order_number}
             {order.preferred_warehouse_name && (
               <Badge variant="outline" className="text-xs px-1.5 py-0 text-blue-600 border-blue-200 font-normal">
@@ -516,7 +516,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                 <p className="text-sm font-medium text-slate-700 mb-2">
                   {shipmentGroups.length} shipment{shipmentGroups.length > 1 ? 's' : ''} will be created (one per warehouse)
                 </p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {shipmentGroups.map(g => (
                     <div key={g.warehouse_id} className="border rounded-lg p-3 bg-slate-50 space-y-2">
                       <div className="flex items-center justify-between">
@@ -606,8 +606,8 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={guardedClose} disabled={saving}>Cancel</Button>
-          <Button onClick={confirm} disabled={!canConfirm}>
+          <Button variant="outline" className="w-full sm:w-auto" onClick={guardedClose} disabled={saving}>Cancel</Button>
+          <Button className="w-full sm:w-auto" onClick={confirm} disabled={!canConfirm}>
             {saving ? 'Shipping…' : `Confirm & Create ${shipmentGroups.length || ''} Shipment${shipmentGroups.length === 1 ? '' : 's'}`}
           </Button>
         </DialogFooter>
