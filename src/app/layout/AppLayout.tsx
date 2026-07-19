@@ -24,6 +24,7 @@ import {
   SidebarHeader,
   SidebarProvider,
   SidebarTrigger,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
 import { useAppUser } from '@/app/AppContext';
@@ -55,6 +56,8 @@ interface AppLayoutProps {
 function AppSidebar() {
   const location = useLocation();
   const { role } = useAppUser();
+  // On phones the sidebar is a sheet overlay — picking a page must close it.
+  const { setOpenMobile } = useSidebar();
 
   const visibleItems = NAV_ITEMS.filter(item => {
     if (!item.roles) return true;
@@ -89,7 +92,7 @@ function AppSidebar() {
                       isActive={isActive}
                       className="text-white/60 hover:text-white hover:bg-white/10 data-[active=true]:bg-white/10 data-[active=true]:text-white h-8 text-sm"
                     >
-                      <Link to={item.href}>
+                      <Link to={item.href} onClick={() => setOpenMobile(false)}>
                         <item.icon className="w-4 h-4" />
                         <span>{item.label}</span>
                       </Link>
