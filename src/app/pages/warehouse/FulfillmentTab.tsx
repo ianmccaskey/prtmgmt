@@ -1,7 +1,4 @@
 import React, { useState } from 'react';
-import { rows as asRows } from '@/lib/rows';
-import { useLoadAction } from '@uibakery/data';
-import listFulfillmentQueueAction from '@/actions/warehouse/listFulfillmentQueue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -74,15 +71,8 @@ export function gapProducts(o: QueueOrder): Set<number> {
   return gaps;
 }
 
-type Props = { warehouseId: string; warehouseList: { id: number; name: string }[] };
-
-export function FulfillmentTab({ warehouseId, warehouseList }: Props) {
-  const { isLogistics } = useAppUser();
-  const [queue, loading, , reload] = useLoadAction(listFulfillmentQueueAction, [], {});
-  const rows: QueueItem[] = asRows(queue);
-  const [shipOrder, setShipOrder] = useState<QueueOrder | null>(null);
-  const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
-
+/** Group flat queue rows (one per order line) into orders. */
+export function groupQueueRows(rows: QueueItem[]): QueueOrder[] {
   const orders: QueueOrder[] = [];
   for (const r of rows) {
     let o = orders.find(x => x.order_id === r.order_id);
@@ -100,18 +90,44 @@ export function FulfillmentTab({ warehouseId, warehouseList }: Props) {
     }
     o.items.push(r);
   }
+  return orders;
+}
 
-  // Scope the queue to the page's warehouse switcher: keep orders with at
-  // least one line preferring it (line preference falls back to the order's),
-  // or — when a line has no preference — with stock for that product there.
+/**
+ * Scope the queue to a warehouse ('' = all): keep orders with at least one
+ * line preferring it (line preference falls back to the order's), or — when
+ * a line has no preference — with stock for that product there.
+ */
+export function scopeQueueOrders(
+  orders: QueueOrder[], warehouseId: string, warehouseList: { id: number; name: string }[],
+): QueueOrder[] {
+  if (!warehouseId) return orders;
   const whName = warehouseList.find(w => String(w.id) === warehouseId)?.name;
-  const visibleOrders = !warehouseId ? orders : orders.filter(o =>
+  return orders.filter(o =>
     o.items.some(it => {
       const pref = it.line_preferred_warehouse_id ?? o.preferred_warehouse_id;
       if (pref != null) return String(pref) === String(warehouseId);
       return whName ? parseWarehouses(it.fulfill_warehouses).includes(whName) : true;
     })
   );
+}
+
+type Props = {
+  warehouseId: string;
+  warehouseList: { id: number; name: string }[];
+  /** Queue rows are loaded by WarehousePage so the tab badge shares them. */
+  rows: QueueItem[];
+  loading: boolean;
+  reload: () => void;
+};
+
+export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, reload }: Props) {
+  const { isLogistics } = useAppUser();
+  const [shipOrder, setShipOrder] = useState<QueueOrder | null>(null);
+  const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
+
+  const whName = warehouseList.find(w => String(w.id) === warehouseId)?.name;
+  const visibleOrders = scopeQueueOrders(groupQueueRows(rows), warehouseId, warehouseList);
 
   return (
     <div className="space-y-4">

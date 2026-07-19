@@ -4,13 +4,14 @@ import { useLoadAction } from '@uibakery/data';
 import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 import getWarehouseStatsAction from '@/actions/warehouse/getWarehouseStats';
 import getPerWarehouseBreakdownAction from '@/actions/warehouse/getPerWarehouseBreakdown';
+import listFulfillmentQueueAction from '@/actions/warehouse/listFulfillmentQueue';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Package, AlertTriangle, TrendingDown, Truck, ArrowLeftRight, DollarSign } from 'lucide-react';
 import { InventoryTab } from '@/app/pages/warehouse/InventoryTab';
-import { FulfillmentTab } from '@/app/pages/warehouse/FulfillmentTab';
+import { FulfillmentTab, QueueItem, groupQueueRows, scopeQueueOrders } from '@/app/pages/warehouse/FulfillmentTab';
 import { ReorderTab } from '@/app/pages/warehouse/ReorderTab';
 import { InTransitTab } from '@/app/pages/warehouse/InTransitTab';
 import { TransfersTab } from '@/app/pages/warehouse/TransfersTab';
@@ -34,8 +35,15 @@ export function WarehousePage() {
   const [warehouses] = useLoadAction(listWarehousesAction, [], {});
   const [stats, statsLoading] = useLoadAction(getWarehouseStatsAction, [], { warehouse_id: selectedWarehouseId });
   const [breakdown, breakdownLoading] = useLoadAction(getPerWarehouseBreakdownAction, [], {});
+  // Queue lives here so the Fulfillment tab badge and its content share one
+  // load (shipping reloads both).
+  const [queueRaw, queueLoading, , reloadQueue] = useLoadAction(listFulfillmentQueueAction, [], {}, { enabled: seesOps });
+  const queueRows = asRows<QueueItem>(queueRaw);
 
   const warehouseList: Warehouse[] = asRows(warehouses);
+  const pendingFulfillment = seesOps
+    ? scopeQueueOrders(groupQueueRows(queueRows), selectedWarehouseId, warehouseList).length
+    : 0;
   const s: Stats | null = Array.isArray(stats) && stats.length > 0 ? stats[0] : null;
   const breakdownRows: WHBreakdown[] = asRows(breakdown);
 
@@ -126,7 +134,16 @@ export function WarehousePage() {
       <Tabs defaultValue="inventory">
         <TabsList className="flex flex-wrap h-auto gap-1 w-full max-w-3xl justify-start">
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
-          {seesOps && <TabsTrigger value="fulfillment">Fulfillment</TabsTrigger>}
+          {seesOps && (
+            <TabsTrigger value="fulfillment">
+              Fulfillment
+              {pendingFulfillment > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold min-w-[18px] h-[18px] px-1">
+                  {pendingFulfillment}
+                </span>
+              )}
+            </TabsTrigger>
+          )}
           {(isAdmin || isSalesRep || isLogistics) && <TabsTrigger value="reorder">Reorder</TabsTrigger>}
           <TabsTrigger value="intransit">In-Transit</TabsTrigger>
           {seesOps && <TabsTrigger value="transfers">Transfers</TabsTrigger>}
@@ -139,7 +156,10 @@ export function WarehousePage() {
         </TabsContent>
         {seesOps && (
           <TabsContent value="fulfillment" className="mt-4">
-            <FulfillmentTab warehouseId={selectedWarehouseId} warehouseList={warehouseList} />
+            <FulfillmentTab
+              warehouseId={selectedWarehouseId} warehouseList={warehouseList}
+              rows={queueRows} loading={queueLoading} reload={reloadQueue}
+            />
           </TabsContent>
         )}
         {(isAdmin || isSalesRep || isLogistics) && (
