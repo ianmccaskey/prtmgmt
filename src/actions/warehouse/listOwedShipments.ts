@@ -6,7 +6,7 @@ function listOwedShipments() {
     query: `
       SELECT
         so.id, so.sales_order_id, so.shipped_date, so.internal_shipping_cost_usd,
-        so.carrier, so.tracking_number, so.payable_status,
+        so.carrier, '#' || so.tracking_number AS tracking_number, so.payable_status,
         sales.order_number,
         COALESCE(SUM(soi.quantity_shipped), 0) AS total_kits
       FROM shipments_outbound so

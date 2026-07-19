@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { rows, firstRow } from '@/lib/rows';
+import { dbText } from '@/lib/dbText';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -211,7 +212,7 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
         <Badge variant="outline" className="text-xs px-1 py-0">{String(shipment.status)}</Badge>
         {shipment.issue_flag && <Badge variant="outline" className="text-xs px-1 py-0 bg-red-50 text-red-600 border-red-200">{String(shipment.issue_flag)}</Badge>}
       </div>
-      {shipment.carrier && <p className="text-muted-foreground">{String(shipment.carrier)} · {String(shipment.tracking_number || '—')}</p>}
+      {shipment.carrier && <p className="text-muted-foreground">{String(shipment.carrier)} · {dbText(shipment.tracking_number) || String( '—')}</p>}
       {shipment.shipped_date && <p className="text-xs text-muted-foreground">Shipped: {String(shipment.shipped_date)}</p>}
       {shipment.issue_notes && <p className="text-xs text-red-600">{String(shipment.issue_notes)}</p>}
       {!isLogistics && (
@@ -449,12 +450,12 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       {shipmentList.map(s => (
                         <div key={String(s.id)} className="flex items-center justify-between gap-2 flex-wrap text-sm">
                           <span className="text-blue-900 min-w-0">
-                            {String(s.carrier || '—')} · <span className="font-mono font-medium break-all">{String(s.tracking_number || 'no tracking')}</span>
+                            {String(s.carrier || '—')} · <span className="font-mono font-medium break-all">{dbText(s.tracking_number) || 'no tracking'}</span>
                             <span className="text-xs text-blue-600 ml-1.5">({String(s.origin) === 'china' ? 'China' : String(s.warehouse_name || 'Warehouse')})</span>
                           </span>
                           {s.tracking_number != null && (
                             <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-700"
-                              onClick={() => navigator.clipboard.writeText(`${s.carrier || ''} ${s.tracking_number}`.trim())}>
+                              onClick={() => navigator.clipboard.writeText(`${s.carrier || ''} ${dbText(s.tracking_number)}`.trim())}>
                               Copy
                             </Button>
                           )}

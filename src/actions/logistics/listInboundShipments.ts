@@ -6,7 +6,7 @@ function listInboundShipments() {
     query: `
       SELECT
         si.id, si.reference_number, si.freight_forwarder, si.mode,
-        si.tracking_number, si.departure_date, si.arrival_date,
+        '#' || si.tracking_number AS tracking_number, si.departure_date, si.arrival_date,
         si.status, si.customs_status, si.hts_code, si.declared_value,
         si.notes, si.is_seed,
         f.name AS factory_name, f.id AS factory_id,

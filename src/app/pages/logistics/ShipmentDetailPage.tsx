@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { dbText } from '@/lib/dbText';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -185,7 +186,7 @@ export function ShipmentDetailPage() {
               <dt className="text-gray-500">Freight Forwarder</dt>
               <dd>{detail.freight_forwarder || '—'}</dd>
               <dt className="text-gray-500">Tracking</dt>
-              <dd className="font-mono text-xs">{detail.tracking_number || '—'}</dd>
+              <dd className="font-mono text-xs">{dbText(detail.tracking_number) || '—'}</dd>
               <dt className="text-gray-500">Departure</dt>
               <dd>{detail.departure_date ? detail.departure_date.split('T')[0] : '—'}</dd>
               <dt className="text-gray-500">Arrival</dt>

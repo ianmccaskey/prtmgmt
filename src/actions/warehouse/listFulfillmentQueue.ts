@@ -15,7 +15,7 @@ function listFulfillmentQueue() {
         so.partial_fulfillment_allowed, so.preferred_warehouse_id,
         pw.name AS preferred_warehouse_name,
         so.ship_to_name, so.ship_address_line1, so.ship_address_line2,
-        so.ship_city, so.ship_state, so.ship_postal_code, so.ship_country,
+        so.ship_city, so.ship_state, '#' || so.ship_postal_code AS ship_postal_code, so.ship_country,
         c.full_name AS customer_name,
         soi.id AS item_id, soi.product_id, soi.quantity, soi.unit_price_usd,
         soi.preferred_batch_id, pb_pref.batch_number AS preferred_batch_number,

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { dbText } from '@/lib/dbText';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import getFifoStockAction from '@/actions/warehouse/getFifoStock';
@@ -47,7 +48,7 @@ function ShipToBlock({ order }: { order: QueueOrder }) {
     order.ship_to_name || order.customer_name,
     order.ship_address_line1,
     order.ship_address_line2,
-    [order.ship_city, order.ship_state, order.ship_postal_code].filter(Boolean).join(', '),
+    [order.ship_city, order.ship_state, dbText(order.ship_postal_code)].filter(Boolean).join(', '),
     order.ship_country,
   ].filter((l): l is string => !!l && String(l).trim() !== '');
   const copy = () => {

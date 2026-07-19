@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { dbText } from '@/lib/dbText';
 import { useLoadAction } from '@uibakery/data';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -239,7 +240,7 @@ export function LogisticsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-sm">{s.freight_forwarder || '—'}</TableCell>
-                  <TableCell className="font-mono text-xs">{s.tracking_number || '—'}</TableCell>
+                  <TableCell className="font-mono text-xs">{dbText(s.tracking_number) || '—'}</TableCell>
                   <TableCell className="text-sm">{s.departure_date ? s.departure_date.split('T')[0] : '—'}</TableCell>
                   <TableCell className="text-sm">{s.arrival_date ? s.arrival_date.split('T')[0] : '—'}</TableCell>
                   <TableCell><StatusPipeline status={s.status} /></TableCell>

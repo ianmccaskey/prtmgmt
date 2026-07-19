@@ -5,7 +5,7 @@ function getBatchInboundShipments() {
     datasourceName: 'Peptide Ops DB',
     query: `
       SELECT
-        si.id AS shipment_id, si.reference_number, si.status, si.tracking_number,
+        si.id AS shipment_id, si.reference_number, si.status, '#' || si.tracking_number AS tracking_number,
         si.arrival_date, si.mode,
         f.name AS factory_name,
         sii.quantity_shipped, sii.quantity_received, sii.condition_flag,
