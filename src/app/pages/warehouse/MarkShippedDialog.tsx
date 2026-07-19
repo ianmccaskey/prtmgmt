@@ -49,6 +49,8 @@ type ShipFromRow = {
 
 export type PurchasedLabel = {
   label_url: string; transaction_id: string; cost: number; tracking_number: string;
+  /** Kits in the shipment group at purchase time — drift afterwards gets flagged. */
+  kits: number;
 };
 
 /**
@@ -57,7 +59,7 @@ export type PurchasedLabel = {
  * label is lifted to the dialog so Confirm records it on the shipment.
  */
 function ShippoSection({ wh, order, onPurchased }: {
-  wh: ShipFromRow; order: QueueOrder; onPurchased: (carrier: string, label: PurchasedLabel) => void;
+  wh: ShipFromRow; order: QueueOrder; onPurchased: (carrier: string, label: Omit<PurchasedLabel, 'kits'>) => void;
 }) {
   const [parcel, setParcel] = useState({ length: '10', width: '8', height: '6', weight: '' });
   const [rates, setRates] = useState<ShippoRate[]>([]);
@@ -231,7 +233,9 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
   const { profileId, isWarehouse, assignedWarehouseId } = useAppUser();
   const [stockRaw, stockLoading] = useLoadAction(getFifoStockAction, [order.order_id], { order_id: order.order_id });
   const [planRaw, planLoading] = useLoadAction(getActiveRatePlanAction, [], {});
-  const [shipFromRaw] = useLoadAction(listWarehouseShipFromAction, [], {});
+  // Warehouse users only receive their own warehouse's Shippo key.
+  const shipFromScope = isWarehouse && assignedWarehouseId ? String(assignedWarehouseId) : '';
+  const [shipFromRaw] = useLoadAction(listWarehouseShipFromAction, [shipFromScope], { warehouse_id: shipFromScope });
 
   const [createShipment] = useMutateAction(createOutboundShipmentAction);
   const [shipAllocation] = useMutateAction(shipAllocationAtomicAction);
@@ -347,6 +351,15 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
     return Object.values(groups);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allocs, stock]);
+
+  // A purchased label whose warehouse no longer ships anything would silently
+  // vanish from the record — block until the allocation is restored or the
+  // label reference is explicitly discarded.
+  const orphanLabelWhIds = Object.keys(labels).map(Number).filter(whId => !shipmentGroups.some(g => g.warehouse_id === whId));
+  for (const whId of orphanLabelWhIds) {
+    const whName = shipFromFor(whId)?.name || `warehouse #${whId}`;
+    problems.push(`A Shippo label was purchased for ${whName} but nothing ships from it anymore — restore that allocation or discard the label reference below.`);
+  }
 
   const missingShipInfo = shipmentGroups.some(g => !carriers[g.warehouse_id] || !(trackings[g.warehouse_id] || '').trim());
   const nothingAllocated = shipmentGroups.length === 0;
@@ -501,20 +514,28 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                       </div>
                       <div>
                         <Label className="text-xs">Carrier *</Label>
-                        <Select value={carriers[g.warehouse_id] || ''} onValueChange={v => setCarriers(c => ({ ...c, [g.warehouse_id]: v }))}>
+                        <Select value={carriers[g.warehouse_id] || ''} onValueChange={v => setCarriers(c => ({ ...c, [g.warehouse_id]: v }))} disabled={!!labels[g.warehouse_id]}>
                           <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select carrier…" /></SelectTrigger>
                           <SelectContent>{CARRIERS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                         </Select>
                       </div>
                       <div>
                         <Label className="text-xs">Tracking Number *</Label>
-                        <Input className="h-8 text-xs" value={trackings[g.warehouse_id] || ''} onChange={e => setTrackings(t => ({ ...t, [g.warehouse_id]: e.target.value }))} placeholder="Tracking #" />
+                        <Input className="h-8 text-xs" value={trackings[g.warehouse_id] || ''} onChange={e => setTrackings(t => ({ ...t, [g.warehouse_id]: e.target.value }))} placeholder="Tracking #" disabled={!!labels[g.warehouse_id]} />
                       </div>
                       {labels[g.warehouse_id] ? (
                         <div className="border-t pt-2 text-xs bg-green-50 -mx-3 -mb-3 px-3 pb-3 rounded-b-lg space-y-1">
-                          <p className="font-medium text-green-700">
-                            Label purchased — ${labels[g.warehouse_id].cost.toFixed(2)}
-                          </p>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-medium text-green-700">
+                              Label purchased — ${labels[g.warehouse_id].cost.toFixed(2)}
+                            </p>
+                            <Button
+                              size="sm" variant="ghost" className="h-6 text-xs text-red-500 shrink-0"
+                              onClick={() => setLabels(l => { const n = { ...l }; delete n[g.warehouse_id]; return n; })}
+                            >
+                              Unlink label
+                            </Button>
+                          </div>
                           <p className="text-green-700 font-mono break-all">{labels[g.warehouse_id].tracking_number}</p>
                           <a
                             href={labels[g.warehouse_id].label_url} target="_blank" rel="noreferrer"
@@ -522,6 +543,12 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                           >
                             <ExternalLink className="h-3 w-3" /> Open label (PDF)
                           </a>
+                          {labels[g.warehouse_id].kits !== g.kits && (
+                            <p className="text-amber-700">
+                              Allocation changed since purchase ({labels[g.warehouse_id].kits} → {g.kits} kits) — verify the
+                              parcel and postage still fit, or unlink and re-quote.
+                            </p>
+                          )}
                           <p className="text-green-800/70">Recorded on the shipment when you confirm below.</p>
                         </div>
                       ) : (() => {
@@ -530,7 +557,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                           <ShippoSection
                             wh={wh} order={order}
                             onPurchased={(carrier, label) => {
-                              setLabels(l => ({ ...l, [g.warehouse_id]: label }));
+                              setLabels(l => ({ ...l, [g.warehouse_id]: { ...label, kits: g.kits } }));
                               setCarriers(c => ({ ...c, [g.warehouse_id]: carrier }));
                               setTrackings(t => ({ ...t, [g.warehouse_id]: label.tracking_number }));
                             }}
@@ -543,13 +570,21 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
               </div>
             )}
 
-            {Object.keys(labels).some(whId => !shipmentGroups.some(g => g.warehouse_id === Number(whId))) && (
-              <p className="text-xs text-amber-700 bg-amber-50 rounded p-3">
-                A label was purchased for a warehouse that no longer has any allocation — it won&apos;t be
-                recorded unless an allocation ships from that warehouse again. (The label itself stays
-                valid on Shippo and can be voided there.)
-              </p>
-            )}
+            {orphanLabelWhIds.map(whId => (
+              <div key={whId} className="text-xs text-amber-700 bg-amber-50 rounded p-3 flex items-start justify-between gap-3">
+                <span>
+                  Label purchased for <span className="font-medium">{shipFromFor(whId)?.name || `warehouse #${whId}`}</span> (tracking{' '}
+                  <span className="font-mono">{labels[whId].tracking_number}</span>) but nothing ships from it anymore.
+                  Discarding only removes the app&apos;s reference — void the label itself on Shippo to get refunded.
+                </span>
+                <Button
+                  size="sm" variant="outline" className="h-7 text-xs shrink-0"
+                  onClick={() => setLabels(l => { const n = { ...l }; delete n[whId]; return n; })}
+                >
+                  Discard label reference
+                </Button>
+              </div>
+            ))}
             {problems.length > 0 && (
               <ul className="text-xs text-red-600 bg-red-50 rounded p-3 space-y-1">
                 {problems.map((p, i) => <li key={i}>• {p}</li>)}
