@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { MySettingsDialog } from '@/app/layout/MySettingsDialog';
 import {
   Home,
   ShoppingCart,
@@ -110,6 +111,7 @@ function AppSidebar() {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { profileMissing, displayName, role } = useAppUser();
+  const [mySettingsOpen, setMySettingsOpen] = useState(false);
   return (
     <SidebarProvider defaultOpen={true}>
       <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -118,11 +120,16 @@ export function AppLayout({ children }: AppLayoutProps) {
           <header className="h-10 border-b border-border/60 flex items-center px-4 flex-shrink-0 bg-background">
             <SidebarTrigger className="w-6 h-6 text-muted-foreground hover:text-foreground" />
             <Separator orientation="vertical" className="mx-3 h-4" />
-            <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+            <button
+              className="ml-auto flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground rounded px-1.5 py-0.5 hover:bg-muted/60"
+              onClick={() => setMySettingsOpen(true)}
+              title="My Settings"
+            >
               <span className="font-medium text-foreground">{displayName}</span>
               <span className="capitalize rounded bg-muted px-1.5 py-0.5">{role.replace('_', ' ')}</span>
-            </div>
+            </button>
           </header>
+          <MySettingsDialog open={mySettingsOpen} onClose={() => setMySettingsOpen(false)} />
           {profileMissing && (
             <div className="bg-amber-50 border-b border-amber-200 text-amber-800 text-xs px-4 py-1.5">
               No user profile is configured for your account — running with temporary admin access.

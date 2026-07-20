@@ -6,6 +6,7 @@ import { useAppUser } from '@/app/AppContext';
 import getFifoStockAction from '@/actions/warehouse/getFifoStock';
 import getActiveRatePlanAction from '@/actions/warehouse/getActiveRatePlan';
 import listWarehouseShipFromAction from '@/actions/warehouse/listWarehouseShipFrom';
+import getMyLabelReturnAddressAction from '@/actions/settings/getMyLabelReturnAddress';
 import createOutboundShipmentAction from '@/actions/warehouse/createOutboundShipment';
 import shipAllocationAtomicAction from '@/actions/warehouse/shipAllocationAtomic';
 import markOrderShippedFromWarehouseAction from '@/actions/warehouse/markOrderShippedFromWarehouse';
@@ -58,8 +59,11 @@ export type PurchasedLabel = {
  * warehouse's own Shippo account. Quoting state is local; the purchased
  * label is lifted to the dialog so Confirm records it on the shipment.
  */
-function ShippoSection({ wh, order, onPurchased }: {
-  wh: ShipFromRow; order: QueueOrder; onPurchased: (carrier: string, label: Omit<PurchasedLabel, 'kits'>) => void;
+function ShippoSection({ wh, order, returnAddr, onPurchased }: {
+  wh: ShipFromRow; order: QueueOrder;
+  /** The purchasing user's personal return address (My Settings); null = use the warehouse ship-from. */
+  returnAddr: ShippoAddress | null;
+  onPurchased: (carrier: string, label: Omit<PurchasedLabel, 'kits'>) => void;
 }) {
   const [parcel, setParcel] = useState({ length: '10', width: '8', height: '6', weight: '' });
   const [rates, setRates] = useState<ShippoRate[]>([]);
@@ -68,7 +72,7 @@ function ShippoSection({ wh, order, onPurchased }: {
   const [busy, setBusy] = useState<'quote' | 'buy' | null>(null);
   const [err, setErr] = useState('');
 
-  const addressOk = !!(wh.address_line1 && wh.city && dbText(wh.postal_code));
+  const addressOk = returnAddr != null || !!(wh.address_line1 && wh.city && dbText(wh.postal_code));
   const parcelOk = ['length', 'width', 'height', 'weight'].every(k => Number(parcel[k as keyof typeof parcel]) > 0);
   const shipToOk = !!(order.ship_address_line1 && order.ship_city && dbText(order.ship_postal_code));
 
@@ -76,7 +80,7 @@ function ShippoSection({ wh, order, onPurchased }: {
     if (!wh.shippo_api_key) return;
     setBusy('quote'); setErr(''); setRates([]); setSelRate(''); setMessages([]);
     try {
-      const from: ShippoAddress = {
+      const from: ShippoAddress = returnAddr ?? {
         name: wh.ship_from_name || wh.name,
         street1: wh.address_line1 || '',
         street2: wh.address_line2 || undefined,
@@ -133,10 +137,16 @@ function ShippoSection({ wh, order, onPurchased }: {
 
   return (
     <div className="border-t pt-2 space-y-2">
-      <p className="text-xs font-medium text-slate-600">Shippo label</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-slate-600">Shippo label</p>
+        <p className="text-[10px] text-slate-400">
+          Return addr: {returnAddr ? `${returnAddr.name} (yours — My Settings)` : `${wh.ship_from_name || wh.name} (warehouse)`}
+        </p>
+      </div>
       {!addressOk && (
         <p className="text-xs text-amber-700">
-          Ship-from address is incomplete — fill it in under Settings → Warehouses to quote rates.
+          Ship-from address is incomplete — fill it in under Settings → Warehouses, or set your own
+          return address in My Settings (your name, top right).
         </p>
       )}
       {!shipToOk && <p className="text-xs text-amber-700">The order&apos;s ship-to address is incomplete.</p>}
@@ -237,7 +247,7 @@ function ShipToBlock({ order }: { order: QueueOrder }) {
 export function MarkShippedDialog({ order, onClose, onDone }: {
   order: QueueOrder; onClose: () => void; onDone: () => void;
 }) {
-  const { profileId, isWarehouse, assignedWarehouseId } = useAppUser();
+  const { profileId, displayName, isWarehouse, assignedWarehouseId } = useAppUser();
   const [stockRaw, stockLoading] = useLoadAction(getFifoStockAction, [order.order_id], { order_id: order.order_id });
   const [planRaw, planLoading] = useLoadAction(getActiveRatePlanAction, [], {});
   // Warehouse users only receive their own warehouse's Shippo key.
@@ -269,6 +279,29 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
 
   const shipFroms = useMemo(() => asRows<ShipFromRow>(shipFromRaw), [shipFromRaw]);
   const shipFromFor = (whId: number) => shipFroms.find(w => Number(w.id) === whId);
+
+  // The purchasing user's personal label return address (My Settings).
+  // Complete (line1 + city + postal) → used as the label's from address;
+  // otherwise labels fall back to the warehouse ship-from.
+  const [myRetRaw] = useLoadAction(getMyLabelReturnAddressAction, [profileId], { user_id: profileId }, { enabled: profileId != null });
+  const myReturnAddr: ShippoAddress | null = useMemo(() => {
+    const r = asRows<{
+      label_return_name: string | null; label_return_line1: string | null; label_return_line2: string | null;
+      label_return_city: string | null; label_return_state: string | null; label_return_postal: string | null;
+      label_return_country: string | null; label_return_phone: string | null;
+    }>(myRetRaw)[0];
+    if (!r || !r.label_return_line1 || !r.label_return_city || !dbText(r.label_return_postal)) return null;
+    return {
+      name: r.label_return_name || displayName,
+      street1: r.label_return_line1,
+      street2: r.label_return_line2 || undefined,
+      city: r.label_return_city,
+      state: r.label_return_state || undefined,
+      zip: dbText(r.label_return_postal),
+      country: toIsoCountry(r.label_return_country),
+      phone: dbText(r.label_return_phone) || undefined,
+    };
+  }, [myRetRaw, displayName]);
 
   // A purchased label already cost real money — closing without confirming
   // would leave it unrecorded, so double-check the intent.
@@ -566,7 +599,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                         const wh = shipFromFor(g.warehouse_id);
                         return wh?.shippo_api_key ? (
                           <ShippoSection
-                            wh={wh} order={order}
+                            wh={wh} order={order} returnAddr={myReturnAddr}
                             onPurchased={(carrier, label) => {
                               setLabels(l => ({ ...l, [g.warehouse_id]: { ...label, kits: g.kits } }));
                               setCarriers(c => ({ ...c, [g.warehouse_id]: carrier }));
