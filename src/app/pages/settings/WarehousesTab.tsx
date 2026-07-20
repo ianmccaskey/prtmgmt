@@ -21,12 +21,19 @@ import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 import listReceiveAddresses from '@/actions/warehouse/listReceiveAddresses';
 import createReceiveAddress from '@/actions/warehouse/createReceiveAddress';
 import setReceiveAddressActive from '@/actions/warehouse/setReceiveAddressActive';
+import listParcelTemplates from '@/actions/warehouse/listParcelTemplates';
+import createParcelTemplate from '@/actions/warehouse/createParcelTemplate';
+import deleteParcelTemplate from '@/actions/warehouse/deleteParcelTemplate';
 
 type Warehouse = {
   id: number; name: string; ship_from_name: string | null; city: string; state: string; country: string;
   address_line1: string; address_line2: string; postal_code: string;
   notes: string; is_active: boolean;
   ship_from_phone: string | null; has_shippo_key: boolean;
+};
+type ParcelTemplate = {
+  id: number; warehouse_id: number; name: string;
+  length_in: number; width_in: number; height_in: number; default_weight_lb: number | null;
 };
 type ReceiveAddress = {
   id: number; warehouse_id: number; label: string; address_name: string | null;
@@ -69,6 +76,16 @@ export function WarehousesTab() {
   const [doCreate] = useMutateAction(createWarehouse);
   const [doToggle] = useMutateAction(updateWarehouseActive);
   const [doShippo] = useMutateAction(updateWarehouseShippo);
+  // Shipping box templates (parcel presets for Shippo quoting)
+  const [templatesRaw, , , reloadTemplates] = useLoadAction(listParcelTemplates, [], { warehouse_id: '' });
+  const templateList = asRows<ParcelTemplate>(templatesRaw);
+  const [doCreateTemplate] = useMutateAction(createParcelTemplate);
+  const [doDeleteTemplate] = useMutateAction(deleteParcelTemplate);
+  const [boxFor, setBoxFor] = useState<Warehouse | null>(null);
+  const emptyBox = { name: '', length_in: '', width_in: '', height_in: '', default_weight_lb: '' };
+  const [boxForm, setBoxForm] = useState(emptyBox);
+  const [boxSaving, setBoxSaving] = useState(false);
+  const [boxError, setBoxError] = useState('');
   // Which warehouse's key tracks ALL shipped orders (read-only tracking API)
   const [trackSettingRaw, , , reloadTrackSetting] = useLoadAction(getAppSetting, [], { key: 'shippo_tracking_warehouse_id' });
   // String(): the datasource numeric-parses digit-only values like '3'
@@ -136,6 +153,38 @@ export function WarehousesTab() {
   const handleToggleAddr = async (id: number, current: boolean) => {
     await doToggleAddr({ id, is_active: !current });
     reloadAddresses();
+  };
+
+  const handleAddBox = async () => {
+    if (!boxFor) return;
+    const dims = [boxForm.length_in, boxForm.width_in, boxForm.height_in].map(Number);
+    if (!boxForm.name.trim() || dims.some(d => !(d > 0))) {
+      setBoxError('Name and positive length/width/height are required.');
+      return;
+    }
+    setBoxSaving(true); setBoxError('');
+    try {
+      await doCreateTemplate({
+        warehouse_id: boxFor.id,
+        name: boxForm.name.trim(),
+        length_in: Number(boxForm.length_in),
+        width_in: Number(boxForm.width_in),
+        height_in: Number(boxForm.height_in),
+        default_weight_lb: boxForm.default_weight_lb.trim(),
+      });
+      setBoxFor(null);
+      setBoxForm(emptyBox);
+      reloadTemplates();
+    } catch (e: unknown) {
+      setBoxError(e instanceof Error ? e.message : 'Failed to add box template');
+    } finally {
+      setBoxSaving(false);
+    }
+  };
+
+  const handleDeleteBox = async (id: number) => {
+    await doDeleteTemplate({ id });
+    reloadTemplates();
   };
 
   const openShippo = (w: Warehouse) => {
@@ -247,6 +296,32 @@ export function WarehousesTab() {
                               {w.has_shippo_key ? 'Update' : 'Configure'}
                             </Button>
                           </div>
+                          {w.has_shippo_key && (() => {
+                            const boxes = templateList.filter(t => Number(t.warehouse_id) === w.id);
+                            return (
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Shipping Box Templates</p>
+                                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setBoxFor(w); setBoxForm(emptyBox); setBoxError(''); }}>
+                                    <Plus className="h-3 w-3 mr-1" /> Add Box
+                                  </Button>
+                                </div>
+                                {boxes.length === 0 ? (
+                                  <p className="text-xs text-gray-400">None yet — Mark Shipped will use manually entered parcel sizes.</p>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {boxes.map(b => (
+                                      <span key={b.id} className="inline-flex items-center gap-1.5 rounded border bg-white px-2 py-0.5 text-xs">
+                                        <span className="font-medium">{b.name}</span>
+                                        <span className="text-gray-500">{Number(b.length_in)}×{Number(b.width_in)}×{Number(b.height_in)} in{b.default_weight_lb != null ? ` · ${Number(b.default_weight_lb)} lb` : ''}</span>
+                                        <button className="text-red-400 hover:text-red-600" title="Delete template" onClick={() => handleDeleteBox(b.id)}>×</button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                           <div className="flex items-center justify-between">
                             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Receive Addresses</p>
                             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setAddAddrFor(w); setAddrForm(emptyAddr); setAddrError(''); }}>
@@ -359,6 +434,31 @@ export function WarehousesTab() {
             )}
             <Button variant="outline" onClick={() => setShippoFor(null)}>Cancel</Button>
             <Button onClick={() => saveShippo(false)} disabled={shippoSaving}>{shippoSaving ? 'Saving…' : 'Save'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Box Template Dialog */}
+      <Dialog open={!!boxFor} onOpenChange={v => !v && setBoxFor(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Add Box Template — {boxFor?.name}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500">
+              A named box preset the warehouse can pick in Mark Shipped to fill parcel size (and
+              optionally a starting weight) when quoting Shippo rates.
+            </p>
+            <div><Label>Name *</Label><Input value={boxForm.name} onChange={e => setBoxForm(f => ({ ...f, name: e.target.value }))} placeholder='e.g. "Small box", "6-kit mailer"' /></div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div><Label className="text-xs">Length (in) *</Label><Input type="number" min="0" step="0.1" value={boxForm.length_in} onChange={e => setBoxForm(f => ({ ...f, length_in: e.target.value }))} /></div>
+              <div><Label className="text-xs">Width (in) *</Label><Input type="number" min="0" step="0.1" value={boxForm.width_in} onChange={e => setBoxForm(f => ({ ...f, width_in: e.target.value }))} /></div>
+              <div><Label className="text-xs">Height (in) *</Label><Input type="number" min="0" step="0.1" value={boxForm.height_in} onChange={e => setBoxForm(f => ({ ...f, height_in: e.target.value }))} /></div>
+              <div><Label className="text-xs">Weight (lb)</Label><Input type="number" min="0" step="0.1" value={boxForm.default_weight_lb} onChange={e => setBoxForm(f => ({ ...f, default_weight_lb: e.target.value }))} placeholder="optional" /></div>
+            </div>
+            {boxError && <p className="text-sm text-red-600">{boxError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBoxFor(null)}>Cancel</Button>
+            <Button onClick={handleAddBox} disabled={boxSaving}>{boxSaving ? 'Saving…' : 'Add Box'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

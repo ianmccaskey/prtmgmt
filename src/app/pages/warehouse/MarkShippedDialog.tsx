@@ -7,6 +7,7 @@ import getFifoStockAction from '@/actions/warehouse/getFifoStock';
 import getActiveRatePlanAction from '@/actions/warehouse/getActiveRatePlan';
 import listWarehouseShipFromAction from '@/actions/warehouse/listWarehouseShipFrom';
 import getMyLabelReturnAddressAction from '@/actions/settings/getMyLabelReturnAddress';
+import listParcelTemplatesAction from '@/actions/warehouse/listParcelTemplates';
 import createOutboundShipmentAction from '@/actions/warehouse/createOutboundShipment';
 import shipAllocationAtomicAction from '@/actions/warehouse/shipAllocationAtomic';
 import markOrderShippedFromWarehouseAction from '@/actions/warehouse/markOrderShippedFromWarehouse';
@@ -48,6 +49,11 @@ type ShipFromRow = {
   ship_from_phone: string | null; shippo_api_key: string | null;
 };
 
+type ParcelTemplate = {
+  id: number; warehouse_id: number; name: string;
+  length_in: number; width_in: number; height_in: number; default_weight_lb: number | null;
+};
+
 export type PurchasedLabel = {
   label_url: string; transaction_id: string; cost: number; tracking_number: string;
   /** Kits in the shipment group at purchase time — drift afterwards gets flagged. */
@@ -59,13 +65,27 @@ export type PurchasedLabel = {
  * warehouse's own Shippo account. Quoting state is local; the purchased
  * label is lifted to the dialog so Confirm records it on the shipment.
  */
-function ShippoSection({ wh, order, returnAddr, onPurchased }: {
+function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
   wh: ShipFromRow; order: QueueOrder;
   /** The purchasing user's personal return address (My Settings); null = use the warehouse ship-from. */
   returnAddr: ShippoAddress | null;
+  /** This warehouse's box templates (Settings → Warehouses → Shipping Box Templates). */
+  templates: ParcelTemplate[];
   onPurchased: (carrier: string, label: Omit<PurchasedLabel, 'kits'>) => void;
 }) {
   const [parcel, setParcel] = useState({ length: '10', width: '8', height: '6', weight: '' });
+  const [selBox, setSelBox] = useState('custom');
+  const pickBox = (v: string) => {
+    setSelBox(v);
+    if (v === 'custom') return;
+    const t = templates.find(x => String(x.id) === v);
+    if (t) setParcel(p => ({
+      length: String(Number(t.length_in)),
+      width: String(Number(t.width_in)),
+      height: String(Number(t.height_in)),
+      weight: t.default_weight_lb != null ? String(Number(t.default_weight_lb)) : p.weight,
+    }));
+  };
   const [rates, setRates] = useState<ShippoRate[]>([]);
   const [messages, setMessages] = useState<string[]>([]);
   const [selRate, setSelRate] = useState('');
@@ -150,6 +170,19 @@ function ShippoSection({ wh, order, returnAddr, onPurchased }: {
         </p>
       )}
       {!shipToOk && <p className="text-xs text-amber-700">The order&apos;s ship-to address is incomplete.</p>}
+      {templates.length > 0 && (
+        <Select value={selBox} onValueChange={pickBox}>
+          <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Box template…" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="custom">Custom size</SelectItem>
+            {templates.map(t => (
+              <SelectItem key={t.id} value={String(t.id)}>
+                {t.name} — {Number(t.length_in)}×{Number(t.width_in)}×{Number(t.height_in)} in{t.default_weight_lb != null ? ` · ${Number(t.default_weight_lb)} lb` : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
       <div className="grid grid-cols-4 gap-1.5">
         {([['length', 'L (in)'], ['width', 'W (in)'], ['height', 'H (in)'], ['weight', 'Wt (lb)']] as const).map(([k, lbl]) => (
           <div key={k}>
@@ -283,6 +316,9 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
   // The purchasing user's personal label return address (My Settings).
   // Complete (line1 + city + postal) → used as the label's from address;
   // otherwise labels fall back to the warehouse ship-from.
+  const [tplRaw] = useLoadAction(listParcelTemplatesAction, [shipFromScope], { warehouse_id: shipFromScope });
+  const parcelTemplates = useMemo(() => asRows<ParcelTemplate>(tplRaw), [tplRaw]);
+
   const [myRetRaw] = useLoadAction(getMyLabelReturnAddressAction, [profileId], { user_id: profileId }, { enabled: profileId != null });
   const myReturnAddr: ShippoAddress | null = useMemo(() => {
     const r = asRows<{
@@ -600,6 +636,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                         return wh?.shippo_api_key ? (
                           <ShippoSection
                             wh={wh} order={order} returnAddr={myReturnAddr}
+                            templates={parcelTemplates.filter(t => Number(t.warehouse_id) === g.warehouse_id)}
                             onPurchased={(carrier, label) => {
                               setLabels(l => ({ ...l, [g.warehouse_id]: { ...label, kits: g.kits } }));
                               setCarriers(c => ({ ...c, [g.warehouse_id]: carrier }));
