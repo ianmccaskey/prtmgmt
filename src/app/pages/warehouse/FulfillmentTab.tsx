@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Truck } from 'lucide-react';
+import { AlertTriangle, Package, Truck } from 'lucide-react';
 import { MarkShippedDialog } from '@/app/pages/warehouse/MarkShippedDialog';
+import { BoxTemplatesDialog } from '@/app/pages/warehouse/BoxTemplatesDialog';
 import { OrderDetailDrawer } from '@/app/pages/orders/OrderDetailDrawer';
 import { useAppUser } from '@/app/AppContext';
 
@@ -125,6 +126,7 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
   const { isLogistics } = useAppUser();
   const [shipOrder, setShipOrder] = useState<QueueOrder | null>(null);
   const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
+  const [boxesOpen, setBoxesOpen] = useState(false);
 
   const whName = warehouseList.find(w => String(w.id) === warehouseId)?.name;
   const visibleOrders = scopeQueueOrders(groupQueueRows(rows), warehouseId, warehouseList);
@@ -133,10 +135,17 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Truck className="h-4 w-4 text-blue-500" /> Fulfillment Queue
-            <span className="text-xs font-normal text-slate-400">warehouse-sourced lines awaiting shipment</span>
-          </CardTitle>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Truck className="h-4 w-4 text-blue-500" /> Fulfillment Queue
+              <span className="text-xs font-normal text-slate-400">warehouse-sourced lines awaiting shipment</span>
+            </CardTitle>
+            {!isLogistics && !!warehouseId && (
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setBoxesOpen(true)}>
+                <Package className="h-3 w-3 mr-1" /> Box Templates
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? <div className="p-4"><Skeleton className="h-24 w-full" /></div> : (<>
@@ -293,6 +302,13 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
         open={detailOrderId != null}
         onClose={() => setDetailOrderId(null)}
         onRefresh={reload}
+      />
+
+      <BoxTemplatesDialog
+        warehouseId={warehouseId}
+        warehouseName={whName || ''}
+        open={boxesOpen}
+        onClose={() => setBoxesOpen(false)}
       />
     </div>
   );
