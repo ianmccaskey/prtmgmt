@@ -162,6 +162,10 @@ export function WarehousesTab() {
       setBoxError('Name and positive length/width/height are required.');
       return;
     }
+    if (boxForm.default_weight_lb.trim() !== '' && !(Number(boxForm.default_weight_lb) > 0)) {
+      setBoxError('Weight must be blank or a positive number.');
+      return;
+    }
     setBoxSaving(true); setBoxError('');
     try {
       await doCreateTemplate({
