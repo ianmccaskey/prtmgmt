@@ -58,8 +58,10 @@ export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: ()
       await doSave({
         user_id: profileId,
         name: form.name.trim(), line1: form.line1.trim(), line2: form.line2.trim(),
-        city: form.city.trim(), state: form.state.trim(), postal: form.postal.trim(),
-        country: form.country.trim(), phone: form.phone.trim(),
+        city: form.city.trim(), state: form.state.trim(),
+        // dbText: never persist a leading '#' (it's the read-side numeric guard)
+        postal: dbText(form.postal.trim()),
+        country: form.country.trim(), phone: dbText(form.phone.trim()),
       });
       reload();
       onClose();
@@ -72,7 +74,7 @@ export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: ()
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md w-[calc(100vw-1rem)] sm:w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6 rounded-lg">
         <DialogHeader><DialogTitle>My Settings — {displayName}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div>
