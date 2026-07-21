@@ -800,22 +800,34 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                       </tr>
                     </thead>
                     <tbody>
-                      {lines.filter(l => l.product && l.fulfillment_source === 'warehouse').map(l => (
-                        <tr key={l.key} className="border-t">
-                          <td className="py-1 px-2">
-                            {l.product!.name} <span className="text-muted-foreground">({l.quantity})</span>
-                          </td>
-                          {warehouseOptions.map(w => {
-                            const avail = whAvail.find(a => a.warehouse_id === w.id && a.product_id === l.product!.id)?.available || 0;
-                            const cls = avail === 0 ? 'text-slate-300' : avail >= l.quantity ? 'text-green-600' : 'text-amber-600';
-                            return (
-                              <td key={w.id} className={`text-right py-1 px-2 font-medium tabular-nums ${cls} ${!splitMode && effectiveWh?.id === w.id ? 'bg-blue-50/70' : ''}`}>
-                                {avail}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
+                      {(() => {
+                        // Group by product: duplicate lines share one stock
+                        // pool, so demand must aggregate (mirrors whDemand)
+                        // or two half-covered lines would both show green.
+                        const grouped = new Map<number, { name: string; qty: number }>();
+                        for (const l of lines) {
+                          if (!l.product || l.fulfillment_source !== 'warehouse') continue;
+                          const g = grouped.get(l.product.id) || { name: l.product.name, qty: 0 };
+                          g.qty += l.quantity;
+                          grouped.set(l.product.id, g);
+                        }
+                        return [...grouped.entries()].map(([pid, g]) => (
+                          <tr key={pid} className="border-t">
+                            <td className="py-1 px-2">
+                              {g.name} <span className="text-muted-foreground">({g.qty})</span>
+                            </td>
+                            {warehouseOptions.map(w => {
+                              const avail = whAvail.find(a => a.warehouse_id === w.id && a.product_id === pid)?.available || 0;
+                              const cls = avail === 0 ? 'text-slate-300' : avail >= g.qty ? 'text-green-600' : 'text-amber-600';
+                              return (
+                                <td key={w.id} className={`text-right py-1 px-2 font-medium tabular-nums ${cls} ${!splitMode && effectiveWh?.id === w.id ? 'bg-blue-50/70' : ''}`}>
+                                  {avail}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ));
+                      })()}
                     </tbody>
                   </table>
                 </div>
