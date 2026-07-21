@@ -170,7 +170,9 @@ function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId:
         <Button
           size="sm" variant="outline" className="h-7 text-xs"
           onClick={() => {
-            const paid = payList.filter(p => p.verification_status === 'verified').reduce((s, p) => s + Number(p.amount_usd), 0);
+            // Mirror recomputePaymentStatus: verified only, refunds negative.
+            const paid = payList.filter(p => p.verification_status === 'verified')
+              .reduce((s, p) => s + (String((p as { direction?: string }).direction) === 'refund' ? -1 : 1) * Number(p.amount_usd), 0);
             setPayAmount(Math.max(0, orderTotal - paid).toFixed(2));
             setAddErr('');
             setAddOpen(true);
