@@ -67,13 +67,21 @@ export type PurchasedLabel = {
  */
 function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
   wh: ShipFromRow; order: QueueOrder;
-  /** The purchasing user's personal return address (My Settings); null = use the warehouse ship-from. */
+  /** The purchasing user's personal sender address (My Settings); null = not set. */
   returnAddr: ShippoAddress | null;
   /** This warehouse's box templates (Settings → Warehouses → Shipping Box Templates). */
   templates: ParcelTemplate[];
   onPurchased: (carrier: string, label: Omit<PurchasedLabel, 'kits'>) => void;
 }) {
   const [parcel, setParcel] = useState({ length: '10', width: '8', height: '6', weight: '' });
+  // Which sender block Shippo gets as address_from (it's the label's From /
+  // return-to AND the rate-quote origin). Defaults to the user's personal
+  // address once it loads, unless they've explicitly picked one.
+  const [fromMode, setFromMode] = useState<'personal' | 'warehouse'>(returnAddr ? 'personal' : 'warehouse');
+  const [fromModeTouched, setFromModeTouched] = useState(false);
+  useEffect(() => {
+    if (!fromModeTouched) setFromMode(returnAddr ? 'personal' : 'warehouse');
+  }, [returnAddr, fromModeTouched]);
   const [selBox, setSelBox] = useState('custom');
   const pickBox = (v: string) => {
     setSelBox(v);
@@ -92,7 +100,8 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
   const [busy, setBusy] = useState<'quote' | 'buy' | null>(null);
   const [err, setErr] = useState('');
 
-  const addressOk = returnAddr != null || !!(wh.address_line1 && wh.city && dbText(wh.postal_code));
+  const usePersonal = fromMode === 'personal' && returnAddr != null;
+  const addressOk = usePersonal || !!(wh.address_line1 && wh.city && dbText(wh.postal_code));
   const parcelOk = ['length', 'width', 'height', 'weight'].every(k => Number(parcel[k as keyof typeof parcel]) > 0);
   const shipToOk = !!(order.ship_address_line1 && order.ship_city && dbText(order.ship_postal_code));
 
@@ -100,7 +109,7 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
     if (!wh.shippo_api_key) return;
     setBusy('quote'); setErr(''); setRates([]); setSelRate(''); setMessages([]);
     try {
-      const from: ShippoAddress = returnAddr ?? {
+      const from: ShippoAddress = usePersonal && returnAddr ? returnAddr : {
         name: wh.ship_from_name || wh.name,
         street1: wh.address_line1 || '',
         street2: wh.address_line2 || undefined,
@@ -157,16 +166,33 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
 
   return (
     <div className="border-t pt-2 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium text-slate-600">Shippo label</p>
-        <p className="text-[10px] text-slate-400">
-          Return addr: {returnAddr ? `${returnAddr.name} (yours — My Settings)` : `${wh.ship_from_name || wh.name} (warehouse)`}
-        </p>
+      <p className="text-xs font-medium text-slate-600">Shippo label</p>
+      <div>
+        <Label className="text-[10px] text-slate-500">Send from (label From/return block + rate origin)</Label>
+        <Select
+          value={fromMode}
+          onValueChange={v => {
+            setFromMode(v as 'personal' | 'warehouse');
+            setFromModeTouched(true);
+            // Origin changed — quoted rates are no longer valid.
+            setRates([]); setSelRate(''); setMessages([]);
+          }}
+        >
+          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="warehouse">
+              Warehouse — {wh.ship_from_name || wh.name}{wh.city ? `, ${wh.city}` : ''}
+            </SelectItem>
+            <SelectItem value="personal" disabled={returnAddr == null}>
+              {returnAddr ? `My address — ${returnAddr.name}, ${returnAddr.city}` : 'My address — not set (My Settings, top right)'}
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       {!addressOk && (
         <p className="text-xs text-amber-700">
           Ship-from address is incomplete — fill it in under Settings → Warehouses, or set your own
-          return address in My Settings (your name, top right).
+          sender address in My Settings (your name, top right).
         </p>
       )}
       {!shipToOk && <p className="text-xs text-amber-700">The order&apos;s ship-to address is incomplete.</p>}

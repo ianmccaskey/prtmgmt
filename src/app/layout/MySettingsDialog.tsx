@@ -78,10 +78,11 @@ export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: ()
         <DialogHeader><DialogTitle>My Settings — {displayName}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div>
-            <p className="text-sm font-medium">Shippo label return address</p>
+            <p className="text-sm font-medium">Shippo sender / return address</p>
             <p className="text-xs text-muted-foreground">
-              Printed as the from/return address on shipping labels you buy through Mark Shipped.
-              Leave blank to use the warehouse&apos;s ship-from address.
+              The full From block Shippo prints on labels you buy through Mark Shipped (sender name,
+              address, phone — also the rate-quote origin). Mark Shipped lets you choose per shipment
+              between this and the warehouse&apos;s ship-from address.
             </p>
           </div>
           {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : (
