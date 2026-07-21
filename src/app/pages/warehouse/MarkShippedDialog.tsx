@@ -79,9 +79,6 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
   // address once it loads, unless they've explicitly picked one.
   const [fromMode, setFromMode] = useState<'personal' | 'warehouse'>(returnAddr ? 'personal' : 'warehouse');
   const [fromModeTouched, setFromModeTouched] = useState(false);
-  useEffect(() => {
-    if (!fromModeTouched) setFromMode(returnAddr ? 'personal' : 'warehouse');
-  }, [returnAddr, fromModeTouched]);
   const [selBox, setSelBox] = useState('custom');
   const pickBox = (v: string) => {
     setSelBox(v);
@@ -99,6 +96,19 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
   const [selRate, setSelRate] = useState('');
   const [busy, setBusy] = useState<'quote' | 'buy' | null>(null);
   const [err, setErr] = useState('');
+
+  // Auto-default to the personal address once it loads (it arrives async) —
+  // but never override an explicit choice, and clear any quoted rates when
+  // the flip happens: they were quoted against the other origin.
+  useEffect(() => {
+    if (fromModeTouched) return;
+    const next: 'personal' | 'warehouse' = returnAddr ? 'personal' : 'warehouse';
+    if (next !== fromMode) {
+      setFromMode(next);
+      setRates([]); setSelRate(''); setMessages([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnAddr, fromModeTouched]);
 
   const usePersonal = fromMode === 'personal' && returnAddr != null;
   const addressOk = usePersonal || !!(wh.address_line1 && wh.city && dbText(wh.postal_code));
