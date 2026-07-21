@@ -783,6 +783,43 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                   <SelectItem value="split">Split shipment — assign per line</SelectItem>
                 </SelectContent>
               </Select>
+              {/* Per-warehouse availability for the items on this order:
+                  green = covers the line, amber = partial, gray = none.
+                  The selected warehouse's column is highlighted. */}
+              {warehouseOptions.length > 0 && (
+                <div className="overflow-x-auto rounded border bg-slate-50/60">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr>
+                        <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Item (need)</th>
+                        {warehouseOptions.map(w => (
+                          <th key={w.id} className={`text-right py-1.5 px-2 font-medium whitespace-nowrap ${!splitMode && effectiveWh?.id === w.id ? 'text-blue-700' : 'text-muted-foreground'}`}>
+                            {w.name}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.filter(l => l.product && l.fulfillment_source === 'warehouse').map(l => (
+                        <tr key={l.key} className="border-t">
+                          <td className="py-1 px-2">
+                            {l.product!.name} <span className="text-muted-foreground">({l.quantity})</span>
+                          </td>
+                          {warehouseOptions.map(w => {
+                            const avail = whAvail.find(a => a.warehouse_id === w.id && a.product_id === l.product!.id)?.available || 0;
+                            const cls = avail === 0 ? 'text-slate-300' : avail >= l.quantity ? 'text-green-600' : 'text-amber-600';
+                            return (
+                              <td key={w.id} className={`text-right py-1 px-2 font-medium tabular-nums ${cls} ${!splitMode && effectiveWh?.id === w.id ? 'bg-blue-50/70' : ''}`}>
+                                {avail}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               {splitMode ? (
                 <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
                   Split shipment: pick a <span className="font-medium">Ship From</span> warehouse on each line below. One shipment is created per warehouse at fulfillment.

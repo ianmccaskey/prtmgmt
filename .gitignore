@@ -7,3 +7,4 @@ docs/ui_bakery_prompt.md
 
 # Local DB snapshots (contain customer data) — never commit
 .snapshots/
+graphify-out/
