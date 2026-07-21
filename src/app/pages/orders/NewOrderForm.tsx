@@ -20,6 +20,7 @@ import { Ban, Check, Copy, Crown, ChevronsUpDown, Plus, Search, Trash2 } from 'l
 import searchCustomers from '@/actions/orders/searchCustomers';
 import searchProducts from '@/actions/orders/searchProducts';
 import getReceiveWallets from '@/actions/orders/getReceiveWallets';
+import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
 import getFreeOrderReasons from '@/actions/orders/getFreeOrderReasons';
 import listSalesReps from '@/actions/orders/listSalesReps';
 import createOrder from '@/actions/orders/createOrder';
@@ -62,14 +63,6 @@ type Wallet = { id: number; asset: string; network: string; address: string; lab
 type FreeReason = { id: number; label: string };
 
 const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
-const ASSETS = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
-// Network values match the receive_wallets.network CHECK constraint — the
-// wallet lookup and the order_payments insert both depend on these exact
-// strings.
-const NETWORKS: Record<string, string[]> = {
-  USDC: ['ethereum', 'solana'], USDT: ['ethereum', 'solana'], ETH: ['ethereum'], SOL: ['solana'], BTC: ['bitcoin'],
-};
-const NETWORK_LABELS: Record<string, string> = { ethereum: 'Ethereum', solana: 'Solana', bitcoin: 'Bitcoin' };
 
 function mkLine(): LineItem {
   return { key: Math.random().toString(36).slice(2), product: null, quantity: 1, unit_price: 0, fulfillment_source: 'warehouse', price_mode: 'list', preferred_batch_id: null, preferred_warehouse_id: null };

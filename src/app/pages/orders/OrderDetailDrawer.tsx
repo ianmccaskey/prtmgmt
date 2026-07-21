@@ -16,7 +16,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusBadge, PaymentBadge, SourceBadges, ChannelBadge } from './OrderBadges';
-import { AlertTriangle, Check, Crown, Flag, Plus, RefreshCw, Package, Truck } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Crown, Flag, Plus, RefreshCw, Package, Truck } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
+import getReceiveWallets from '@/actions/orders/getReceiveWallets';
+import createOrderPayment from '@/actions/orders/createOrderPayment';
 import listUserProfiles from '@/actions/settings/listUserProfiles';
 import releaseProductReservation from '@/actions/warehouse/releaseProductReservation';
 import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo';
@@ -59,7 +63,7 @@ const ISSUE_TYPES = ['lost_in_transit', 'damaged_in_transit', 'returned_to_sende
 // Must match the order_payments.issue_type CHECK constraint.
 const PAYMENT_ISSUE_TYPES = ['underpaid', 'overpaid', 'wrong_asset', 'wrong_network', 'wallet_mismatch', 'unconfirmed_onchain', 'other'];
 
-function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; reload: () => void }) {
+function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId: number; orderTotal: number; reload: () => void }) {
   const { isLogistics, isWarehouse } = useAppUser();
   const readOnlyRole = isLogistics || isWarehouse;
   const { profileId } = useAppUser();
@@ -70,6 +74,52 @@ function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; rel
   const [flagOpen, setFlagOpen] = useState<number | null>(null);
   const [issueType, setIssueType] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
+
+  // Add Payment — same crypto entry as New Order, for quotes saved without
+  // one (or additional/partial payments later).
+  const [addOpen, setAddOpen] = useState(false);
+  const [payAsset, setPayAsset] = useState('USDC');
+  const [payNetwork, setPayNetwork] = useState('ethereum');
+  const [payTx, setPayTx] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [payVerified, setPayVerified] = useState(true);
+  const [copiedWallet, setCopiedWallet] = useState(false);
+  const [addSaving, setAddSaving] = useState(false);
+  const [addErr, setAddErr] = useState('');
+  const [walletsRaw] = useLoadAction(getReceiveWallets, [addOpen ? 1 : 0], {}, { enabled: addOpen });
+  const selectedWallet = rows<{ id: number; asset: string; network: string; address: string; label: string }>(walletsRaw)
+    .find(w => w.asset === payAsset && w.network === payNetwork);
+  const [createPayment] = useMutateAction(createOrderPayment);
+
+  const copyWallet = () => {
+    if (!selectedWallet) return;
+    navigator.clipboard.writeText(selectedWallet.address);
+    setCopiedWallet(true);
+    setTimeout(() => setCopiedWallet(false), 2000);
+  };
+
+  const doAddPayment = async () => {
+    const amt = Number(payAmount);
+    if (!selectedWallet) { setAddErr('No active wallet for this asset/network — add one under Settings → Wallets.'); return; }
+    if (!(amt > 0)) { setAddErr('Enter the payment amount in USD.'); return; }
+    setAddSaving(true); setAddErr('');
+    try {
+      await createPayment({
+        orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id,
+        spotRateUsd: null, amountAsset: null, amountUsd: amt,
+        txHash: payTx.trim() || null, verified: payVerified, userId: profileId,
+      });
+      // Insert is single-statement; the payment-status rollup chains here.
+      await recomputePayment({ orderId });
+      setAddOpen(false); setPayTx(''); setPayAmount(''); setPayVerified(true);
+      reloadPay();
+      parentReload();
+    } catch (e: unknown) {
+      setAddErr(e instanceof Error ? e.message : 'Failed to record payment');
+    } finally {
+      setAddSaving(false);
+    }
+  };
 
   const doVerify = async (payId: number) => {
     await verifyPayment({ paymentId: payId, userId: profileId });
@@ -115,6 +165,72 @@ function PaymentsPanel({ orderId, reload: parentReload }: { orderId: number; rel
           </div>}
         </div>
       ))}
+
+      {!readOnlyRole && !addOpen && (
+        <Button
+          size="sm" variant="outline" className="h-7 text-xs"
+          onClick={() => {
+            const paid = payList.filter(p => p.verification_status === 'verified').reduce((s, p) => s + Number(p.amount_usd), 0);
+            setPayAmount(Math.max(0, orderTotal - paid).toFixed(2));
+            setAddErr('');
+            setAddOpen(true);
+          }}
+        >
+          <Plus className="h-3 w-3 mr-1" /> Add Payment
+        </Button>
+      )}
+      {!readOnlyRole && addOpen && (
+        <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+          <p className="text-sm font-medium">Add Crypto Payment</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div><Label className="text-xs">Asset</Label>
+              <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); }}>
+                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>{ASSETS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div><Label className="text-xs">Network</Label>
+              <Select value={payNetwork} onValueChange={setPayNetwork}>
+                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>{(NETWORKS[payAsset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+          {selectedWallet ? (
+            <div className="bg-muted/40 rounded p-2">
+              <Label className="text-xs mb-1 block">Receive Address ({selectedWallet.label})</Label>
+              <div className="flex items-center gap-2">
+                <code className="text-xs flex-1 break-all">{selectedWallet.address}</code>
+                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={copyWallet} title="Copy address">
+                  {copiedWallet ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              No active {payAsset} wallet on {NETWORK_LABELS[payNetwork] || payNetwork} — add one under Settings → Wallets, or pick another asset.
+            </p>
+          )}
+          <div><Label className="text-xs">Amount (USD)</Label>
+            <Input type="number" min={0} step="0.01" value={payAmount} onChange={e => setPayAmount(e.target.value)} className="h-8" /></div>
+          <div><Label className="text-xs">TX Hash (optional)</Label>
+            <Input placeholder="0x…" value={payTx} onChange={e => setPayTx(e.target.value)} className="h-8" /></div>
+          <div className="flex items-center gap-2">
+            <Switch checked={payVerified} onCheckedChange={setPayVerified} />
+            <Label className="text-xs">
+              Payment received — record as <span className="font-medium">verified</span>{' '}
+              <span className="text-muted-foreground font-normal">(unlocks Confirm on quotes)</span>
+            </Label>
+          </div>
+          {addErr && <p className="text-xs text-red-600">{addErr}</p>}
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAddOpen(false)} disabled={addSaving}>Cancel</Button>
+            <Button size="sm" className="h-7 text-xs" onClick={doAddPayment} disabled={addSaving}>
+              {addSaving ? 'Saving…' : 'Record Payment'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Dialog open={!!flagOpen} onOpenChange={v => !v && setFlagOpen(null)}>
         <DialogContent className="max-w-sm">
@@ -522,7 +638,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                     </TabsContent>
 
                     <TabsContent value="payments" className="pt-3 space-y-3">
-                      <PaymentsPanel orderId={Number(orderId)} reload={reloadAll} />
+                      <PaymentsPanel orderId={Number(orderId)} orderTotal={Number(order?.total_usd) || 0} reload={reloadAll} />
                       {!readOnlyRole && <RefundTaskForm orderId={Number(orderId)} onCreated={reloadAll} />}
                     </TabsContent>
 
