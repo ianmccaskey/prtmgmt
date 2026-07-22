@@ -20,8 +20,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Factory, Stamp } from 'lucide-react';
 
 type VendorBalance = {
+  last_settlement_id: number | null; last_settled_at: string | null;
   collected_usd: number; rep_commissions_usd: number; warehouse_earned_usd: number;
   vendor_share_usd: number; vendor_paid_usd: number; balance_owed_usd: number;
+  carried_adjustment_usd: number;
 };
 type VendorPayment = { id: number; amount_usd: number; paid_at: string; note: string | null; paid_by: string | null };
 type Settlement = {
@@ -119,33 +121,45 @@ export function VendorTab() {
         <CardContent>
           {balLoading || !bal ? <Skeleton className="h-32 w-full" /> : (
             <div className="max-w-md space-y-1.5 text-sm">
+              <p className="text-xs text-muted-foreground">
+                {bal.last_settled_at
+                  ? <>Current cycle — since settlement #{bal.last_settlement_id} on {new Date(bal.last_settled_at).toLocaleString()}. These numbers reset to zero at every settlement.</>
+                  : 'Current cycle — all activity (no settlements yet). These numbers reset to zero at every settlement.'}
+              </p>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Payments collected (verified, net of refunds)</span>
+                <span className="text-muted-foreground">Payments collected this cycle (verified, net of refunds)</span>
                 <span className="tabular-nums">{money(bal.collected_usd)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">− Sales rep commissions earned</span>
+                <span className="text-muted-foreground">− Sales rep commissions outstanding</span>
                 <span className="tabular-nums text-red-600">−{money(bal.rep_commissions_usd)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">− Warehouse shipping earned</span>
+                <span className="text-muted-foreground">− Warehouse shipping outstanding</span>
                 <span className="tabular-nums text-red-600">−{money(bal.warehouse_earned_usd)}</span>
               </div>
               <div className="flex justify-between border-t pt-1.5 font-medium">
-                <span>Vendor share</span>
+                <span>Vendor share (this cycle)</span>
                 <span className="tabular-nums">{money(bal.vendor_share_usd)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">− Vendor payments made</span>
+                <span className="text-muted-foreground">− Vendor payments this cycle</span>
                 <span className="tabular-nums text-red-600">−{money(bal.vendor_paid_usd)}</span>
               </div>
+              {Math.abs(Number(bal.carried_adjustment_usd)) >= 0.01 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">± Carried from before last settlement</span>
+                  <span className="tabular-nums">{Number(bal.carried_adjustment_usd) >= 0 ? '+' : '−'}{money(Math.abs(Number(bal.carried_adjustment_usd)))}</span>
+                </div>
+              )}
               <div className="flex justify-between border-t pt-1.5 text-base font-bold">
                 <span>Balance owed to vendor</span>
                 <span className={`tabular-nums ${Number(bal.balance_owed_usd) > 0 ? 'text-green-700' : ''}`}>{money(bal.balance_owed_usd)}</span>
               </div>
               <p className="text-xs text-muted-foreground pt-1">
                 Rep commissions accrue on confirmed+ orders (10%); warehouse earnings accrue per shipped
-                shipment at the rate plan. Both are counted when earned, not when paid out.
+                shipment at the rate plan. Both are counted when earned, not when paid out. Lifetime stamped
+                totals live in Settlement History below.
               </p>
             </div>
           )}
