@@ -421,6 +421,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [doUpdateWarehouse] = useMutateAction(updateOrderPreferredWarehouse);
   const [doSaveNotes] = useMutateAction(updateOrderNotes);
   const [doReserveDraft] = useMutateAction(reserveProductStockFifo);
+  const [doRelease] = useMutateAction(releaseProductReservation);
   const [editingRep, setEditingRep] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
   const [savingNotes, setSavingNotes] = useState(false);
@@ -525,13 +526,32 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                     </div>
                     <div className="flex items-center gap-2 mt-1 text-sm">
                       <span className="text-muted-foreground">Fulfills from:</span>
-                      {status === 'quote' && !readOnlyRole ? (
+                      {(status === 'quote' || status === 'confirmed') && !readOnlyRole ? (
                         <Select
                           value={whOverride !== null ? (whOverride || 'auto') : (order.preferred_warehouse_id ? String(order.preferred_warehouse_id) : 'auto')}
                           onValueChange={async v => {
                             setWhOverride(v === 'auto' ? '' : v);
                             await doUpdateWarehouse({ orderId, warehouseId: v === 'auto' ? null : Number(v) });
-                            reloadDetail();
+                            if (status === 'confirmed') {
+                              // Moving a confirmed order re-targets its stock:
+                              // release every reservation, re-reserve at the
+                              // new warehouse (same flow Confirm runs; any
+                              // shortfall there becomes a backorder).
+                              const whParam = v === 'auto' ? '' : v;
+                              await doRelease({ order_id: orderId, product_id: null });
+                              for (const it of rows<OrderItemRow>(items).filter(i => i.fulfillment_source === 'warehouse')) {
+                                await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity), warehouse_id: whParam });
+                              }
+                              const whName = v === 'auto' ? 'Auto' : (rows<{ id: number; name: string }>(warehousesRaw).find(w => String(w.id) === v)?.name || v);
+                              await doAudit({
+                                orderId, userId: profileId, changeType: 'other',
+                                fieldName: 'fulfillment_warehouse',
+                                oldValue: String(order.preferred_warehouse_name || 'Auto'),
+                                newValue: whName,
+                                note: 'Fulfillment warehouse changed — reservations re-targeted',
+                              });
+                            }
+                            reloadAll();
                           }}
                         >
                           <SelectTrigger className="h-7 w-52 text-xs"><SelectValue /></SelectTrigger>

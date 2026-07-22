@@ -1,9 +1,11 @@
 import { action } from '@uibakery/data';
 
 /**
- * Change a quote's fulfillment warehouse (pre-confirmation only). Setting
- * an order-level warehouse consolidates: per-line (split) assignments are
- * cleared so the two levels can't contradict each other.
+ * Change an order's fulfillment warehouse while it's still unshipped
+ * (quote or confirmed — the drawer re-targets a confirmed order's
+ * reservations right after). Setting an order-level warehouse
+ * consolidates: per-line (split) assignments are cleared so the two
+ * levels can't contradict each other.
  */
 function updateOrderPreferredWarehouse() {
   return action('updateOrderPreferredWarehouse', 'SQL', {
@@ -13,7 +15,7 @@ function updateOrderPreferredWarehouse() {
         UPDATE sales_orders
         SET preferred_warehouse_id = {{params.warehouseId}}::bigint
         WHERE id = {{params.orderId}}::bigint
-          AND status = 'quote'
+          AND status IN ('quote', 'confirmed')
         RETURNING id
       )
       UPDATE sales_order_items soi
