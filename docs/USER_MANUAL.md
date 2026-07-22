@@ -66,7 +66,7 @@ Customers page: search, VIP and blocked flags, lifetime value, order history, an
 
 ### Your commissions
 
-Rep commission balances are tracked on the Commissions page, which is admin/logistics territory — ask your admin for your earned/paid balance. Your crypto payout addresses (set by the admin under Settings → Users) are displayed to whoever records your payment.
+Rep commission balances are tracked on the Commissions page, which is admin/logistics territory — ask your admin for your earned/paid balance. Set your own crypto **payout addresses** under **My Settings** (tap your name, top right) — they're displayed with a Copy button to whoever records your payment. Admins can also manage anyone's addresses under Settings → Users.
 
 ---
 
@@ -127,7 +127,7 @@ Everywhere else (orders, customers, batches) you have read-only visibility.
 
 ### Settings
 
-- **Users:** add users by email, assign role and (for warehouse staff) their warehouse. Add **crypto payout addresses** per user — these display with Copy buttons wherever commissions are paid, so you can delegate payments.
+- **Users:** add users by email, assign role and (for warehouse staff) their warehouse. **Crypto payout addresses** can be added here per user, and every user can also manage their own under My Settings — either way they display with Copy buttons wherever commissions are paid, so you can delegate payments.
 - **Warehouses:** create warehouses with their ship-from address; expand a row to manage **receive addresses** (inbound lines can target any of them) and **Shippo** (see §7).
 - **Receive wallets:** the payment addresses shown to reps in New Order, per coin/network. Only one active wallet per combination.
 - **Free order reasons, product categories, factories, rate plans:** all managed here. The **rate plan** defines what you owe warehouses per shipment — a base price covering the first N kits plus a tier price per additional block of kits (all four numbers configurable; the newest plan in effect on the ship date applies).
