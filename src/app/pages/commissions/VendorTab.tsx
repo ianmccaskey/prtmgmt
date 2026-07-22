@@ -44,7 +44,7 @@ type SettlementPayment = {
 const money = (v: number | string) => `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 type WalletInflow = {
-  id: number; asset: string; network: string; address: string; label: string;
+  id: number | null; asset: string; network: string; address: string; label: string;
   expected_usd: number; payments_count: number;
 };
 type ChainCheck = { amount?: number; supported?: boolean; error?: string };
@@ -60,7 +60,9 @@ function OnChainWalletCheck() {
   const [keyRaw] = useLoadAction(getAppSetting, [], { key: 'moralis_api_key' });
   const moralisKey = String(asRows<{ value: string }>(keyRaw)[0]?.value ?? '');
   const [inflowsRaw, inflowsLoading] = useLoadAction(getWalletExpectedInflows, [], {});
-  const wallets = asRows<WalletInflow>(inflowsRaw);
+  const allInflows = asRows<WalletInflow>(inflowsRaw);
+  const wallets = allInflows.filter(w => w.id != null);
+  const unassigned = allInflows.find(w => w.id == null) || null;
   const [checks, setChecks] = useState<Record<number, ChainCheck>>({});
   const [checking, setChecking] = useState(false);
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
@@ -72,9 +74,9 @@ function OnChainWalletCheck() {
     for (const w of wallets) {
       try {
         const b = await getOnChainBalance(moralisKey, w.asset, w.network, w.address);
-        next[w.id] = { amount: b.amount, supported: b.supported };
+        next[Number(w.id)] = { amount: b.amount, supported: b.supported };
       } catch (e: unknown) {
-        next[w.id] = { error: e instanceof Error ? e.message : 'check failed' };
+        next[Number(w.id)] = { error: e instanceof Error ? e.message : 'check failed' };
       }
       setChecks({ ...next });
     }
@@ -113,7 +115,7 @@ function OnChainWalletCheck() {
             </TableHeader>
             <TableBody>
               {wallets.map(w => {
-                const c = checks[w.id];
+                const c = checks[Number(w.id)];
                 const isStable = STABLECOINS.includes(w.asset);
                 const diff = c?.amount != null && isStable ? c.amount - Number(w.expected_usd) : null;
                 return (
@@ -154,11 +156,19 @@ function OnChainWalletCheck() {
             </TableBody>
           </Table>
         )}
+        {moralisKey && unassigned && (
+          <p className="text-xs text-amber-700 bg-amber-50 border-t px-4 py-2">
+            {money(unassigned.expected_usd)} across {unassigned.payments_count} verified row{unassigned.payments_count === 1 ? '' : 's'} this
+            cycle {Number(unassigned.expected_usd) < 0 ? '(refunds included) ' : ''}isn&apos;t tied to any wallet — it affects the
+            cycle total but no single wallet above.
+          </p>
+        )}
         {moralisKey && (
           <p className="text-xs text-muted-foreground px-4 pb-3 pt-2">
             Expected = verified payments assigned to each wallet this cycle (stablecoins compared 1 token ≈ $1;
             a positive difference usually means funds left from before, unrecorded income, or pending payments
-            not yet verified). Settlements empty the wallets, so both sides reset each cycle.
+            not yet verified). Refunds aren&apos;t tied to a wallet, so they appear in the unassigned line rather
+            than reducing a specific wallet. Settlements empty the wallets, so both sides reset each cycle.
           </p>
         )}
       </CardContent>
