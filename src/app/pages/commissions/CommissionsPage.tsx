@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RepCommissionsTab } from './RepCommissionsTab';
 import { WarehouseCommissionsTab } from './WarehouseCommissionsTab';
 import { CommissionReportsTab } from './CommissionReportsTab';
+import { VendorTab } from './VendorTab';
 import { HandCoins } from 'lucide-react';
 
 export function CommissionsPage() {
@@ -20,6 +21,7 @@ export function CommissionsPage() {
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="reps">Sales Rep Commissions</TabsTrigger>
           <TabsTrigger value="warehouses">Warehouse Commissions</TabsTrigger>
+          <TabsTrigger value="vendor">Vendor Owed</TabsTrigger>
           <TabsTrigger value="reports">Payment Ledger & Reports</TabsTrigger>
         </TabsList>
 
@@ -29,6 +31,10 @@ export function CommissionsPage() {
 
         <TabsContent value="warehouses" className="mt-6">
           <WarehouseCommissionsTab />
+        </TabsContent>
+
+        <TabsContent value="vendor" className="mt-6">
+          <VendorTab />
         </TabsContent>
 
         <TabsContent value="reports" className="mt-6">
