@@ -134,7 +134,7 @@ Everywhere else (orders, customers, batches) you have read-only visibility.
 
 ### Money
 
-- **Commissions page:** rep commissions and **warehouse shipping balances** side by side. Record lump-sum payments; payee payout addresses show with Copy buttons. All balances net earned − paid.
+- **Commissions page:** rep commissions and **warehouse shipping balances** side by side. Record lump-sum payments; payee payout addresses show with Copy buttons. All balances net earned − paid. The Sales Reps tab also shows **Payments Received by Wallet** (per-rep verified collections split by asset/network, with date filters). The **Vendor Owed** tab computes the vendor's share — verified collections (net of refunds) minus rep commissions earned minus warehouse shipping earned — and nets it against recorded vendor payments; vendor remittances appear in the Payment Ledger like any other payout.
 - **Dashboard:** open orders, unpaid balance, unverified payments, refunds owed, warehouse payables, low stock, and shipment issues at a glance.
 - **Reports:** revenue, margin/COGS (admin-only), throughput, and CSV exports.
 
