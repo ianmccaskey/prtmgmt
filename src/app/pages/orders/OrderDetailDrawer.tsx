@@ -536,17 +536,30 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                               // Moving a confirmed order re-targets its stock:
                               // release every reservation, re-reserve at the
                               // new warehouse (same flow Confirm runs; any
-                              // shortfall there becomes a backorder).
+                              // shortfall there becomes a backorder). Only the
+                              // UNALLOCATED remainder re-reserves — an
+                              // interrupted ship chain can leave allocations
+                              // on a confirmed order, and those kits already
+                              // consumed their stock.
                               const whParam = v === 'auto' ? '' : v;
                               await doRelease({ order_id: orderId, product_id: null });
                               for (const it of rows<OrderItemRow>(items).filter(i => i.fulfillment_source === 'warehouse')) {
-                                await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity), warehouse_id: whParam });
+                                const allocated = allocations
+                                  .filter(a => a.sales_order_item_id === it.id)
+                                  .reduce((s, a) => s + Number(a.quantity), 0);
+                                const remaining = Math.max(0, Number(it.quantity) - allocated);
+                                if (remaining > 0) {
+                                  await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: remaining, warehouse_id: whParam });
+                                }
                               }
                               const whName = v === 'auto' ? 'Auto' : (rows<{ id: number; name: string }>(warehousesRaw).find(w => String(w.id) === v)?.name || v);
+                              const oldName = order.preferred_warehouse_name
+                                ? String(order.preferred_warehouse_name)
+                                : rows<OrderItemRow>(items).some(i => i.preferred_warehouse_id != null) ? 'Split (per line)' : 'Auto';
                               await doAudit({
                                 orderId, userId: profileId, changeType: 'other',
                                 fieldName: 'fulfillment_warehouse',
-                                oldValue: String(order.preferred_warehouse_name || 'Auto'),
+                                oldValue: oldName,
                                 newValue: whName,
                                 note: 'Fulfillment warehouse changed — reservations re-targeted',
                               });
