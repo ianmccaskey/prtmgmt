@@ -16,6 +16,9 @@ import { exportCSV } from '@/app/pages/reports/dateRangeUtils';
 import listRepBalances from '@/actions/commissions/listRepBalances';
 import listRepCommissionOrders from '@/actions/commissions/listRepCommissionOrders';
 import recordCommissionPayment from '@/actions/commissions/recordCommissionPayment';
+import listRepWalletReceipts from '@/actions/commissions/listRepWalletReceipts';
+import { NETWORK_LABELS } from '@/lib/cryptoAssets';
+import { Wallet as WalletIcon } from 'lucide-react';
 
 type RepBalance = {
   sales_rep_user_profile_id: number; display_name: string;
@@ -28,6 +31,95 @@ type RepOrder = {
 };
 
 const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
+
+type WalletReceipt = {
+  rep_id: number | null; display_name: string;
+  asset: string; network: string; total_usd: number; payments_count: number;
+};
+
+/**
+ * Pivot of verified incoming payments: rep rows × asset/network (wallet)
+ * columns — "what each rep collected, into which wallet".
+ */
+function RepWalletReceipts() {
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [raw, loading] = useLoadAction(listRepWalletReceipts, [dateFrom, dateTo], { date_from: dateFrom, date_to: dateTo });
+  const receipts = asRows<WalletReceipt>(raw);
+
+  const combos = [...new Map(receipts.map(r => [`${r.asset}|${r.network}`, { asset: r.asset, network: r.network }])).values()]
+    .sort((a, b) => a.asset.localeCompare(b.asset) || a.network.localeCompare(b.network));
+  const reps = [...new Map(receipts.map(r => [String(r.rep_id), r.display_name])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]));
+  const cell = (repId: string, c: { asset: string; network: string }) =>
+    receipts.find(r => String(r.rep_id) === repId && r.asset === c.asset && r.network === c.network);
+  const comboLabel = (c: { asset: string; network: string }) => `${c.asset} · ${NETWORK_LABELS[c.network] || c.network}`;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <WalletIcon className="h-4 w-4 text-emerald-600" /> Payments Received by Wallet
+        </CardTitle>
+        <div className="flex items-center gap-2">
+          <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-8 w-36 text-xs" />
+          <span className="text-xs text-gray-400">to</span>
+          <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-8 w-36 text-xs" />
+          <Button
+            variant="outline" size="sm" disabled={!receipts.length}
+            onClick={() => exportCSV('rep_wallet_receipts.csv', receipts as unknown as Record<string, unknown>[])}
+          >
+            Export CSV
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? <p className="text-sm text-gray-400">Loading…</p> : receipts.length === 0 ? (
+          <p className="text-sm text-gray-400 py-4 text-center">No verified payments{dateFrom || dateTo ? ' in this date range' : ''}.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Rep</TableHead>
+                {combos.map(c => <TableHead key={comboLabel(c)} className="text-right whitespace-nowrap">{comboLabel(c)}</TableHead>)}
+                <TableHead className="text-right">Total</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {reps.map(([repId, name]) => {
+                const rowTotal = receipts.filter(r => String(r.rep_id) === repId).reduce((s, r) => s + Number(r.total_usd), 0);
+                return (
+                  <TableRow key={repId}>
+                    <TableCell className="font-medium">{name}</TableCell>
+                    {combos.map(c => {
+                      const r = cell(repId, c);
+                      return (
+                        <TableCell key={comboLabel(c)} className="text-right tabular-nums">
+                          {r ? <span title={`${r.payments_count} payment${r.payments_count === 1 ? '' : 's'}`}>{money(r.total_usd)}</span> : <span className="text-gray-300">—</span>}
+                        </TableCell>
+                      );
+                    })}
+                    <TableCell className="text-right font-medium tabular-nums">{money(rowTotal)}</TableCell>
+                  </TableRow>
+                );
+              })}
+              <TableRow>
+                <TableCell className="font-semibold">All reps</TableCell>
+                {combos.map(c => {
+                  const colTotal = receipts.filter(r => r.asset === c.asset && r.network === c.network).reduce((s, r) => s + Number(r.total_usd), 0);
+                  return <TableCell key={comboLabel(c)} className="text-right font-semibold tabular-nums">{money(colTotal)}</TableCell>;
+                })}
+                <TableCell className="text-right font-bold tabular-nums">
+                  {money(receipts.reduce((s, r) => s + Number(r.total_usd), 0))}
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export function RepCommissionsTab() {
   const { profileId, isAdmin } = useAppUser();
@@ -186,6 +278,8 @@ export function RepCommissionsTab() {
           </Table>
         </CardContent>
       </Card>
+
+      <RepWalletReceipts />
 
       <Dialog open={!!payDialogRep} onOpenChange={(o) => !o && setPayDialogRep(null)}>
         <DialogContent>
