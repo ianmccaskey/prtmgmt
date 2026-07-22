@@ -15,7 +15,7 @@ function listRepBalances() {
       LEFT JOIN (
         SELECT
           so.sales_rep_user_profile_id,
-          SUM(so.total_usd * 0.10) AS commission_earned,
+          ROUND(SUM(so.total_usd * 0.10), 2) AS commission_earned,
           COUNT(*) AS orders_count
         FROM sales_orders so
         WHERE so.sales_rep_user_profile_id IS NOT NULL

@@ -24,7 +24,7 @@ function getVendorBalance() {
         FROM order_payments WHERE verification_status = 'verified'
       ) pay ON true
       LEFT JOIN (
-        SELECT SUM(so.total_usd * 0.10) AS earned
+        SELECT ROUND(SUM(so.total_usd * 0.10), 2) AS earned
         FROM sales_orders so
         WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status NOT IN ('cancelled', 'quote')
       ) rep ON true

@@ -224,9 +224,10 @@ export function VendorTab() {
           <div className="space-y-3">
             <p className="text-sm text-gray-600">
               This stamps the value of everything <span className="font-medium">right now</span> in one atomic step:
-              a payout is recorded for every rep balance, every warehouse balance, and the vendor share.
-              All accrued balances read <span className="font-medium">zero</span> afterward; new activity
-              counts toward the next settlement.
+              a payout is recorded for every positive rep balance, warehouse balance, and the vendor share.
+              All of those read <span className="font-medium">zero</span> afterward; new activity counts toward
+              the next settlement. (Overpaid — negative — balances aren&apos;t clawed back; they carry forward
+              and offset the payee&apos;s next accruals.)
             </p>
             <div className="rounded border bg-slate-50 p-3 space-y-1 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Rep commissions to pay</span><span className="tabular-nums">{money(repOwedTotal)}</span></div>
