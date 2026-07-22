@@ -34,7 +34,8 @@ type Settlement = {
 };
 type SettlementPayment = {
   id: number; payee_type: 'sales_rep' | 'warehouse' | 'vendor'; amount_usd: number;
-  paid_at: string; sales_rep_name: string | null; warehouse_name: string | null;
+  paid_at: string; note: string | null; at_settlement: boolean;
+  sales_rep_name: string | null; warehouse_name: string | null;
 };
 
 const money = (v: number | string) => `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -220,33 +221,62 @@ export function VendorTab() {
                   {expandedId === s.id && (
                     <TableRow>
                       <TableCell colSpan={7} className="bg-muted/20 p-0">
-                        {detailLoading ? <div className="p-4"><Skeleton className="h-12 w-full" /></div> : (
-                          <div className="px-4 py-3">
-                            <p className="text-xs font-medium text-muted-foreground mb-2">
-                              Payouts recorded by settlement #{s.id} ({detailRows.length})
-                            </p>
-                            <div className="space-y-1">
-                              {detailRows.map(p => (
-                                <div key={p.id} className="flex items-center justify-between gap-2 text-sm border-b border-border/40 pb-1 last:border-0">
-                                  <span className="flex items-center gap-2 min-w-0">
-                                    <Badge variant="outline" className="text-xs shrink-0">
-                                      {p.payee_type === 'sales_rep' ? 'Rep' : p.payee_type === 'warehouse' ? 'Warehouse' : 'Vendor'}
-                                    </Badge>
-                                    <span className="truncate">
-                                      {p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : 'Vendor'}
-                                    </span>
-                                  </span>
-                                  <span className="tabular-nums font-medium shrink-0">{money(p.amount_usd)}</span>
+                        {detailLoading ? <div className="p-4"><Skeleton className="h-12 w-full" /></div> : (() => {
+                          const atStamp = detailRows.filter(p => p.at_settlement);
+                          const midCycle = detailRows.filter(p => !p.at_settlement);
+                          const payLine = (p: SettlementPayment, showDate: boolean) => (
+                            <div key={p.id} className="flex items-center justify-between gap-2 text-sm border-b border-border/40 pb-1 last:border-0">
+                              <span className="flex items-center gap-2 min-w-0">
+                                <Badge variant="outline" className="text-xs shrink-0">
+                                  {p.payee_type === 'sales_rep' ? 'Rep' : p.payee_type === 'warehouse' ? 'Warehouse' : 'Vendor'}
+                                </Badge>
+                                <span className="truncate">
+                                  {p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : 'Vendor'}
+                                  {showDate && <span className="text-xs text-muted-foreground ml-1.5">{new Date(p.paid_at).toLocaleDateString()}{p.note ? ` · ${p.note}` : ''}</span>}
+                                </span>
+                              </span>
+                              <span className="tabular-nums font-medium shrink-0">{money(p.amount_usd)}</span>
+                            </div>
+                          );
+                          const sum = (rowsArr: SettlementPayment[]) => rowsArr.reduce((acc, p) => acc + Number(p.amount_usd), 0);
+                          return (
+                            <div className="px-4 py-3 space-y-3">
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-2">
+                                  Paid at settlement #{s.id} ({atStamp.length})
+                                </p>
+                                <div className="space-y-1">
+                                  {atStamp.map(p => payLine(p, false))}
+                                  {atStamp.length === 0 && <p className="text-sm text-muted-foreground">No payout rows (nothing was owed at this stamp).</p>}
                                 </div>
-                              ))}
-                              {detailRows.length === 0 && <p className="text-sm text-muted-foreground">No payout rows (nothing was owed at this stamp).</p>}
+                              </div>
+                              {midCycle.length > 0 && (
+                                <div>
+                                  <p className="text-xs font-medium text-muted-foreground mb-2">
+                                    Paid earlier in this cycle ({midCycle.length}) — these reduced what the settlement had to pay
+                                  </p>
+                                  <div className="space-y-1">{midCycle.map(p => payLine(p, true))}</div>
+                                </div>
+                              )}
+                              <div className="space-y-0.5 pt-1 border-t">
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Settled at stamp</span>
+                                  <span className="tabular-nums">{money(sum(atStamp))}</span>
+                                </div>
+                                {midCycle.length > 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Paid mid-cycle</span>
+                                    <span className="tabular-nums">{money(sum(midCycle))}</span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between text-sm font-semibold">
+                                  <span>Total paid out this cycle</span>
+                                  <span className="tabular-nums">{money(sum(detailRows))}</span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex justify-between text-sm font-semibold pt-2">
-                              <span>Total settled</span>
-                              <span className="tabular-nums">{money(detailRows.reduce((sum, p) => sum + Number(p.amount_usd), 0))}</span>
-                            </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </TableCell>
                     </TableRow>
                   )}
