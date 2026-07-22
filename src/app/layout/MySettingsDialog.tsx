@@ -5,10 +5,26 @@ import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import getMyLabelReturnAddress from '@/actions/settings/getMyLabelReturnAddress';
 import updateMyLabelReturnAddress from '@/actions/settings/updateMyLabelReturnAddress';
+import listUserPayoutAddresses from '@/actions/settings/listUserPayoutAddresses';
+import createUserPayoutAddress from '@/actions/settings/createUserPayoutAddress';
+import deleteUserPayoutAddress from '@/actions/settings/deleteUserPayoutAddress';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Trash2 } from 'lucide-react';
+
+/** Same combos as the admin Settings → Users payout editor. */
+const PAYOUT_COMBOS = [
+  { asset: 'USDC', network: 'ethereum' }, { asset: 'USDC', network: 'solana' },
+  { asset: 'USDT', network: 'ethereum' }, { asset: 'USDT', network: 'solana' },
+  { asset: 'ETH', network: 'ethereum' }, { asset: 'SOL', network: 'solana' },
+  { asset: 'BTC', network: 'bitcoin' },
+];
+
+type PayoutAddress = { id: number; asset: string; network: string; address: string; label: string | null };
 
 type ReturnAddrRow = {
   label_return_name: string | null; label_return_line1: string | null; label_return_line2: string | null;
@@ -49,6 +65,38 @@ export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: ()
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
+
+  // My payout addresses — self-service (payments to you show these with a
+  // Copy button wherever admins record your payouts).
+  const [payoutRaw, payoutLoading, , reloadPayout] = useLoadAction(listUserPayoutAddresses, [profileId, open ? 1 : 0], { user_profile_id: profileId ?? 0 }, { enabled: open && profileId != null });
+  const payoutAddresses = asRows<PayoutAddress>(payoutRaw);
+  const [doAddPayout] = useMutateAction(createUserPayoutAddress);
+  const [doDeletePayout] = useMutateAction(deleteUserPayoutAddress);
+  const [payoutCombo, setPayoutCombo] = useState('USDC|ethereum');
+  const [payoutAddr, setPayoutAddr] = useState('');
+  const [payoutLabel, setPayoutLabel] = useState('');
+  const [payoutSaving, setPayoutSaving] = useState(false);
+  const [payoutErr, setPayoutErr] = useState('');
+
+  const addPayout = async () => {
+    if (!payoutAddr.trim()) { setPayoutErr('Enter the wallet address.'); return; }
+    const [asset, network] = payoutCombo.split('|');
+    setPayoutSaving(true); setPayoutErr('');
+    try {
+      await doAddPayout({ user_profile_id: profileId, asset, network, address: payoutAddr.trim(), label: payoutLabel.trim() || null });
+      setPayoutAddr(''); setPayoutLabel('');
+      reloadPayout();
+    } catch (e: unknown) {
+      setPayoutErr(e instanceof Error ? e.message : 'Failed to add address');
+    } finally {
+      setPayoutSaving(false);
+    }
+  };
+
+  const removePayout = async (id: number) => {
+    await doDeletePayout({ id });
+    reloadPayout();
+  };
 
   const partial = !!(form.line1 || form.city || form.postal) && !(form.line1 && form.city && form.postal);
 
@@ -104,6 +152,54 @@ export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: ()
             </p>
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
+
+          <Separator />
+
+          <div>
+            <p className="text-sm font-medium">My payout addresses</p>
+            <p className="text-xs text-muted-foreground">
+              Where you get paid. These show (with a Copy button) to whoever records your commission or
+              warehouse payments.
+            </p>
+          </div>
+          {payoutLoading ? <p className="text-sm text-muted-foreground">Loading…</p> : (
+            <div className="space-y-1.5">
+              {payoutAddresses.map(pa => (
+                <div key={pa.id} className="flex items-center justify-between gap-2 rounded border px-2.5 py-1.5 text-sm">
+                  <span className="min-w-0">
+                    <span className="font-mono font-medium text-xs">{pa.asset}/{pa.network}</span>
+                    {pa.label && <span className="text-xs text-muted-foreground ml-1.5">{pa.label}</span>}
+                    <span className="block font-mono text-xs text-muted-foreground break-all">{pa.address}</span>
+                  </span>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-red-500" onClick={() => removePayout(pa.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+              {payoutAddresses.length === 0 && <p className="text-sm text-muted-foreground">No payout addresses yet.</p>}
+            </div>
+          )}
+          <div className="rounded border bg-slate-50 p-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Asset / Network</Label>
+                <Select value={payoutCombo} onValueChange={setPayoutCombo}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PAYOUT_COMBOS.map(c => (
+                      <SelectItem key={`${c.asset}|${c.network}`} value={`${c.asset}|${c.network}`}>{c.asset} · {c.network}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label className="text-xs">Label (optional)</Label><Input className="h-8" value={payoutLabel} onChange={e => setPayoutLabel(e.target.value)} placeholder='e.g. "Ledger"' /></div>
+            </div>
+            <div><Label className="text-xs">Wallet Address *</Label><Input className="h-8 font-mono text-xs" value={payoutAddr} onChange={e => setPayoutAddr(e.target.value)} placeholder="0x… / bc1… / …" /></div>
+            {payoutErr && <p className="text-xs text-red-600">{payoutErr}</p>}
+            <Button size="sm" className="w-full sm:w-auto" onClick={addPayout} disabled={payoutSaving}>
+              {payoutSaving ? 'Adding…' : 'Add Payout Address'}
+            </Button>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
