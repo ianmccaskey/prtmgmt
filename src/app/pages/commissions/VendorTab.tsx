@@ -130,13 +130,19 @@ export function VendorTab() {
                 <span className="text-muted-foreground">Payments collected this cycle (verified, net of refunds)</span>
                 <span className="tabular-nums">{money(bal.collected_usd)}</span>
               </div>
+              {/* Negative outstanding = payee overpaid earlier; it adds back
+                  to the vendor share, so render as a credit. */}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">− Sales rep commissions outstanding</span>
-                <span className="tabular-nums text-red-600">−{money(bal.rep_commissions_usd)}</span>
+                <span className={`tabular-nums ${Number(bal.rep_commissions_usd) >= 0 ? 'text-red-600' : 'text-green-700'}`}>
+                  {Number(bal.rep_commissions_usd) >= 0 ? '−' : '+'}{money(Math.abs(Number(bal.rep_commissions_usd)))}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">− Warehouse shipping outstanding</span>
-                <span className="tabular-nums text-red-600">−{money(bal.warehouse_earned_usd)}</span>
+                <span className={`tabular-nums ${Number(bal.warehouse_earned_usd) >= 0 ? 'text-red-600' : 'text-green-700'}`}>
+                  {Number(bal.warehouse_earned_usd) >= 0 ? '−' : '+'}{money(Math.abs(Number(bal.warehouse_earned_usd)))}
+                </span>
               </div>
               <div className="flex justify-between border-t pt-1.5 font-medium">
                 <span>Vendor share (this cycle)</span>
