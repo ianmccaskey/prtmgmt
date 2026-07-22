@@ -9,6 +9,7 @@ import listRepBalances from '@/actions/commissions/listRepBalances';
 import listWarehouseBalances from '@/actions/commissions/listWarehouseBalances';
 import executeSettlementAtomic from '@/actions/commissions/executeSettlementAtomic';
 import listSettlements from '@/actions/commissions/listSettlements';
+import listSettlementPayments from '@/actions/commissions/listSettlementPayments';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +18,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Factory, Stamp } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { ChevronDown, ChevronRight, Factory, Stamp } from 'lucide-react';
 
 type VendorBalance = {
   last_settlement_id: number | null; last_settled_at: string | null;
@@ -29,6 +31,10 @@ type VendorPayment = { id: number; amount_usd: number; paid_at: string; note: st
 type Settlement = {
   id: number; settled_at: string; collected_usd: number; rep_commissions_usd: number;
   warehouse_earned_usd: number; vendor_share_usd: number; note: string | null; created_by: string | null;
+};
+type SettlementPayment = {
+  id: number; payee_type: 'sales_rep' | 'warehouse' | 'vendor'; amount_usd: number;
+  paid_at: string; sales_rep_name: string | null; warehouse_name: string | null;
 };
 
 const money = (v: number | string) => `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -59,6 +65,10 @@ export function VendorTab() {
   const [doSettle] = useMutateAction(executeSettlementAtomic);
   const [settlementsRaw, , , reloadSettlements] = useLoadAction(listSettlements, [], {});
   const settlements = asRows<Settlement>(settlementsRaw);
+  // Drill-down: payouts recorded by the expanded settlement.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [detailRaw, detailLoading] = useLoadAction(listSettlementPayments, [expandedId], { settlement_id: expandedId ?? 0 }, { enabled: expandedId != null });
+  const detailRows = asRows<SettlementPayment>(detailRaw);
   // Preview: what the stamp will contain (same source actions as the tabs).
   const [repBalRaw] = useLoadAction(listRepBalances, [settleOpen ? 1 : 0], {}, { enabled: settleOpen });
   const [whBalRaw] = useLoadAction(listWarehouseBalances, [settleOpen ? 1 : 0], { warehouse_id: '' }, { enabled: settleOpen });
@@ -189,15 +199,58 @@ export function VendorTab() {
             </TableHeader>
             <TableBody>
               {settlements.map(s => (
-                <TableRow key={s.id}>
-                  <TableCell className="font-mono text-xs">#{s.id}</TableCell>
-                  <TableCell className="whitespace-nowrap">{new Date(s.settled_at).toLocaleString()}</TableCell>
-                  <TableCell className="text-right tabular-nums">{money(s.rep_commissions_usd)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{money(s.warehouse_earned_usd)}</TableCell>
-                  <TableCell className="text-right tabular-nums font-medium">{money(s.vendor_share_usd)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">{money(s.collected_usd)}</TableCell>
-                  <TableCell className="text-muted-foreground text-xs">{s.created_by || '—'}{s.note ? ` · ${s.note}` : ''}</TableCell>
-                </TableRow>
+                <React.Fragment key={s.id}>
+                  <TableRow
+                    className="cursor-pointer hover:bg-muted/40"
+                    onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
+                  >
+                    <TableCell className="font-mono text-xs">
+                      <span className="inline-flex items-center gap-1">
+                        {expandedId === s.id ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                        #{s.id}
+                      </span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{new Date(s.settled_at).toLocaleString()}</TableCell>
+                    <TableCell className="text-right tabular-nums">{money(s.rep_commissions_usd)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{money(s.warehouse_earned_usd)}</TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">{money(s.vendor_share_usd)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{money(s.collected_usd)}</TableCell>
+                    <TableCell className="text-muted-foreground text-xs">{s.created_by || '—'}{s.note ? ` · ${s.note}` : ''}</TableCell>
+                  </TableRow>
+                  {expandedId === s.id && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="bg-muted/20 p-0">
+                        {detailLoading ? <div className="p-4"><Skeleton className="h-12 w-full" /></div> : (
+                          <div className="px-4 py-3">
+                            <p className="text-xs font-medium text-muted-foreground mb-2">
+                              Payouts recorded by settlement #{s.id} ({detailRows.length})
+                            </p>
+                            <div className="space-y-1">
+                              {detailRows.map(p => (
+                                <div key={p.id} className="flex items-center justify-between gap-2 text-sm border-b border-border/40 pb-1 last:border-0">
+                                  <span className="flex items-center gap-2 min-w-0">
+                                    <Badge variant="outline" className="text-xs shrink-0">
+                                      {p.payee_type === 'sales_rep' ? 'Rep' : p.payee_type === 'warehouse' ? 'Warehouse' : 'Vendor'}
+                                    </Badge>
+                                    <span className="truncate">
+                                      {p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : 'Vendor'}
+                                    </span>
+                                  </span>
+                                  <span className="tabular-nums font-medium shrink-0">{money(p.amount_usd)}</span>
+                                </div>
+                              ))}
+                              {detailRows.length === 0 && <p className="text-sm text-muted-foreground">No payout rows (nothing was owed at this stamp).</p>}
+                            </div>
+                            <div className="flex justify-between text-sm font-semibold pt-2">
+                              <span>Total settled</span>
+                              <span className="tabular-nums">{money(detailRows.reduce((sum, p) => sum + Number(p.amount_usd), 0))}</span>
+                            </div>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
               ))}
               {settlements.length === 0 && (
                 <TableRow><TableCell colSpan={7} className="text-center text-gray-400 py-6">No settlements yet — Settle All Now stamps and zeroes every balance in one step.</TableCell></TableRow>
