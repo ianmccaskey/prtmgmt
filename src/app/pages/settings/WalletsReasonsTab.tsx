@@ -23,6 +23,8 @@ import createFreeOrderReason from '@/actions/settings/createFreeOrderReason';
 import updateFreeOrderReason from '@/actions/settings/updateFreeOrderReason';
 import deleteFreeOrderReason from '@/actions/settings/deleteFreeOrderReason';
 import updateFreeOrderReasonActive from '@/actions/settings/updateFreeOrderReasonActive';
+import getAppSetting from '@/actions/settings/getAppSetting';
+import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 
 type Wallet = { id: number; asset: string; network: string; address: string; label: string; is_active: boolean; notes: string; is_used: boolean };
 type FreeReason = { id: number; label: string; description: string; is_active: boolean; is_used: boolean };
@@ -35,6 +37,24 @@ const VALID_COMBOS = [
 ];
 
 export function WalletsReasonsTab() {
+  // Moralis API key (on-chain balance checks on Commissions → Vendor Owed).
+  // Write-only: we only surface whether one is stored.
+  const [moralisRaw, , , reloadMoralis] = useLoadAction(getAppSetting, [], { key: 'moralis_api_key' });
+  const moralisConfigured = !!String(asRows<{ value: string }>(moralisRaw)[0]?.value ?? '');
+  const [doSaveSetting] = useMutateAction(upsertAppSetting);
+  const [moralisInput, setMoralisInput] = useState('');
+  const [moralisSaving, setMoralisSaving] = useState(false);
+  const saveMoralis = async (clear = false) => {
+    setMoralisSaving(true);
+    try {
+      await doSaveSetting({ key: 'moralis_api_key', value: clear ? '' : moralisInput.trim() });
+      setMoralisInput('');
+      reloadMoralis();
+    } finally {
+      setMoralisSaving(false);
+    }
+  };
+
   // Wallet dialog state: showWalletForm opens the dialog; editWallet != null
   // means it's editing that wallet, otherwise adding.
   const [showWalletForm, setShowWalletForm] = useState(false);
@@ -176,6 +196,33 @@ export function WalletsReasonsTab() {
 
   return (
     <div className="space-y-6">
+      {/* Moralis (on-chain balance checks) */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Lock className="h-4 w-4" /> Moralis API Key
+            {moralisConfigured && <Badge variant="outline" className="text-xs text-green-600 border-green-300">configured</Badge>}
+          </CardTitle>
+          <p className="text-xs text-gray-400">
+            Enables the on-chain wallet balance check on Commissions → Vendor Owed (live balances of the
+            receive wallets below, compared against what this cycle&apos;s verified payments say should be there).
+          </p>
+        </CardHeader>
+        <CardContent className="flex items-center gap-2 flex-wrap">
+          <Input
+            type="password" value={moralisInput} onChange={e => setMoralisInput(e.target.value)}
+            placeholder={moralisConfigured ? '•••••••••••• (enter new key to replace)' : 'Moralis API key…'}
+            className="max-w-md"
+          />
+          <Button size="sm" onClick={() => saveMoralis(false)} disabled={moralisSaving || !moralisInput.trim()}>
+            {moralisSaving ? 'Saving…' : 'Save Key'}
+          </Button>
+          {moralisConfigured && (
+            <Button size="sm" variant="outline" onClick={() => saveMoralis(true)} disabled={moralisSaving}>Remove</Button>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Wallets */}
       <Card>
         <CardHeader className="pb-3">

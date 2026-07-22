@@ -10,6 +10,9 @@ import listWarehouseBalances from '@/actions/commissions/listWarehouseBalances';
 import executeSettlementAtomic from '@/actions/commissions/executeSettlementAtomic';
 import listSettlements from '@/actions/commissions/listSettlements';
 import listSettlementPayments from '@/actions/commissions/listSettlementPayments';
+import getWalletExpectedInflows from '@/actions/commissions/getWalletExpectedInflows';
+import getAppSetting from '@/actions/settings/getAppSetting';
+import { getOnChainBalance } from '@/lib/moralis';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, ChevronRight, Factory, Stamp } from 'lucide-react';
+import { ChevronDown, ChevronRight, Factory, RefreshCw, Stamp, Wallet as WalletIcon } from 'lucide-react';
 
 type VendorBalance = {
   last_settlement_id: number | null; last_settled_at: string | null;
@@ -39,6 +42,129 @@ type SettlementPayment = {
 };
 
 const money = (v: number | string) => `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+type WalletInflow = {
+  id: number; asset: string; network: string; address: string; label: string;
+  expected_usd: number; payments_count: number;
+};
+type ChainCheck = { amount?: number; supported?: boolean; error?: string };
+
+const STABLECOINS = ['USDC', 'USDT'];
+
+/**
+ * Live on-chain balances (Moralis) vs what this cycle's verified payments
+ * say each receive wallet should hold. On-demand — checks run only when
+ * the button is clicked, keeping Moralis quota usage tiny.
+ */
+function OnChainWalletCheck() {
+  const [keyRaw] = useLoadAction(getAppSetting, [], { key: 'moralis_api_key' });
+  const moralisKey = String(asRows<{ value: string }>(keyRaw)[0]?.value ?? '');
+  const [inflowsRaw, inflowsLoading] = useLoadAction(getWalletExpectedInflows, [], {});
+  const wallets = asRows<WalletInflow>(inflowsRaw);
+  const [checks, setChecks] = useState<Record<number, ChainCheck>>({});
+  const [checking, setChecking] = useState(false);
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+
+  const runCheck = async () => {
+    if (!moralisKey) return;
+    setChecking(true);
+    const next: Record<number, ChainCheck> = {};
+    for (const w of wallets) {
+      try {
+        const b = await getOnChainBalance(moralisKey, w.asset, w.network, w.address);
+        next[w.id] = { amount: b.amount, supported: b.supported };
+      } catch (e: unknown) {
+        next[w.id] = { error: e instanceof Error ? e.message : 'check failed' };
+      }
+      setChecks({ ...next });
+    }
+    setCheckedAt(new Date());
+    setChecking(false);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <WalletIcon className="h-4 w-4 text-emerald-600" /> On-Chain Wallet Check
+        </CardTitle>
+        <div className="flex items-center gap-2">
+          {checkedAt && <span className="text-xs text-muted-foreground">checked {checkedAt.toLocaleTimeString()}</span>}
+          <Button size="sm" variant="outline" onClick={runCheck} disabled={checking || !moralisKey}>
+            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${checking ? 'animate-spin' : ''}`} /> {checking ? 'Checking…' : 'Check Balances'}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {!moralisKey ? (
+          <p className="text-sm text-muted-foreground p-4">
+            Add your Moralis API key under Settings → Wallets to compare live on-chain balances against
+            what this cycle expects.
+          </p>
+        ) : inflowsLoading ? <div className="p-4"><Skeleton className="h-16 w-full" /></div> : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Wallet</TableHead>
+                <TableHead className="text-right">Expected this cycle</TableHead>
+                <TableHead className="text-right">On-chain</TableHead>
+                <TableHead className="text-right">Difference</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {wallets.map(w => {
+                const c = checks[w.id];
+                const isStable = STABLECOINS.includes(w.asset);
+                const diff = c?.amount != null && isStable ? c.amount - Number(w.expected_usd) : null;
+                return (
+                  <TableRow key={w.id}>
+                    <TableCell>
+                      <div className="font-medium">{w.asset} · {w.network}</div>
+                      <div className="text-xs text-muted-foreground">{w.label} — <span className="font-mono">{w.address.slice(0, 6)}…{w.address.slice(-4)}</span></div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {money(w.expected_usd)}
+                      <div className="text-xs text-muted-foreground">{w.payments_count} payment{w.payments_count === 1 ? '' : 's'}</div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {!c ? <span className="text-muted-foreground">—</span>
+                        : c.error ? <span className="text-red-600 text-xs">{c.error}</span>
+                        : c.supported === false ? <span className="text-muted-foreground text-xs">not supported (BTC)</span>
+                        : <>{Number(c.amount).toLocaleString('en-US', { maximumFractionDigits: 6 })} {w.asset}</>}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {diff == null ? (
+                        c && c.supported !== false && !c.error && !isStable
+                          ? <span className="text-xs text-muted-foreground">compare manually (non-stablecoin)</span>
+                          : <span className="text-muted-foreground">—</span>
+                      ) : Math.abs(diff) <= 1 ? (
+                        <Badge variant="outline" className="text-xs text-green-600 border-green-300">matches</Badge>
+                      ) : (
+                        <Badge variant="outline" className={`text-xs ${diff > 0 ? 'text-blue-600 border-blue-300' : 'text-red-600 border-red-300'}`}>
+                          {diff > 0 ? '+' : '−'}{money(Math.abs(diff))}
+                        </Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {wallets.length === 0 && (
+                <TableRow><TableCell colSpan={4} className="text-center text-gray-400 py-6">No active receive wallets.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        )}
+        {moralisKey && (
+          <p className="text-xs text-muted-foreground px-4 pb-3 pt-2">
+            Expected = verified payments assigned to each wallet this cycle (stablecoins compared 1 token ≈ $1;
+            a positive difference usually means funds left from before, unrecorded income, or pending payments
+            not yet verified). Settlements empty the wallets, so both sides reset each cycle.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 /**
  * What's owed to the product vendor: everything verified-collected, minus
@@ -182,6 +308,8 @@ export function VendorTab() {
           )}
         </CardContent>
       </Card>
+
+      <OnChainWalletCheck />
 
       <Card>
         <CardHeader><CardTitle className="text-base">Settlement History</CardTitle></CardHeader>
