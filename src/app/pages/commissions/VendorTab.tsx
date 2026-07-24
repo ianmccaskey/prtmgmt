@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
@@ -11,8 +11,9 @@ import executeSettlementAtomic from '@/actions/commissions/executeSettlementAtom
 import listSettlements from '@/actions/commissions/listSettlements';
 import listSettlementPayments from '@/actions/commissions/listSettlementPayments';
 import getWalletExpectedInflows from '@/actions/commissions/getWalletExpectedInflows';
+import listWalletCyclePayments from '@/actions/commissions/listWalletCyclePayments';
 import getAppSetting from '@/actions/settings/getAppSetting';
-import { getOnChainBalance } from '@/lib/moralis';
+import { getOnChainBalance, getTokenDeposits, OnChainDeposit } from '@/lib/moralis';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,8 +49,35 @@ type WalletInflow = {
   expected_usd: number; payments_count: number;
 };
 type ChainCheck = { amount?: number; supported?: boolean; error?: string };
+type CyclePayment = {
+  id: number; amount_usd: number; tx_hash: string | null; direction: string;
+  recorded_at: string; order_number: string; customer: string;
+};
 
 const STABLECOINS = ['USDC', 'USDT'];
+
+/**
+ * Match recorded payments against on-chain deposits: by tx hash first, then
+ * greedily by exact amount (2dp). Returns which records found a deposit and
+ * which deposits nothing accounts for.
+ */
+function reconcile(paymentsIn: CyclePayment[], deposits: OnChainDeposit[]) {
+  const unusedDeposits = [...deposits];
+  const take = (pred: (d: OnChainDeposit) => boolean) => {
+    const i = unusedDeposits.findIndex(pred);
+    return i >= 0 ? unusedDeposits.splice(i, 1)[0] : null;
+  };
+  const matches = new Map<number, OnChainDeposit | null>();
+  for (const p of paymentsIn) {
+    const hash = (p.tx_hash || '').trim().toLowerCase();
+    matches.set(p.id, hash ? take(d => d.txHash.toLowerCase() === hash) : null);
+  }
+  for (const p of paymentsIn) {
+    if (matches.get(p.id)) continue;
+    matches.set(p.id, take(d => Math.abs(d.amount - Number(p.amount_usd)) < 0.005));
+  }
+  return { matches, extraDeposits: unusedDeposits };
+}
 
 /**
  * Live on-chain balances (Moralis) vs what this cycle's verified payments
@@ -66,6 +94,29 @@ function OnChainWalletCheck() {
   const [checks, setChecks] = useState<Record<number, ChainCheck>>({});
   const [checking, setChecking] = useState(false);
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+
+  // Reconciliation drill-down: the payment records behind one wallet's
+  // expected figure, auto-matched against on-chain deposits (EVM only).
+  const [openWalletId, setOpenWalletId] = useState<number | null>(null);
+  const openWallet = wallets.find(w => Number(w.id) === openWalletId) || null;
+  const [cycleRaw, cycleLoading] = useLoadAction(listWalletCyclePayments, [openWalletId], { wallet_id: openWalletId ?? 0 }, { enabled: openWalletId != null });
+  const cyclePayments = asRows<CyclePayment>(cycleRaw);
+  const [balForCycle] = useLoadAction(getVendorBalance, [openWalletId != null ? 1 : 0], {}, { enabled: openWalletId != null });
+  const cycleStart = asRows<{ last_settled_at: string | null }>(balForCycle)[0]?.last_settled_at ?? null;
+  const [deposits, setDeposits] = useState<OnChainDeposit[] | null | 'loading' | 'error'>(null);
+
+  useEffect(() => {
+    setDeposits(null);
+    if (openWallet == null || !moralisKey) return;
+    if (openWallet.network !== 'ethereum') { setDeposits(null); return; }
+    let alive = true;
+    setDeposits('loading');
+    getTokenDeposits(moralisKey, openWallet.asset, openWallet.network, openWallet.address, cycleStart)
+      .then(d => { if (alive) setDeposits(d); })
+      .catch(() => { if (alive) setDeposits('error'); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openWalletId, moralisKey, cycleStart]);
 
   const runCheck = async () => {
     if (!moralisKey) return;
@@ -118,10 +169,16 @@ function OnChainWalletCheck() {
                 const c = checks[Number(w.id)];
                 const isStable = STABLECOINS.includes(w.asset);
                 const diff = c?.amount != null && isStable ? c.amount - Number(w.expected_usd) : null;
+                const isOpen = openWalletId === Number(w.id);
+                const rec = isOpen && Array.isArray(deposits) ? reconcile(cyclePayments, deposits) : null;
                 return (
-                  <TableRow key={w.id}>
+                  <React.Fragment key={w.id}>
+                  <TableRow className="cursor-pointer hover:bg-muted/40" onClick={() => setOpenWalletId(isOpen ? null : Number(w.id))}>
                     <TableCell>
-                      <div className="font-medium">{w.asset} · {w.network}</div>
+                      <div className="font-medium flex items-center gap-1">
+                        {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                        {w.asset} · {w.network}
+                      </div>
                       <div className="text-xs text-muted-foreground">{w.label} — <span className="font-mono">{w.address.slice(0, 6)}…{w.address.slice(-4)}</span></div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -148,6 +205,70 @@ function OnChainWalletCheck() {
                       )}
                     </TableCell>
                   </TableRow>
+                  {isOpen && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="bg-muted/20 p-0">
+                        <div className="px-4 py-3 space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Payment records behind this wallet's expected figure ({cyclePayments.length} this cycle)
+                          </p>
+                          {cycleLoading ? <Skeleton className="h-10 w-full" /> : (
+                            <div className="space-y-1">
+                              {cyclePayments.map(p => {
+                                const dep = rec?.matches.get(p.id) || null;
+                                return (
+                                  <div key={p.id} className="flex items-center justify-between gap-2 text-sm border-b border-border/40 pb-1 last:border-0">
+                                    <span className="min-w-0">
+                                      <span className="font-mono text-blue-600">{p.order_number}</span>
+                                      <span className="ml-1.5">{p.customer}</span>
+                                      <span className="block text-xs text-muted-foreground">
+                                        {new Date(p.recorded_at).toLocaleString()}
+                                        {p.tx_hash ? <> · TX <span className="font-mono break-all">{String(p.tx_hash).slice(0, 14)}…</span></> : ' · no TX recorded'}
+                                      </span>
+                                    </span>
+                                    <span className="flex items-center gap-2 shrink-0">
+                                      {rec && (
+                                        dep ? (
+                                          <Badge variant="outline" className="text-xs text-green-600 border-green-300" title={`on-chain ${dep.amount} @ ${dep.at || ''}`}>on-chain ✓</Badge>
+                                        ) : (
+                                          <Badge variant="outline" className="text-xs text-red-600 border-red-300">not found on-chain</Badge>
+                                        )
+                                      )}
+                                      <span className="tabular-nums font-medium">{p.direction === 'refund' ? '−' : ''}{money(p.amount_usd)}</span>
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                              {cyclePayments.length === 0 && <p className="text-sm text-muted-foreground">No payment records this cycle.</p>}
+                            </div>
+                          )}
+                          {rec && rec.extraDeposits.length > 0 && (
+                            <div className="text-xs text-amber-700 bg-amber-50 rounded p-2 space-y-0.5">
+                              <p className="font-medium">On-chain deposits with no matching record ({rec.extraDeposits.length}):</p>
+                              {rec.extraDeposits.map(d => (
+                                <p key={d.txHash} className="font-mono break-all">{d.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} — {d.txHash.slice(0, 18)}… {d.at ? `(${new Date(d.at).toLocaleDateString()})` : ''}</p>
+                              ))}
+                            </div>
+                          )}
+                          {deposits === 'loading' && <p className="text-xs text-muted-foreground">Fetching on-chain deposits…</p>}
+                          {deposits === 'error' && <p className="text-xs text-red-600">Could not fetch on-chain deposits from Moralis.</p>}
+                          {deposits === null && w.network !== 'ethereum' && (
+                            <p className="text-xs text-muted-foreground">
+                              Auto-matching against on-chain deposits is Ethereum-only (Moralis doesn&apos;t serve Solana transfer
+                              history here) — compare these records against the wallet&apos;s history in a Solana explorer.
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            A wallet reads <span className="font-medium">under</span> when a recorded payment never arrived
+                            (not found on-chain), arrived short, went to a different wallet, or was recorded with the wrong
+                            asset/network. <span className="font-medium">Over</span> usually means an unrecorded deposit or
+                            pre-cycle leftovers.
+                          </p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </React.Fragment>
                 );
               })}
               {wallets.length === 0 && (

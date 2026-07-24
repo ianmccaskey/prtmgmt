@@ -42,6 +42,40 @@ async function get(apiKey: string, url: string): Promise<unknown> {
   return res.json();
 }
 
+export type OnChainDeposit = {
+  txHash: string;
+  amount: number;
+  at: string | null;
+  from: string | null;
+};
+
+/**
+ * Incoming token deposits to a wallet since a timestamp. EVM only — the
+ * Solana gateway doesn't expose SPL transfer history here; callers should
+ * fall back to manual comparison for Solana wallets. Returns null when the
+ * chain/asset isn't queryable.
+ */
+export async function getTokenDeposits(
+  apiKey: string, asset: string, network: string, address: string, sinceIso: string | null,
+): Promise<OnChainDeposit[] | null> {
+  if (network !== 'ethereum') return null;
+  const token = TOKENS.ethereum[asset];
+  if (!token) return null;
+  const from = sinceIso ? `&from_date=${encodeURIComponent(sinceIso)}` : '';
+  const d = await get(apiKey, `${EVM_BASE}/${address}/erc20/transfers?chain=eth&token_addresses%5B0%5D=${token}${from}&limit=100`) as {
+    result?: Array<{ transaction_hash?: string; value?: string; token_decimals?: string | number; block_timestamp?: string; to_address?: string; from_address?: string }>;
+  };
+  const rows = Array.isArray(d?.result) ? d.result : [];
+  return rows
+    .filter(t => String(t.to_address || '').toLowerCase() === address.toLowerCase())
+    .map(t => ({
+      txHash: String(t.transaction_hash || ''),
+      amount: Number(t.value || 0) / Math.pow(10, Number(t.token_decimals ?? 6)),
+      at: t.block_timestamp || null,
+      from: t.from_address || null,
+    }));
+}
+
 export async function getOnChainBalance(
   apiKey: string, asset: string, network: string, address: string,
 ): Promise<OnChainBalance> {
