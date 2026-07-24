@@ -480,8 +480,12 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     }
     // Payment + rollup BEFORE any confirm attempt, so a verified payment
     // satisfies the paid/partial-paid gate in the same pass.
+    // Quote saves ALWAYS record the payment as pending, whatever the toggle
+    // says — "verified" means money is in the wallet, and a phantom verified
+    // payment on a quote (later cancelled) poisons wallet reconciliation and
+    // commission accruals. Verify from the order drawer once it's real.
     if (addPay && total > 0 && selectedWallet) {
-      await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: null, amountAsset: null, amountUsd: total, txHash: payTx || null, verified: payVerified, userId: profileId });
+      await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: null, amountAsset: null, amountUsd: total, txHash: payTx || null, verified: s === 'confirmed' && payVerified, userId: profileId });
     }
     // Derive payment_status (free $0 orders roll straight to 'paid').
     // Chained here because actions are single-statement.
@@ -912,7 +916,11 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                     Payment received — record as <span className="font-medium">verified</span> (lets you confirm the order right now)
                   </Label>
                 </div>
-                {!payVerified && (
+                {payVerified ? (
+                  <p className="text-xs text-muted-foreground">
+                    Applies when you Confirm Order. Save as Quote always records the payment as pending — verify it from the order drawer once the funds arrive.
+                  </p>
+                ) : (
                   <p className="text-xs text-muted-foreground">
                     Payment will be recorded as pending — the order saves as a quote and confirms after verification.
                   </p>
