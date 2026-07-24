@@ -62,17 +62,20 @@ const STABLECOINS = ['USDC', 'USDT'];
  * which deposits nothing accounts for.
  */
 function reconcile(paymentsIn: CyclePayment[], deposits: OnChainDeposit[]) {
+  // Refunds are OUTGOING — matching them against incoming deposits would
+  // both mislabel the refund and hide a real unrecorded deposit.
+  const incoming = paymentsIn.filter(p => p.direction !== 'refund');
   const unusedDeposits = [...deposits];
   const take = (pred: (d: OnChainDeposit) => boolean) => {
     const i = unusedDeposits.findIndex(pred);
     return i >= 0 ? unusedDeposits.splice(i, 1)[0] : null;
   };
   const matches = new Map<number, OnChainDeposit | null>();
-  for (const p of paymentsIn) {
+  for (const p of incoming) {
     const hash = (p.tx_hash || '').trim().toLowerCase();
     matches.set(p.id, hash ? take(d => d.txHash.toLowerCase() === hash) : null);
   }
-  for (const p of paymentsIn) {
+  for (const p of incoming) {
     if (matches.get(p.id)) continue;
     matches.set(p.id, take(d => Math.abs(d.amount - Number(p.amount_usd)) < 0.005));
   }
@@ -101,7 +104,9 @@ function OnChainWalletCheck() {
   const openWallet = wallets.find(w => Number(w.id) === openWalletId) || null;
   const [cycleRaw, cycleLoading] = useLoadAction(listWalletCyclePayments, [openWalletId], { wallet_id: openWalletId ?? 0 }, { enabled: openWalletId != null });
   const cyclePayments = asRows<CyclePayment>(cycleRaw);
-  const [balForCycle] = useLoadAction(getVendorBalance, [openWalletId != null ? 1 : 0], {}, { enabled: openWalletId != null });
+  // Keyed by wallet id so every expand refetches the cycle start (a
+  // settlement while a row sat open would otherwise leave it stale).
+  const [balForCycle] = useLoadAction(getVendorBalance, [openWalletId ?? 0], {}, { enabled: openWalletId != null });
   const cycleStart = asRows<{ last_settled_at: string | null }>(balForCycle)[0]?.last_settled_at ?? null;
   const [deposits, setDeposits] = useState<OnChainDeposit[] | null | 'loading' | 'error'>(null);
 
@@ -228,8 +233,10 @@ function OnChainWalletCheck() {
                                     </span>
                                     <span className="flex items-center gap-2 shrink-0">
                                       {rec && (
-                                        dep ? (
-                                          <Badge variant="outline" className="text-xs text-green-600 border-green-300" title={`on-chain ${dep.amount} @ ${dep.at || ''}`}>on-chain ✓</Badge>
+                                        p.direction === 'refund' ? (
+                                          <Badge variant="outline" className="text-xs text-muted-foreground">refund — outgoing, not matched</Badge>
+                                        ) : rec.matches.get(p.id) ? (
+                                          <Badge variant="outline" className="text-xs text-green-600 border-green-300" title={`on-chain ${dep?.amount} @ ${dep?.at || ''}`}>on-chain ✓</Badge>
                                         ) : (
                                           <Badge variant="outline" className="text-xs text-red-600 border-red-300">not found on-chain</Badge>
                                         )

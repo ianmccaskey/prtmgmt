@@ -62,12 +62,29 @@ export async function getTokenDeposits(
   const token = TOKENS.ethereum[asset];
   if (!token) return null;
   const from = sinceIso ? `&from_date=${encodeURIComponent(sinceIso)}` : '';
-  const d = await get(apiKey, `${EVM_BASE}/${address}/erc20/transfers?chain=eth&token_addresses%5B0%5D=${token}${from}&limit=100`) as {
-    result?: Array<{ transaction_hash?: string; value?: string; token_decimals?: string | number; block_timestamp?: string; to_address?: string; from_address?: string }>;
+  type TransferRow = {
+    transaction_hash?: string; value?: string; token_decimals?: string | number;
+    block_timestamp?: string; to_address?: string; from_address?: string; address?: string;
   };
-  const rows = Array.isArray(d?.result) ? d.result : [];
+  const rows: TransferRow[] = [];
+  // The wallet token-transfers endpoint filters by contract_addresses and
+  // paginates by cursor; follow it (capped) so busy cycles aren't truncated.
+  let cursor = '';
+  for (let page = 0; page < 10; page++) {
+    const cur = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+    const d = await get(apiKey, `${EVM_BASE}/${address}/erc20/transfers?chain=eth&contract_addresses%5B0%5D=${token}${from}&limit=100${cur}`) as {
+      result?: TransferRow[]; cursor?: string | null;
+    };
+    rows.push(...(Array.isArray(d?.result) ? d.result : []));
+    if (!d?.cursor) break;
+    cursor = d.cursor;
+  }
   return rows
+    // Incoming only, and re-check the token contract client-side in case the
+    // server-side filter is ignored — an unrelated token must never be
+    // mistaken for a stablecoin deposit.
     .filter(t => String(t.to_address || '').toLowerCase() === address.toLowerCase())
+    .filter(t => !t.address || String(t.address).toLowerCase() === token.toLowerCase())
     .map(t => ({
       txHash: String(t.transaction_hash || ''),
       amount: Number(t.value || 0) / Math.pow(10, Number(t.token_decimals ?? 6)),
