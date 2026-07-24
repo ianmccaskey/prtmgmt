@@ -84,7 +84,7 @@ export async function getTokenDeposits(
     // server-side filter is ignored — an unrelated token must never be
     // mistaken for a stablecoin deposit.
     .filter(t => String(t.to_address || '').toLowerCase() === address.toLowerCase())
-    .filter(t => !t.address || String(t.address).toLowerCase() === token.toLowerCase())
+    .filter(t => String(t.address || '').toLowerCase() === token.toLowerCase())
     .map(t => ({
       txHash: String(t.transaction_hash || ''),
       amount: Number(t.value || 0) / Math.pow(10, Number(t.token_decimals ?? 6)),
