@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusBadge, PaymentBadge, SourceBadges, ChannelBadge } from './OrderBadges';
-import { AlertTriangle, Check, Copy, Crown, Flag, Plus, RefreshCw, Package, Truck } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Crown, Flag, Pencil, Plus, RefreshCw, Package, Truck } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
 import getReceiveWallets from '@/actions/orders/getReceiveWallets';
@@ -43,6 +43,7 @@ import updateOrderSalesRep from '@/actions/orders/updateOrderSalesRep';
 import listSalesReps from '@/actions/orders/listSalesReps';
 import updateOrderPreferredWarehouse from '@/actions/orders/updateOrderPreferredWarehouse';
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
+import updatePaymentWallet from '@/actions/orders/updatePaymentWallet';
 import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 
 interface OrderDetailDrawerProps {
@@ -64,7 +65,7 @@ const ISSUE_TYPES = ['lost_in_transit', 'damaged_in_transit', 'returned_to_sende
 const PAYMENT_ISSUE_TYPES = ['underpaid', 'overpaid', 'wrong_asset', 'wrong_network', 'wallet_mismatch', 'unconfirmed_onchain', 'other'];
 
 function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId: number; orderTotal: number; reload: () => void }) {
-  const { isLogistics, isWarehouse } = useAppUser();
+  const { isLogistics, isWarehouse, isAdmin } = useAppUser();
   const readOnlyRole = isLogistics || isWarehouse;
   const { profileId } = useAppUser();
   const [payments, loading, , reloadPay] = useLoadAction(getOrderPayments, [orderId], { orderId });
@@ -86,10 +87,23 @@ function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId:
   const [copiedWallet, setCopiedWallet] = useState(false);
   const [addSaving, setAddSaving] = useState(false);
   const [addErr, setAddErr] = useState('');
-  const [walletsRaw] = useLoadAction(getReceiveWallets, [addOpen ? 1 : 0], {}, { enabled: addOpen });
-  const selectedWallet = rows<{ id: number; asset: string; network: string; address: string; label: string }>(walletsRaw)
-    .find(w => w.asset === payAsset && w.network === payNetwork);
+  // Fix Wallet — admin correction when a payment was recorded against the
+  // wrong asset/network (money actually arrived elsewhere). Repointing keeps
+  // wallet reconciliation honest without a database session.
+  const [fixOpen, setFixOpen] = useState<number | null>(null);
+  const [fixAsset, setFixAsset] = useState('USDC');
+  const [fixNetwork, setFixNetwork] = useState('ethereum');
+  const [fixSaving, setFixSaving] = useState(false);
+  const [fixErr, setFixErr] = useState('');
+
+  const walletsNeeded = addOpen || fixOpen != null;
+  const [walletsRaw] = useLoadAction(getReceiveWallets, [walletsNeeded ? 1 : 0], {}, { enabled: walletsNeeded });
+  const walletList = rows<{ id: number; asset: string; network: string; address: string; label: string }>(walletsRaw);
+  const selectedWallet = walletList.find(w => w.asset === payAsset && w.network === payNetwork);
+  const fixWallet = walletList.find(w => w.asset === fixAsset && w.network === fixNetwork);
   const [createPayment] = useMutateAction(createOrderPayment);
+  const [repointPayment] = useMutateAction(updatePaymentWallet);
+  const [writeAudit] = useMutateAction(insertAuditLog);
 
   const copyWallet = () => {
     if (!selectedWallet) return;
@@ -136,6 +150,32 @@ function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId:
     reloadPay();
   };
 
+  const doFixWallet = async () => {
+    if (fixOpen == null || !fixWallet) return;
+    const before = payList.find(p => Number(p.id) === fixOpen);
+    setFixSaving(true); setFixErr('');
+    try {
+      const res = await repointPayment({ paymentId: fixOpen, asset: fixAsset, network: fixNetwork, walletId: fixWallet.id }) as unknown[];
+      if (!res || res.length === 0) {
+        setFixErr('This payment is part of an already-stamped settlement cycle — repointing it would rewrite settled history. It has to stay as recorded.');
+        return;
+      }
+      await writeAudit({
+        orderId, userId: profileId, changeType: 'payment', fieldName: 'payment_wallet',
+        oldValue: before ? `${String(before.asset)}/${String(before.network)}` : null,
+        newValue: `${fixAsset}/${fixNetwork}`,
+        note: `Payment #${fixOpen} repointed to ${fixWallet.label}`,
+      });
+      setFixOpen(null);
+      reloadPay();
+      parentReload();
+    } catch (e: unknown) {
+      setFixErr(e instanceof Error ? e.message : 'Failed to update payment');
+    } finally {
+      setFixSaving(false);
+    }
+  };
+
   if (loading) return <Skeleton className="h-16 w-full" />;
   const payList = rows<Payment>(payments);
 
@@ -162,6 +202,17 @@ function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId:
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setFlagOpen(Number(p.id)); setIssueType(String(p.issue_type || '')); setIssueNotes(String(p.issue_notes || '')); }}>
               <Flag className="h-3 w-3 mr-1" /> Flag Issue
             </Button>
+            {isAdmin && (
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                const a = String(p.asset); const n = String(p.network);
+                setFixAsset(ASSETS.includes(a) ? a : 'USDC');
+                setFixNetwork((NETWORKS[a] || []).includes(n) ? n : (NETWORKS[a]?.[0] || 'ethereum'));
+                setFixErr('');
+                setFixOpen(Number(p.id));
+              }}>
+                <Pencil className="h-3 w-3 mr-1" /> Fix Wallet
+              </Button>
+            )}
           </div>}
         </div>
       ))}
@@ -233,6 +284,47 @@ function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId:
           </div>
         </div>
       )}
+
+      <Dialog open={fixOpen != null} onOpenChange={v => !v && setFixOpen(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Fix Payment Wallet</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              For payments recorded against the wrong asset, network, or wallet — the money actually arrived somewhere else.
+              Amount and verified status stay as they are; the change is audit-logged.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label className="text-xs">Asset</Label>
+                <Select value={fixAsset} onValueChange={v => { setFixAsset(v); setFixNetwork(NETWORKS[v]?.[0] || ''); }}>
+                  <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                  <SelectContent>{ASSETS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div><Label className="text-xs">Network</Label>
+                <Select value={fixNetwork} onValueChange={setFixNetwork}>
+                  <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                  <SelectContent>{(NETWORKS[fixAsset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+            {fixWallet ? (
+              <div className="bg-muted/40 rounded p-2">
+                <Label className="text-xs mb-1 block">Repoints to ({fixWallet.label})</Label>
+                <code className="text-xs break-all">{fixWallet.address}</code>
+              </div>
+            ) : (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                No active {fixAsset} wallet on {NETWORK_LABELS[fixNetwork] || fixNetwork} — add one under Settings → Wallets, or pick another asset.
+              </p>
+            )}
+            {fixErr && <p className="text-xs text-red-600">{fixErr}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFixOpen(null)} disabled={fixSaving}>Cancel</Button>
+            <Button onClick={doFixWallet} disabled={fixSaving || !fixWallet}>{fixSaving ? 'Saving…' : 'Repoint Payment'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!flagOpen} onOpenChange={v => !v && setFlagOpen(null)}>
         <DialogContent className="max-w-sm">
