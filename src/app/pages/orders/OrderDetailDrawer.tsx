@@ -161,7 +161,9 @@ function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId:
         return;
       }
       await writeAudit({
-        orderId, userId: profileId, changeType: 'payment', fieldName: 'payment_wallet',
+        // 'other' — the order_audit_log change_type CHECK has no payment
+        // entry; field_name carries the specifics.
+        orderId, userId: profileId, changeType: 'other', fieldName: 'payment_wallet',
         oldValue: before ? `${String(before.asset)}/${String(before.network)}` : null,
         newValue: `${fixAsset}/${fixNetwork}`,
         note: `Payment #${fixOpen} repointed to ${fixWallet.label}`,
