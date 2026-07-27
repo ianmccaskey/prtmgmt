@@ -23,7 +23,8 @@ import { FileUpload } from '@/components/FileUpload';
 
 type UserProfile = {
   id: number; user_id: number | null; email: string | null; role: string; assigned_warehouse_id: number | null;
-  display_name: string; avatar_file: string | null; commission_rate: string | number | null; created_at: string;
+  display_name: string; avatar_file: string | null; commission_rate: string | number | null;
+  division: string | null; created_at: string;
   assigned_warehouse_name: string | null;
 };
 type Warehouse = { id: number; name: string; is_active: boolean };
@@ -64,6 +65,7 @@ export function ReorderUsersTab() {
   const [uAvatar, setUAvatar] = useState('');
   // Commission rate as a percent string in the form ('10' = 10%).
   const [uRate, setURate] = useState('10');
+  const [uDivision, setUDivision] = useState('us');
 
   const [s3Endpoint, setS3Endpoint] = useState('');
   const [s3Saved, setS3Saved] = useState(false);
@@ -121,7 +123,7 @@ export function ReorderUsersTab() {
   };
 
   const openAdd = () => {
-    setEditUser(null); setUEmail(''); setUDisplayName(''); setURole('sales_rep'); setUWarehouse(''); setUError(''); setUAvatar(''); setURate('10');
+    setEditUser(null); setUEmail(''); setUDisplayName(''); setURole('sales_rep'); setUWarehouse(''); setUError(''); setUAvatar(''); setURate('10'); setUDivision('us');
     setPaCombo(''); setPaAddress(''); setPaLabel('');
     setShowAddUser(true);
   };
@@ -134,6 +136,7 @@ export function ReorderUsersTab() {
     // Stored as a fraction (0.10); shown as a percent. Round to kill float
     // noise like 8.000000000000001.
     setURate(String(Math.round(Number(u.commission_rate ?? 0.10) * 10000) / 100));
+    setUDivision(u.division || 'us');
     // Stale payout-form input must never carry over to another user.
     setPaCombo(''); setPaAddress(''); setPaLabel('');
     setShowAddUser(true);
@@ -161,6 +164,7 @@ export function ReorderUsersTab() {
         role: uRole,
         assigned_warehouse_id: uWarehouse ? Number(uWarehouse) : null,
         commission_rate: (ratePct / 100).toFixed(4),
+        division: uDivision,
       };
       if (editUser) {
         await doUpdateUser({ id: editUser.id, ...payload, avatar_file: uAvatar || null });
@@ -261,7 +265,10 @@ export function ReorderUsersTab() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell><Badge className={`capitalize ${ROLE_COLORS[u.role] || 'bg-gray-100 text-gray-700'}`}>{u.role.replace('_', ' ')}</Badge></TableCell>
+                  <TableCell>
+                    <Badge className={`capitalize ${ROLE_COLORS[u.role] || 'bg-gray-100 text-gray-700'}`}>{u.role.replace('_', ' ')}</Badge>
+                    {u.division === 'china' && <Badge variant="outline" className="ml-1 text-xs px-1 py-0 text-red-700 border-red-300">CN</Badge>}
+                  </TableCell>
                   <TableCell className="text-sm text-gray-600">{u.assigned_warehouse_name || '—'}</TableCell>
                   <TableCell className="text-xs text-gray-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</TableCell>
                   <TableCell>
@@ -310,6 +317,20 @@ export function ReorderUsersTab() {
                 </div>
               </div>
             )}
+            <div>
+              <Label>Division</Label>
+              <Select value={uDivision} onValueChange={setUDivision}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="us">US</SelectItem>
+                  <SelectItem value="china">China</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Orders taken by a China-division rep use China wallets and settle through the separate China
+                settlement — never mixed into US settlements or the US wallet check.
+              </p>
+            </div>
             <div>
               <Label>Commission Rate (%)</Label>
               <Input type="number" min={0} max={100} step={0.5} value={uRate} onChange={e => setURate(e.target.value)} className="w-28" />

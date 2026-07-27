@@ -267,7 +267,6 @@ interface NewOrderFormProps {
 
 export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrderFormProps) {
   const { profileId, displayName, isAdmin } = useAppUser();
-  const [wallets] = useLoadAction(getReceiveWallets, []);
   const [freeReasons] = useLoadAction(getFreeOrderReasons, []);
   const [salesReps] = useLoadAction(listSalesReps, []);
   // In-stock passed-QC batches per product (per warehouse); a line shows
@@ -293,6 +292,11 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [channel, setChannel] = useState('telegram');
   const [salesRepId, setSalesRepId] = useState<string>('');
+  // The selected rep's division decides which wallets can take this
+  // order's payment (China reps' money never lands in US wallets).
+  const orderDivision = rows<{ id: number; division?: string | null }>(salesReps)
+    .find(r => String(r.id) === salesRepId)?.division || 'us';
+  const [wallets] = useLoadAction(getReceiveWallets, [orderDivision], { division: orderDivision });
   const [isFree, setIsFree] = useState(false);
   const [freeReasonId, setFreeReasonId] = useState('');
   const [freeNote, setFreeNote] = useState('');
@@ -625,8 +629,8 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               <Select value={salesRepId} onValueChange={setSalesRepId}>
                 <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
-                  {rows<{ id: number; display_name: string }>(salesReps).map(r => (
-                    <SelectItem key={r.id} value={String(r.id)}>{r.display_name}</SelectItem>
+                  {rows<{ id: number; display_name: string; division?: string | null }>(salesReps).map(r => (
+                    <SelectItem key={r.id} value={String(r.id)}>{r.display_name}{r.division === 'china' ? ' (CN)' : ''}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -879,6 +883,12 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
             </div>
             {addPay && (
               <div className="space-y-3">
+                {orderDivision === 'china' && (
+                  <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
+                    China-division order — payment wallets below are the China division&apos;s. This order settles
+                    through the China settlement, separate from US settlements.
+                  </p>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <div><Label className="text-xs">Asset</Label>
                     <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); }}>

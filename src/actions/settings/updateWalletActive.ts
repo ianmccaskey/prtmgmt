@@ -18,7 +18,7 @@ function updateWalletActive() {
           {{params.is_active}}::boolean = false
           OR NOT EXISTS (
             SELECT 1 FROM receive_wallets o
-            WHERE o.id <> w.id AND o.is_active AND o.asset = w.asset AND o.network = w.network
+            WHERE o.id <> w.id AND o.is_active AND o.asset = w.asset AND o.network = w.network AND o.division = w.division
           )
         )
       RETURNING w.id

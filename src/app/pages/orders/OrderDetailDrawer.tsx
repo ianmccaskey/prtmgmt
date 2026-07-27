@@ -65,7 +65,7 @@ const ISSUE_TYPES = ['lost_in_transit', 'damaged_in_transit', 'returned_to_sende
 // Must match the order_payments.issue_type CHECK constraint.
 const PAYMENT_ISSUE_TYPES = ['underpaid', 'overpaid', 'wrong_asset', 'wrong_network', 'wallet_mismatch', 'unconfirmed_onchain', 'other'];
 
-function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId: number; orderTotal: number; reload: () => void }) {
+function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: { orderId: number; orderTotal: number; division: string; reload: () => void }) {
   const { isLogistics, isWarehouse, isAdmin } = useAppUser();
   const readOnlyRole = isLogistics || isWarehouse;
   const { profileId } = useAppUser();
@@ -97,8 +97,10 @@ function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId:
   const [fixSaving, setFixSaving] = useState(false);
   const [fixErr, setFixErr] = useState('');
 
+  // Wallets are scoped to the order's division (the rep's division): a
+  // China order can only record/repoint payments onto China wallets.
   const walletsNeeded = addOpen || fixOpen != null;
-  const [walletsRaw] = useLoadAction(getReceiveWallets, [walletsNeeded ? 1 : 0], {}, { enabled: walletsNeeded });
+  const [walletsRaw] = useLoadAction(getReceiveWallets, [walletsNeeded ? 1 : 0, division], { division }, { enabled: walletsNeeded });
   const walletList = rows<{ id: number; asset: string; network: string; address: string; label: string }>(walletsRaw);
   const selectedWallet = walletList.find(w => w.asset === payAsset && w.network === payNetwork);
   const fixWallet = walletList.find(w => w.asset === fixAsset && w.network === fixNetwork);
@@ -238,6 +240,11 @@ function PaymentsPanel({ orderId, orderTotal, reload: parentReload }: { orderId:
       {!readOnlyRole && addOpen && (
         <div className="border rounded-md p-3 space-y-3 bg-muted/20">
           <p className="text-sm font-medium">Add Crypto Payment</p>
+          {division === 'china' && (
+            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
+              China-division order — wallets shown are the China division&apos;s; this payment settles through the China settlement.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <div><Label className="text-xs">Asset</Label>
               <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); }}>
@@ -786,7 +793,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                     </TabsContent>
 
                     <TabsContent value="payments" className="pt-3 space-y-3">
-                      <PaymentsPanel orderId={Number(orderId)} orderTotal={Number(order?.total_usd) || 0} reload={reloadAll} />
+                      <PaymentsPanel orderId={Number(orderId)} orderTotal={Number(order?.total_usd) || 0} division={String(order?.sales_rep_division || 'us')} reload={reloadAll} />
                       {!readOnlyRole && <RefundTaskForm orderId={Number(orderId)} onCreated={reloadAll} />}
                     </TabsContent>
 

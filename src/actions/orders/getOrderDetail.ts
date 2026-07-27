@@ -17,6 +17,7 @@ export function getOrderDetail() {
         c.blocked_reason,
         fr.label AS free_order_reason_label,
         rep.display_name AS sales_rep_name,
+        COALESCE(rep.division, 'us') AS sales_rep_division,
         pw.name AS preferred_warehouse_name
       FROM sales_orders so
       JOIN customers c ON c.id = so.customer_id

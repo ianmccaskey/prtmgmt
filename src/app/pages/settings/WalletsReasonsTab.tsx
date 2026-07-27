@@ -26,7 +26,7 @@ import updateFreeOrderReasonActive from '@/actions/settings/updateFreeOrderReaso
 import getAppSetting from '@/actions/settings/getAppSetting';
 import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 
-type Wallet = { id: number; asset: string; network: string; address: string; label: string; is_active: boolean; notes: string; is_used: boolean };
+type Wallet = { id: number; asset: string; network: string; address: string; label: string; is_active: boolean; notes: string; division: string | null; is_used: boolean };
 type FreeReason = { id: number; label: string; description: string; is_active: boolean; is_used: boolean };
 
 const VALID_COMBOS = [
@@ -63,6 +63,7 @@ export function WalletsReasonsTab() {
   const [wAddress, setWAddress] = useState('');
   const [wLabel, setWLabel] = useState('');
   const [wNotes, setWNotes] = useState('');
+  const [wDivision, setWDivision] = useState('us');
   const [wSaving, setWSaving] = useState(false);
   const [wError, setWError] = useState('');
 
@@ -96,30 +97,31 @@ export function WalletsReasonsTab() {
     setToggleError('');
     const res = await doToggleWallet({ id: w.id, is_active: !w.is_active }) as unknown[];
     if (!w.is_active && (!res || res.length === 0)) {
-      setToggleError(`Can't activate ${w.label || `${w.asset}/${w.network}`} — another active ${w.asset}/${w.network} wallet already exists. Deactivate it first.`);
+      setToggleError(`Can't activate ${w.label || `${w.asset}/${w.network}`} — another active ${w.asset}/${w.network} wallet already exists in the ${(w.division || 'us').toUpperCase()} division. Deactivate it first.`);
     }
     reloadWallets();
   };
 
   const openAddWallet = () => {
-    setEditWallet(null); setWCombo(''); setWAddress(''); setWLabel(''); setWNotes(''); setWError('');
+    setEditWallet(null); setWCombo(''); setWAddress(''); setWLabel(''); setWNotes(''); setWDivision('us'); setWError('');
     setShowWalletForm(true);
   };
   const openEditWallet = (w: Wallet) => {
     setEditWallet(w); setWCombo(`${w.asset}/${w.network}`); setWAddress(w.address);
-    setWLabel(w.label || ''); setWNotes(w.notes || ''); setWError('');
+    setWLabel(w.label || ''); setWNotes(w.notes || ''); setWDivision(w.division || 'us'); setWError('');
     setShowWalletForm(true);
   };
 
   const handleSaveWallet = async () => {
     if (!wCombo || !wAddress) { setWError('Asset/network and address are required.'); return; }
     const [asset, network] = wCombo.split('/');
-    const dup = walletList.find(w => w.is_active && w.asset === asset && w.network === network && w.id !== editWallet?.id);
-    if (dup && (editWallet ? editWallet.is_active : true)) { setWError(`An active ${wCombo} wallet already exists.`); return; }
+    const dup = walletList.find(w => w.is_active && w.asset === asset && w.network === network
+      && (w.division || 'us') === wDivision && w.id !== editWallet?.id);
+    if (dup && (editWallet ? editWallet.is_active : true)) { setWError(`An active ${wCombo} wallet already exists in the ${wDivision.toUpperCase()} division.`); return; }
     setWSaving(true); setWError('');
     try {
       if (editWallet) {
-        const res = await doUpdateWallet({ id: editWallet.id, asset, network, address: wAddress, label: wLabel || `${asset} ${network}`, notes: wNotes || null }) as { id: number; locked: boolean }[];
+        const res = await doUpdateWallet({ id: editWallet.id, asset, network, address: wAddress, label: wLabel || `${asset} ${network}`, notes: wNotes || null, division: wDivision }) as { id: number; locked: boolean }[];
         // A payment may have referenced the wallet between opening the
         // dialog and saving — the SQL then keeps asset/network/address.
         // Don't close as if those edits saved.
@@ -130,14 +132,14 @@ export function WalletsReasonsTab() {
           return;
         }
       } else {
-        await doCreateWallet({ asset, network, address: wAddress, label: wLabel || `${asset} ${network}`, notes: wNotes || null });
+        await doCreateWallet({ asset, network, address: wAddress, label: wLabel || `${asset} ${network}`, notes: wNotes || null, division: wDivision });
       }
       setShowWalletForm(false);
       reloadWallets();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to save wallet';
       setWError(msg.includes('receive_wallets_one_active_per_combo')
-        ? `An active ${wCombo} wallet already exists — deactivate it first.`
+        ? `An active ${wCombo} wallet already exists in the ${wDivision.toUpperCase()} division — deactivate it first.`
         : msg);
     } finally { setWSaving(false); }
   };
@@ -248,7 +250,10 @@ export function WalletsReasonsTab() {
             <TableBody>
               {walletList.map(w => (
                 <TableRow key={w.id} className={!w.is_active ? 'opacity-50' : ''}>
-                  <TableCell><Badge className="bg-blue-100 text-blue-800 font-mono">{w.asset}</Badge></TableCell>
+                  <TableCell>
+                    <Badge className="bg-blue-100 text-blue-800 font-mono">{w.asset}</Badge>
+                    {(w.division || 'us') === 'china' && <Badge variant="outline" className="ml-1 text-xs px-1 py-0 text-red-700 border-red-300">CN</Badge>}
+                  </TableCell>
                   <TableCell className="text-sm text-gray-600">{w.network}</TableCell>
                   <TableCell className="font-mono text-xs text-gray-600 max-w-[200px] truncate">{w.address}</TableCell>
                   <TableCell className="text-sm">{w.label}</TableCell>
@@ -357,6 +362,20 @@ export function WalletsReasonsTab() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label>Division</Label>
+              <Select value={wDivision} onValueChange={setWDivision} disabled={!!editWallet?.is_used}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="us">US</SelectItem>
+                  <SelectItem value="china">China</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-400 mt-0.5">
+                China-division wallets receive payments for China reps&apos; orders only — they never appear in the
+                US wallet check or US settlements (and vice versa).
+              </p>
             </div>
             <div><Label>Wallet Address *</Label><Input value={wAddress} onChange={e => setWAddress(e.target.value)} placeholder="0x… or wallet address" disabled={!!editWallet?.is_used} /></div>
             <div><Label>Label</Label><Input value={wLabel} onChange={e => setWLabel(e.target.value)} placeholder="e.g. Main USDC wallet" /></div>

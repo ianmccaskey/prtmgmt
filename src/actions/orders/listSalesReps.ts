@@ -4,7 +4,7 @@ function listSalesReps() {
   return action('listSalesReps', 'SQL', {
     datasourceName: 'Peptide Ops DB',
     query: `
-      SELECT id, display_name
+      SELECT id, display_name, division
       FROM user_profiles
       WHERE role IN ('sales_rep', 'admin')
       ORDER BY display_name ASC
