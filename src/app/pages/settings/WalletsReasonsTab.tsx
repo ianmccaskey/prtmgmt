@@ -125,9 +125,10 @@ export function WalletsReasonsTab() {
         // A payment may have referenced the wallet between opening the
         // dialog and saving — the SQL then keeps asset/network/address.
         // Don't close as if those edits saved.
-        const wantedLockedChange = wAddress !== editWallet.address || asset !== editWallet.asset || network !== editWallet.network;
+        const wantedLockedChange = wAddress !== editWallet.address || asset !== editWallet.asset || network !== editWallet.network
+          || wDivision !== (editWallet.division || 'us');
         if (res?.[0]?.locked && !editWallet.is_used && wantedLockedChange) {
-          setWError('A payment was just recorded against this wallet, so the asset, network, and address are now locked — label and notes were saved, the rest kept their original values.');
+          setWError('A payment was just recorded against this wallet, so the asset, network, address, and division are now locked — label and notes were saved, the rest kept their original values.');
           reloadWallets();
           return;
         }

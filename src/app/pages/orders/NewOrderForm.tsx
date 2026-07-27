@@ -59,7 +59,7 @@ type BatchStock = {
   id: number; product_id: number; batch_number: string;
   manufacture_date: string | null; warehouse_id: number; available: number;
 };
-type Wallet = { id: number; asset: string; network: string; address: string; label: string };
+type Wallet = { id: number; asset: string; network: string; address: string; label: string; division?: string | null };
 type FreeReason = { id: number; label: string };
 
 const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
@@ -426,7 +426,12 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveWh?.id, splitMode, lineWhSig]);
 
-  const selectedWallet = rows<Wallet>(wallets).find(w => w.asset === payAsset && w.network === payNetwork);
+  // Division re-checked against each row: switching rep re-fetches wallets,
+  // and until the fresh list lands the stale rows carry the OLD division —
+  // this guard keeps a US wallet id from ever being submitted on a China
+  // order (and vice versa) in that render window.
+  const selectedWallet = rows<Wallet>(wallets).find(w =>
+    w.asset === payAsset && w.network === payNetwork && (w.division || 'us') === orderDivision);
 
   const copyWallet = () => {
     if (selectedWallet) { navigator.clipboard.writeText(selectedWallet.address); setCopiedWallet(true); setTimeout(() => setCopiedWallet(false), 2000); }
