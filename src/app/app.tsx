@@ -4,7 +4,6 @@ import '@/index.css';
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppUserProvider, RequireRole } from '@/app/AppContext';
-import { ShipmentTrackingSync } from '@/app/ShipmentTrackingSync';
 import { AppLayout } from '@/app/layout/AppLayout';
 import { HomePage } from '@/app/pages/HomePage';
 import { OrdersPage } from '@/app/pages/orders/OrdersPage';
@@ -25,7 +24,6 @@ function App() {
   return (
     <BrowserRouter>
       <AppUserProvider>
-        <ShipmentTrackingSync />
         <AppLayout>
           <Routes>
             <Route path="/" element={<HomePage />} />

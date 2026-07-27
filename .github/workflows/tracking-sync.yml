@@ -1,0 +1,31 @@
+# Shippo tracking sync — polls every in-transit shipment and auto-delivers.
+# Runs server-side because Shippo's /tracks CORS preflight blocks the
+# Authorization header, so the browser can never poll tracking itself.
+#
+# Requires the DATABASE_URL repository secret (Settings → Secrets and
+# variables → Actions): the Neon connection string, same value as .env.local.
+name: tracking-sync
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub may delay scheduled runs by a few minutes.
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: tracking-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Poll Shippo and update shipment tracking
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: bun tools/sync-tracking.ts
