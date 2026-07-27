@@ -19,10 +19,11 @@ function executeSettlementAtomic() {
         SELECT up.id AS rep_id, COALESCE(o.earned, 0) - COALESCE(p.paid, 0) AS owed
         FROM user_profiles up
         LEFT JOIN (
-          SELECT sales_rep_user_profile_id AS rid, ROUND(SUM(total_usd * 0.10), 2) AS earned
-          FROM sales_orders
-          WHERE sales_rep_user_profile_id IS NOT NULL AND status NOT IN ('cancelled', 'quote')
-          GROUP BY sales_rep_user_profile_id
+          SELECT so.sales_rep_user_profile_id AS rid, ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS earned
+          FROM sales_orders so
+          JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
+          WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status NOT IN ('cancelled', 'quote')
+          GROUP BY so.sales_rep_user_profile_id
         ) o ON o.rid = up.id
         LEFT JOIN (
           SELECT sales_rep_user_profile_id AS rid, SUM(amount_usd) AS paid
@@ -51,8 +52,12 @@ function executeSettlementAtomic() {
         SELECT GREATEST(0,
           COALESCE((SELECT SUM(CASE WHEN direction = 'refund' THEN -amount_usd ELSE amount_usd END)
                     FROM order_payments WHERE verification_status = 'verified'), 0)
-          - COALESCE((SELECT ROUND(SUM(total_usd * 0.10), 2) FROM sales_orders
-                      WHERE sales_rep_user_profile_id IS NOT NULL AND status NOT IN ('cancelled', 'quote')), 0)
+          - COALESCE((SELECT SUM(t.earned) FROM (
+                        SELECT ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS earned
+                        FROM sales_orders so
+                        JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
+                        WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status NOT IN ('cancelled', 'quote')
+                        GROUP BY so.sales_rep_user_profile_id) t), 0)
           - COALESCE((SELECT SUM(internal_shipping_cost_usd) FROM shipments_outbound
                       WHERE origin = 'warehouse' AND internal_shipping_cost_usd IS NOT NULL), 0)
           - COALESCE((SELECT SUM(amount_usd) FROM commission_payments WHERE payee_type = 'vendor'), 0)

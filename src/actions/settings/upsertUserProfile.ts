@@ -3,13 +3,15 @@ function upsertUserProfile() {
   return action('upsertUserProfile', 'SQL', {
     datasourceName: 'Peptide Ops DB',
     query: `
-      INSERT INTO user_profiles (user_id, email, display_name, role, assigned_warehouse_id, updated_at)
-      VALUES ({{params.user_id}}, {{params.email}}, {{params.display_name}}, {{params.role}}, {{params.assigned_warehouse_id}}, NOW())
+      INSERT INTO user_profiles (user_id, email, display_name, role, assigned_warehouse_id, commission_rate, updated_at)
+      VALUES ({{params.user_id}}, {{params.email}}, {{params.display_name}}, {{params.role}}, {{params.assigned_warehouse_id}},
+              COALESCE(NULLIF({{params.commission_rate}}, '')::numeric, 0.10), NOW())
       ON CONFLICT (LOWER(email)) WHERE email IS NOT NULL DO UPDATE SET
         user_id = COALESCE(EXCLUDED.user_id, user_profiles.user_id),
         display_name = EXCLUDED.display_name,
         role = EXCLUDED.role,
         assigned_warehouse_id = EXCLUDED.assigned_warehouse_id,
+        commission_rate = EXCLUDED.commission_rate,
         updated_at = NOW()
       RETURNING id
     `,

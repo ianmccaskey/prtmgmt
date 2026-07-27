@@ -6,7 +6,8 @@ function listRepCommissionOrders() {
     query: `
       SELECT
         so.id AS sales_order_id, so.order_number, so.order_date, so.status,
-        so.total_usd, so.total_usd * 0.10 AS commission_usd,
+        so.total_usd, so.total_usd * up.commission_rate AS commission_usd,
+        up.commission_rate,
         up.id AS sales_rep_user_profile_id, up.display_name AS sales_rep_name,
         c.full_name AS customer_name
       FROM sales_orders so

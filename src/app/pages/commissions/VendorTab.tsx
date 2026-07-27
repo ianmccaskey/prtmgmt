@@ -438,7 +438,7 @@ export function VendorTab() {
                 <span className={`tabular-nums ${Number(bal.balance_owed_usd) > 0 ? 'text-green-700' : ''}`}>{money(bal.balance_owed_usd)}</span>
               </div>
               <p className="text-xs text-muted-foreground pt-1">
-                Rep commissions accrue on confirmed+ orders (10%); warehouse earnings accrue per shipped
+                Rep commissions accrue on confirmed+ orders (each rep&apos;s own rate); warehouse earnings accrue per shipped
                 shipment at the rate plan. Both are counted when earned, not when paid out. Lifetime stamped
                 totals live in Settlement History below.
               </p>

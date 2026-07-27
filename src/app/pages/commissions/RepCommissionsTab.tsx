@@ -23,6 +23,7 @@ import { Wallet as WalletIcon } from 'lucide-react';
 type RepBalance = {
   sales_rep_user_profile_id: number; display_name: string;
   commission_earned_usd: number; paid_total_usd: number; balance_owed_usd: number; orders_count: number;
+  commission_rate: string | number | null;
 };
 
 type RepOrder = {
@@ -188,7 +189,7 @@ export function RepCommissionsTab() {
           <CardTitle className="text-base flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-emerald-600" /> Sales Rep Commission Balances
           </CardTitle>
-          <p className="text-xs text-gray-500">10% of order total, excluding cancelled orders</p>
+          <p className="text-xs text-gray-500">Each rep&apos;s commission rate × order total, excluding cancelled orders</p>
         </CardHeader>
         <CardContent>
           <Table>
@@ -209,7 +210,14 @@ export function RepCommissionsTab() {
                   className={selectedRepId === rep.sales_rep_user_profile_id ? 'bg-blue-50/60' : 'cursor-pointer hover:bg-gray-50'}
                   onClick={() => setSelectedRepId(rep.sales_rep_user_profile_id)}
                 >
-                  <TableCell className="font-medium">{rep.display_name}</TableCell>
+                  <TableCell className="font-medium">
+                    {rep.display_name}
+                    {rep.commission_rate != null && (
+                      <span className="text-xs text-muted-foreground ml-1.5">
+                        {Math.round(Number(rep.commission_rate) * 10000) / 100}%
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">{rep.orders_count}</TableCell>
                   <TableCell className="text-right">{money(rep.commission_earned_usd)}</TableCell>
                   <TableCell className="text-right">{money(rep.paid_total_usd)}</TableCell>
@@ -255,7 +263,7 @@ export function RepCommissionsTab() {
                 <TableHead>Customer</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Order Total</TableHead>
-                <TableHead className="text-right">Commission (10%)</TableHead>
+                <TableHead className="text-right">Commission</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

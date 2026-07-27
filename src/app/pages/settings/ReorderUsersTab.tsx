@@ -23,7 +23,7 @@ import { FileUpload } from '@/components/FileUpload';
 
 type UserProfile = {
   id: number; user_id: number | null; email: string | null; role: string; assigned_warehouse_id: number | null;
-  display_name: string; avatar_file: string | null; created_at: string;
+  display_name: string; avatar_file: string | null; commission_rate: string | number | null; created_at: string;
   assigned_warehouse_name: string | null;
 };
 type Warehouse = { id: number; name: string; is_active: boolean };
@@ -62,6 +62,8 @@ export function ReorderUsersTab() {
   const [uSaving, setUSaving] = useState(false);
   const [uError, setUError] = useState('');
   const [uAvatar, setUAvatar] = useState('');
+  // Commission rate as a percent string in the form ('10' = 10%).
+  const [uRate, setURate] = useState('10');
 
   const [s3Endpoint, setS3Endpoint] = useState('');
   const [s3Saved, setS3Saved] = useState(false);
@@ -119,7 +121,7 @@ export function ReorderUsersTab() {
   };
 
   const openAdd = () => {
-    setEditUser(null); setUEmail(''); setUDisplayName(''); setURole('sales_rep'); setUWarehouse(''); setUError(''); setUAvatar('');
+    setEditUser(null); setUEmail(''); setUDisplayName(''); setURole('sales_rep'); setUWarehouse(''); setUError(''); setUAvatar(''); setURate('10');
     setPaCombo(''); setPaAddress(''); setPaLabel('');
     setShowAddUser(true);
   };
@@ -129,6 +131,9 @@ export function ReorderUsersTab() {
     setUEmail(u.email || ''); setUDisplayName(u.display_name); setURole(u.role);
     setUWarehouse(u.assigned_warehouse_id ? String(u.assigned_warehouse_id) : '');
     setUError(''); setUAvatar('');
+    // Stored as a fraction (0.10); shown as a percent. Round to kill float
+    // noise like 8.000000000000001.
+    setURate(String(Math.round(Number(u.commission_rate ?? 0.10) * 10000) / 100));
     // Stale payout-form input must never carry over to another user.
     setPaCombo(''); setPaAddress(''); setPaLabel('');
     setShowAddUser(true);
@@ -146,6 +151,8 @@ export function ReorderUsersTab() {
     // Warehouse role requires an assignment; admins and sales reps may
     // optionally take one (any role can also work a warehouse).
     if (uRole === 'warehouse' && !uWarehouse) { setUError('Warehouse users must be assigned to a warehouse.'); return; }
+    const ratePct = Number(uRate);
+    if (!Number.isFinite(ratePct) || ratePct < 0 || ratePct > 100) { setUError('Commission rate must be between 0 and 100 percent.'); return; }
     setUSaving(true); setUError('');
     try {
       const payload = {
@@ -153,6 +160,7 @@ export function ReorderUsersTab() {
         display_name: uDisplayName.trim(),
         role: uRole,
         assigned_warehouse_id: uWarehouse ? Number(uWarehouse) : null,
+        commission_rate: (ratePct / 100).toFixed(4),
       };
       if (editUser) {
         await doUpdateUser({ id: editUser.id, ...payload, avatar_file: uAvatar || null });
@@ -302,6 +310,14 @@ export function ReorderUsersTab() {
                 </div>
               </div>
             )}
+            <div>
+              <Label>Commission Rate (%)</Label>
+              <Input type="number" min={0} max={100} step={0.5} value={uRate} onChange={e => setURate(e.target.value)} className="w-28" />
+              <p className="text-xs text-gray-400 mt-0.5">
+                Applied when this user is the sales rep on an order. Changing it re-rates the current
+                (unsettled) cycle; already-settled payouts keep their stamped amounts.
+              </p>
+            </div>
             <div>
               <Label>Assigned Warehouse {uRole === 'warehouse' ? '*' : '(optional)'}</Label>
               <Select value={uWarehouse || '_none'} onValueChange={v => setUWarehouse(v === '_none' ? '' : v)}>

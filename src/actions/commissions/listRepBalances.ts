@@ -7,6 +7,7 @@ function listRepBalances() {
       SELECT
         up.id AS sales_rep_user_profile_id,
         up.display_name,
+        up.commission_rate,
         COALESCE(orders.commission_earned, 0) AS commission_earned_usd,
         COALESCE(payments.paid_total, 0) AS paid_total_usd,
         COALESCE(orders.commission_earned, 0) - COALESCE(payments.paid_total, 0) AS balance_owed_usd,
@@ -15,9 +16,10 @@ function listRepBalances() {
       LEFT JOIN (
         SELECT
           so.sales_rep_user_profile_id,
-          ROUND(SUM(so.total_usd * 0.10), 2) AS commission_earned,
+          ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS commission_earned,
           COUNT(*) AS orders_count
         FROM sales_orders so
+        JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
         WHERE so.sales_rep_user_profile_id IS NOT NULL
           AND so.status NOT IN ('cancelled','quote')
         GROUP BY so.sales_rep_user_profile_id
