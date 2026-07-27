@@ -27,9 +27,9 @@ interface Props { range: DateRange; division?: string }
 export function MarginPaymentSection({ range, division = '' }: Props) {
   const params = { date_from: range.from || null, date_to: range.to || null, division: division || null };
 
-  const [cogs] = useLoadAction(getCOGSMargin, [], params);
-  const [marginTrend] = useLoadAction(getMarginTrend, [], params);
-  const [payments] = useLoadAction(getPaymentMethodBreakdown, [], params);
+  const [cogs] = useLoadAction(getCOGSMargin, [range.from, range.to, division], params);
+  const [marginTrend] = useLoadAction(getMarginTrend, [range.from, range.to, division], params);
+  const [payments] = useLoadAction(getPaymentMethodBreakdown, [range.from, range.to, division], params);
 
   const cogsList = asRows<COGSRow>(cogs);
   const trendList = asRows<MarginTrendRow>(marginTrend);

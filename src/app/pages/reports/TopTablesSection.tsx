@@ -28,8 +28,8 @@ export function TopTablesSection({ range, division = '' }: Props) {
 
   const params = { date_from: range.from || null, date_to: range.to || null, top_n: topN, division: division || null };
 
-  const [customers] = useLoadAction(getTopCustomers, [], params);
-  const [products] = useLoadAction(getTopProducts, [], { ...params, sort_by: productSort });
+  const [customers] = useLoadAction(getTopCustomers, [range.from, range.to, division, topN], params);
+  const [products] = useLoadAction(getTopProducts, [range.from, range.to, division, topN, productSort], { ...params, sort_by: productSort });
 
   const customerList = asRows<Customer>(customers);
   const productList = asRows<Product>(products);

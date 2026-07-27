@@ -32,9 +32,9 @@ export function RevenueTrendsSection({ range, division = '' }: Props) {
     return d.toISOString().split('T')[0];
   })();
 
-  const [monthly] = useLoadAction(getRevenueByMonth, [], params);
-  const [quarterly] = useLoadAction(getRevenueByQuarter, [], params);
-  const [kpis] = useLoadAction(getRevenueKPIs, [], { ...params, prior_from: priorFrom, prior_to: priorTo });
+  const [monthly] = useLoadAction(getRevenueByMonth, [range.from, range.to, division], params);
+  const [quarterly] = useLoadAction(getRevenueByQuarter, [range.from, range.to, division], params);
+  const [kpis] = useLoadAction(getRevenueKPIs, [range.from, range.to, division], { ...params, prior_from: priorFrom, prior_to: priorTo });
 
   const monthRows = asRows<MonthRow>(monthly);
   const quarterRows = asRows<MonthRow>(quarterly);
