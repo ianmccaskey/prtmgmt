@@ -187,6 +187,24 @@ export async function getShippoTracking(
   };
 }
 
+/**
+ * Public carrier tracking page for a shipment — lets the UI render tracking
+ * numbers as click-to-track links. null when the carrier has no page we
+ * know ('other') or there's no number.
+ */
+export function carrierTrackingUrl(carrier: string | null | undefined, trackingNumber: string | null | undefined): string | null {
+  const num = (trackingNumber || '').trim();
+  if (!num) return null;
+  const n = encodeURIComponent(num);
+  switch (carrier) {
+    case 'USPS': return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${n}`;
+    case 'UPS': return `https://www.ups.com/track?tracknum=${n}`;
+    case 'FedEx': return `https://www.fedex.com/fedextrack/?trknbr=${n}`;
+    case 'DHL': return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${n}`;
+    default: return null;
+  }
+}
+
 /** Map a Shippo provider name onto the shipments_outbound.carrier CHECK values. */
 export function providerToCarrier(provider: string): 'USPS' | 'UPS' | 'FedEx' | 'DHL' | 'other' {
   const p = provider.toLowerCase();

@@ -19,6 +19,7 @@ import { StatusBadge, PaymentBadge, SourceBadges, ChannelBadge } from './OrderBa
 import { AlertTriangle, Check, Copy, Crown, Flag, Pencil, Plus, RefreshCw, Package, Truck } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
+import { carrierTrackingUrl } from '@/lib/shippo';
 import getReceiveWallets from '@/actions/orders/getReceiveWallets';
 import createOrderPayment from '@/actions/orders/createOrderPayment';
 import listUserProfiles from '@/actions/settings/listUserProfiles';
@@ -424,7 +425,17 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
         <Badge variant="outline" className="text-xs px-1 py-0">{String(shipment.status)}</Badge>
         {shipment.issue_flag && <Badge variant="outline" className="text-xs px-1 py-0 bg-red-50 text-red-600 border-red-200">{String(shipment.issue_flag)}</Badge>}
       </div>
-      {shipment.carrier && <p className="text-muted-foreground">{String(shipment.carrier)} · {dbText(shipment.tracking_number) || String( '—')}</p>}
+      {shipment.carrier && <p className="text-muted-foreground">
+        {String(shipment.carrier)} ·{' '}
+        {(() => {
+          const num = dbText(shipment.tracking_number);
+          const url = carrierTrackingUrl(String(shipment.carrier), num);
+          if (!num) return '—';
+          return url
+            ? <a href={url} target="_blank" rel="noreferrer" className="underline hover:text-foreground" title="Track on carrier site">{num}</a>
+            : num;
+        })()}
+      </p>}
       {shipment.shipped_date && <p className="text-xs text-muted-foreground">Shipped: {String(shipment.shipped_date)}</p>}
       {shipment.issue_notes && <p className="text-xs text-red-600">{String(shipment.issue_notes)}</p>}
       {!isLogistics && (
@@ -695,7 +706,15 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       {shipmentList.map(s => (
                         <div key={String(s.id)} className="flex items-center justify-between gap-2 flex-wrap text-sm">
                           <span className="text-blue-900 min-w-0">
-                            {String(s.carrier || '—')} · <span className="font-mono font-medium break-all">{dbText(s.tracking_number) || 'no tracking'}</span>
+                            {String(s.carrier || '—')} ·{' '}
+                            {(() => {
+                              const num = dbText(s.tracking_number);
+                              const url = carrierTrackingUrl(String(s.carrier || ''), num);
+                              if (!num) return <span className="font-mono font-medium">no tracking</span>;
+                              return url
+                                ? <a href={url} target="_blank" rel="noreferrer" className="font-mono font-medium break-all underline hover:text-blue-700" title="Track on carrier site">{num}</a>
+                                : <span className="font-mono font-medium break-all">{num}</span>;
+                            })()}
                             <span className="text-xs text-blue-600 ml-1.5">({String(s.origin) === 'china' ? 'China' : String(s.warehouse_name || 'Warehouse')})</span>
                             {s.tracking_status != null && String(s.status) !== 'delivered' && (
                               <span className="text-xs text-blue-500/80 ml-1.5 lowercase">{String(s.tracking_status).replace(/_/g, ' ')}</span>
