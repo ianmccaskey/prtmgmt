@@ -11,7 +11,7 @@ function upsertUserProfile() {
         display_name = EXCLUDED.display_name,
         role = EXCLUDED.role,
         assigned_warehouse_id = EXCLUDED.assigned_warehouse_id,
-        commission_rate = EXCLUDED.commission_rate,
+        commission_rate = COALESCE(NULLIF({{params.commission_rate}}, '')::numeric, user_profiles.commission_rate),
         updated_at = NOW()
       RETURNING id
     `,

@@ -49,17 +49,36 @@ function executeSettlementAtomic() {
         WHERE COALESCE(e.earned, 0) - COALESCE(p.paid, 0) > 0
       ),
       vendor_bal AS (
+        -- Vendor gets the CASH remaining: collected minus what each payee
+        -- consumed — GREATEST(earned, paid) per payee, since an overpaid
+        -- payee (e.g. a rep whose rate was lowered after payment) already
+        -- took the cash even though their earned figure shrank.
         SELECT GREATEST(0,
           COALESCE((SELECT SUM(CASE WHEN direction = 'refund' THEN -amount_usd ELSE amount_usd END)
                     FROM order_payments WHERE verification_status = 'verified'), 0)
-          - COALESCE((SELECT SUM(t.earned) FROM (
-                        SELECT ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS earned
+          - COALESCE((SELECT SUM(GREATEST(COALESCE(o.earned, 0), COALESCE(p.paid, 0)))
+                      FROM user_profiles up2
+                      LEFT JOIN (
+                        SELECT so.sales_rep_user_profile_id AS rid, ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS earned
                         FROM sales_orders so
                         JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
-                        WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status NOT IN ('cancelled', 'quote')
-                        GROUP BY so.sales_rep_user_profile_id) t), 0)
-          - COALESCE((SELECT SUM(internal_shipping_cost_usd) FROM shipments_outbound
-                      WHERE origin = 'warehouse' AND internal_shipping_cost_usd IS NOT NULL), 0)
+                        WHERE so.status NOT IN ('cancelled', 'quote')
+                        GROUP BY so.sales_rep_user_profile_id) o ON o.rid = up2.id
+                      LEFT JOIN (
+                        SELECT sales_rep_user_profile_id AS rid, SUM(amount_usd) AS paid
+                        FROM commission_payments WHERE payee_type = 'sales_rep'
+                        GROUP BY sales_rep_user_profile_id) p ON p.rid = up2.id), 0)
+          - COALESCE((SELECT SUM(GREATEST(COALESCE(e.earned, 0), COALESCE(p.paid, 0)))
+                      FROM warehouses w2
+                      LEFT JOIN (
+                        SELECT origin_warehouse_id AS wid, SUM(internal_shipping_cost_usd) AS earned
+                        FROM shipments_outbound
+                        WHERE origin = 'warehouse' AND internal_shipping_cost_usd IS NOT NULL
+                        GROUP BY origin_warehouse_id) e ON e.wid = w2.id
+                      LEFT JOIN (
+                        SELECT warehouse_id AS wid, SUM(amount_usd) AS paid
+                        FROM commission_payments WHERE payee_type = 'warehouse'
+                        GROUP BY warehouse_id) p ON p.wid = w2.id), 0)
           - COALESCE((SELECT SUM(amount_usd) FROM commission_payments WHERE payee_type = 'vendor'), 0)
         ) AS owed
       ),

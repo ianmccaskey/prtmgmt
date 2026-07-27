@@ -5,12 +5,14 @@ function getCommissionSummary() {
     datasourceName: 'Peptide Ops DB',
     query: `
       SELECT
-        (SELECT COALESCE(SUM(so.total_usd * rp.commission_rate), 0)
+        (SELECT COALESCE(SUM(t.earned), 0) FROM (
+           SELECT ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS earned
            FROM sales_orders so
            JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
            WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status NOT IN ('cancelled','quote')
              AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
              AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
+           GROUP BY so.sales_rep_user_profile_id) t
         ) AS rep_commission_earned_usd,
         (SELECT COALESCE(SUM(amount_usd), 0) FROM commission_payments
            WHERE payee_type = 'sales_rep'
