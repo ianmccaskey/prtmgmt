@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DateRangePicker } from './DateRangePicker';
 import { RevenueTrendsSection } from './RevenueTrendsSection';
 import { TopTablesSection } from './TopTablesSection';
@@ -15,6 +16,8 @@ export function ReportsPage() {
   const seesFinancials = isAdmin || isLogistics;
   const [preset, setPreset] = useState('this_year');
   const [range, setRange] = useState<DateRange>(() => getPresetRange('this_year'));
+  // Rep-division segmentation: '' = all divisions combined.
+  const [division, setDivision] = useState('');
 
   const handlePresetChange = (p: string, r: DateRange) => {
     setPreset(p);
@@ -32,12 +35,24 @@ export function ReportsPage() {
           </h1>
           <p className="text-sm text-gray-500 mt-1">Business intelligence across sales, customers, products, and operations</p>
         </div>
-        <DateRangePicker
-          range={range}
-          preset={preset}
-          onPresetChange={handlePresetChange}
-          onRangeChange={r => setRange(r)}
-        />
+        <div className="flex items-center gap-2 flex-wrap">
+          {!isWarehouse && (
+            <Select value={division || '_all'} onValueChange={v => setDivision(v === '_all' ? '' : v)}>
+              <SelectTrigger className="w-[130px]"><SelectValue placeholder="Division" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">All divisions</SelectItem>
+                <SelectItem value="us">US</SelectItem>
+                <SelectItem value="china">China</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          <DateRangePicker
+            range={range}
+            preset={preset}
+            onPresetChange={handlePresetChange}
+            onRangeChange={r => setRange(r)}
+          />
+        </div>
       </div>
 
       {/* Warehouse role only sees throughput (scoped to their warehouse) */}
@@ -51,13 +66,13 @@ export function ReportsPage() {
 
         {!isWarehouse && (
           <TabsContent value="revenue" className="mt-6">
-            <RevenueTrendsSection range={range} />
+            <RevenueTrendsSection range={range} division={division} />
           </TabsContent>
         )}
 
         {!isWarehouse && (
           <TabsContent value="tables" className="mt-6">
-            <TopTablesSection range={range} />
+            <TopTablesSection range={range} division={division} />
           </TabsContent>
         )}
 
@@ -67,7 +82,7 @@ export function ReportsPage() {
 
         {seesFinancials && (
           <TabsContent value="margin" className="mt-6">
-            <MarginPaymentSection range={range} />
+            <MarginPaymentSection range={range} division={division} />
           </TabsContent>
         )}
       </Tabs>

@@ -17,10 +17,10 @@ type KPIRow = { total_revenue: number; order_count: number; avg_monthly_revenue:
 
 const fmt = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Number(n).toFixed(0)}`;
 
-interface Props { range: DateRange }
+interface Props { range: DateRange; division?: string }
 
-export function RevenueTrendsSection({ range }: Props) {
-  const params = { date_from: range.from || null, date_to: range.to || null };
+export function RevenueTrendsSection({ range, division = '' }: Props) {
+  const params = { date_from: range.from || null, date_to: range.to || null, division: division || null };
 
   // Prior period: same length before from
   const priorTo = range.from || null;

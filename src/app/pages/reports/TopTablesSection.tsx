@@ -20,13 +20,13 @@ type Product = {
   product_id: number; sku: string; product_name: string; units_sold: number; revenue: number;
 };
 
-interface Props { range: DateRange }
+interface Props { range: DateRange; division?: string }
 
-export function TopTablesSection({ range }: Props) {
+export function TopTablesSection({ range, division = '' }: Props) {
   const [topN, setTopN] = useState(25);
   const [productSort, setProductSort] = useState('units');
 
-  const params = { date_from: range.from || null, date_to: range.to || null, top_n: topN };
+  const params = { date_from: range.from || null, date_to: range.to || null, top_n: topN, division: division || null };
 
   const [customers] = useLoadAction(getTopCustomers, [], params);
   const [products] = useLoadAction(getTopProducts, [], { ...params, sort_by: productSort });

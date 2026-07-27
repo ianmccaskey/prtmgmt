@@ -22,10 +22,10 @@ type PaymentRow = { asset: string; network: string; asset_network: string; tx_co
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 const fmt = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Number(n).toFixed(0)}`;
 
-interface Props { range: DateRange }
+interface Props { range: DateRange; division?: string }
 
-export function MarginPaymentSection({ range }: Props) {
-  const params = { date_from: range.from || null, date_to: range.to || null };
+export function MarginPaymentSection({ range, division = '' }: Props) {
+  const params = { date_from: range.from || null, date_to: range.to || null, division: division || null };
 
   const [cogs] = useLoadAction(getCOGSMargin, [], params);
   const [marginTrend] = useLoadAction(getMarginTrend, [], params);

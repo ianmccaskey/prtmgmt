@@ -28,7 +28,7 @@ type Order = {
   customer_name: string; customer_email: string; customer_phone: string; customer_handle: string;
   is_vip: boolean; is_blocked: boolean;
   has_warehouse_lines: boolean; has_china_lines: boolean; item_count: string;
-  free_order_reason_label: string;
+  free_order_reason_label: string; sales_rep_division?: string | null;
 };
 
 const STATUS_OPTIONS = ['', 'quote', 'confirmed', 'partially_shipped', 'shipped', 'delivered', 'cancelled'];
@@ -52,6 +52,7 @@ export function AllOrdersTab() {
   const [statusFilter, setStatusFilter] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
   const [channelFilter, setChannelFilter] = useState('');
+  const [divisionFilter, setDivisionFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [newOrderOpen, setNewOrderOpen] = useState(false);
@@ -62,9 +63,10 @@ export function AllOrdersTab() {
     search: search || null, status: statusFilter || null,
     paymentStatus: paymentFilter || null, channel: channelFilter || null,
     isFreeOrder: null, dateFrom: dateFrom || null, dateTo: dateTo || null,
+    division: divisionFilter || null,
   };
 
-  const [orders, loading, , reload] = useLoadAction(listOrders, [search, statusFilter, paymentFilter, channelFilter, dateFrom, dateTo], params);
+  const [orders, loading, , reload] = useLoadAction(listOrders, [search, statusFilter, paymentFilter, channelFilter, divisionFilter, dateFrom, dateTo], params);
 
   const pg = usePagination(asRows<Order>(orders));
   const openDetail = (id: number) => { setSelectedOrderId(id); setDrawerOpen(true); };
@@ -94,6 +96,14 @@ export function AllOrdersTab() {
             <SelectTrigger className="w-full sm:w-[130px]"><SelectValue placeholder="Channel" /></SelectTrigger>
             <SelectContent>
               {CHANNEL_OPTIONS.map(c => <SelectItem key={c} value={c} className="capitalize">{c || 'All channels'}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={divisionFilter || '_all'} onValueChange={v => setDivisionFilter(v === '_all' ? '' : v)}>
+            <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="Division" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All divisions</SelectItem>
+              <SelectItem value="us">US</SelectItem>
+              <SelectItem value="china">China</SelectItem>
             </SelectContent>
           </Select>
           <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full sm:w-[140px]" />
@@ -136,6 +146,7 @@ export function AllOrdersTab() {
                   <tr key={order.id} className="border-b hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => openDetail(order.id)}>
                     <td className="p-3">
                       <span className="font-mono text-xs font-medium">{order.order_number}</span>
+                      {order.sales_rep_division === 'china' && <Badge variant="outline" className="ml-1 text-xs px-1 py-0 text-red-700 border-red-300">CN</Badge>}
                     </td>
                     <td className="p-3">
                       <div className="flex items-center gap-1.5">

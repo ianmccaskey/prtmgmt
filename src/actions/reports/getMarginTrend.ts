@@ -14,7 +14,9 @@ function getMarginTrend() {
       JOIN products p ON p.id = soi.product_id
       LEFT JOIN sales_order_item_allocations soia ON soia.sales_order_item_id = soi.id
       LEFT JOIN product_batches pb ON pb.id = soia.batch_id
+      LEFT JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
       WHERE so.status NOT IN ('cancelled','quote')
+        AND (COALESCE({{params.division}}, '') = '' OR COALESCE(rp.division, 'us') = {{params.division}})
         AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
         AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
       GROUP BY DATE_TRUNC('month', so.order_date)
