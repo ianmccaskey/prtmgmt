@@ -22,7 +22,15 @@ function listSettlementPayments() {
            -- Mid-cycle window within the SAME division: after that
            -- division's previous stamp, up to this one.
            cp.settlement_id IS NULL
-           AND cp.division = (SELECT division FROM settlements WHERE id = {{params.settlement_id}}::bigint)
+           -- Stamped division, OR a rep payment whose rep NOW belongs to
+           -- this division — balance math follows the rep, so a mid-cycle
+           -- payment made before a rep switched divisions still reduced
+           -- what THIS settlement paid and must show in its detail.
+           AND (cp.division = (SELECT division FROM settlements WHERE id = {{params.settlement_id}}::bigint)
+                OR (cp.payee_type = 'sales_rep' AND EXISTS (
+                     SELECT 1 FROM user_profiles pu
+                     WHERE pu.id = cp.sales_rep_user_profile_id
+                       AND pu.division = (SELECT division FROM settlements WHERE id = {{params.settlement_id}}::bigint))))
            AND cp.paid_at <= (SELECT settled_at FROM settlements WHERE id = {{params.settlement_id}}::bigint)
            AND cp.paid_at > COALESCE(
              (SELECT MAX(s2.settled_at) FROM settlements s2

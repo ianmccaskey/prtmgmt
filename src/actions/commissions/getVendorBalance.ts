@@ -5,7 +5,9 @@ import { action } from '@uibakery/data';
  * CYCLE of that division: collections since the division's last
  * settlement, current in-division rep outstanding (warehouses US-only),
  * vendor payments made this cycle, and the true balance owed (lifetime
- * formula — the exact amount a division Settle All would pay).
+ * formula — the amount a division Settle All would pay when positive;
+ * a negative balance is a shortfall that Settle All stamps as 0 and
+ * carries forward).
  * carried_adjustment_usd is any residue from before the last settlement
  * (overpaid payees, negative vendor share) so the on-screen arithmetic
  * always reconciles to the balance. A payment's division is its order's
