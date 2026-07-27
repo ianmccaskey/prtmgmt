@@ -30,8 +30,9 @@ function listRepBalances() {
         WHERE payee_type = 'sales_rep'
         GROUP BY sales_rep_user_profile_id
       ) payments ON payments.sales_rep_user_profile_id = up.id
-      WHERE up.role = 'sales_rep'
-         OR (up.role = 'admin' AND (orders.orders_count IS NOT NULL OR payments.paid_total IS NOT NULL))
+      WHERE up.division = COALESCE(NULLIF({{params.division}}, ''), 'us')
+        AND (up.role = 'sales_rep'
+         OR (up.role = 'admin' AND (orders.orders_count IS NOT NULL OR payments.paid_total IS NOT NULL)))
       ORDER BY balance_owed_usd DESC
     `,
   });

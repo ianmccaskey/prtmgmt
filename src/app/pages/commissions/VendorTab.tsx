@@ -87,10 +87,10 @@ function reconcile(paymentsIn: CyclePayment[], deposits: OnChainDeposit[]) {
  * say each receive wallet should hold. On-demand — checks run only when
  * the button is clicked, keeping Moralis quota usage tiny.
  */
-function OnChainWalletCheck() {
+function OnChainWalletCheck({ division }: { division: string }) {
   const [keyRaw] = useLoadAction(getAppSetting, [], { key: 'moralis_api_key' });
   const moralisKey = String(asRows<{ value: string }>(keyRaw)[0]?.value ?? '');
-  const [inflowsRaw, inflowsLoading] = useLoadAction(getWalletExpectedInflows, [], {});
+  const [inflowsRaw, inflowsLoading] = useLoadAction(getWalletExpectedInflows, [division], { division });
   const allInflows = asRows<WalletInflow>(inflowsRaw);
   const wallets = allInflows.filter(w => w.id != null);
   const unassigned = allInflows.find(w => w.id == null) || null;
@@ -106,7 +106,10 @@ function OnChainWalletCheck() {
   const cyclePayments = asRows<CyclePayment>(cycleRaw);
   // Keyed by wallet id so every expand refetches the cycle start (a
   // settlement while a row sat open would otherwise leave it stale).
-  const [balForCycle] = useLoadAction(getVendorBalance, [openWalletId ?? 0], {}, { enabled: openWalletId != null });
+  const [balForCycle] = useLoadAction(getVendorBalance, [openWalletId ?? 0, division], { division }, { enabled: openWalletId != null });
+  // Wallet ids belong to one division — an expanded row must not survive a
+  // division switch.
+  useEffect(() => { setOpenWalletId(null); }, [division]);
   const cycleStart = asRows<{ last_settled_at: string | null }>(balForCycle)[0]?.last_settled_at ?? null;
   const [deposits, setDeposits] = useState<OnChainDeposit[] | null | 'loading' | 'error'>(null);
 
@@ -308,10 +311,10 @@ function OnChainWalletCheck() {
  * What's owed to the product vendor: everything verified-collected, minus
  * what reps and warehouses earn, minus vendor remittances already recorded.
  */
-export function VendorTab() {
+export function VendorTab({ division }: { division: string }) {
   const { profileId, isAdmin } = useAppUser();
-  const [balRaw, balLoading, , reloadBal] = useLoadAction(getVendorBalance, [], {});
-  const [payRaw, payLoading, , reloadPay] = useLoadAction(listVendorPayments, [], {});
+  const [balRaw, balLoading, , reloadBal] = useLoadAction(getVendorBalance, [division], { division });
+  const [payRaw, payLoading, , reloadPay] = useLoadAction(listVendorPayments, [division], { division });
   const [doPay] = useMutateAction(recordCommissionPayment);
   const bal = asRows<VendorBalance>(balRaw)[0];
   const payments = asRows<VendorPayment>(payRaw);
@@ -328,22 +331,23 @@ export function VendorTab() {
   const [settling, setSettling] = useState(false);
   const [settleErr, setSettleErr] = useState('');
   const [doSettle] = useMutateAction(executeSettlementAtomic);
-  const [settlementsRaw, , , reloadSettlements] = useLoadAction(listSettlements, [], {});
+  const [settlementsRaw, , , reloadSettlements] = useLoadAction(listSettlements, [division], { division });
   const settlements = asRows<Settlement>(settlementsRaw);
   // Drill-down: payouts recorded by the expanded settlement.
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [detailRaw, detailLoading] = useLoadAction(listSettlementPayments, [expandedId], { settlement_id: expandedId ?? 0 }, { enabled: expandedId != null });
   const detailRows = asRows<SettlementPayment>(detailRaw);
   // Preview: what the stamp will contain (same source actions as the tabs).
-  const [repBalRaw] = useLoadAction(listRepBalances, [settleOpen ? 1 : 0], {}, { enabled: settleOpen });
-  const [whBalRaw] = useLoadAction(listWarehouseBalances, [settleOpen ? 1 : 0], { warehouse_id: '' }, { enabled: settleOpen });
+  const [repBalRaw] = useLoadAction(listRepBalances, [settleOpen ? 1 : 0, division], { division }, { enabled: settleOpen });
+  // Warehouses live only in the US pipeline — a China settlement never pays them.
+  const [whBalRaw] = useLoadAction(listWarehouseBalances, [settleOpen ? 1 : 0, division], { warehouse_id: '' }, { enabled: settleOpen && division === 'us' });
   const repOwedTotal = asRows<{ balance_owed_usd: number }>(repBalRaw).reduce((s, r) => s + Math.max(0, Number(r.balance_owed_usd)), 0);
   const whOwedTotal = asRows<{ balance_owed_usd: number }>(whBalRaw).reduce((s, r) => s + Math.max(0, Number(r.balance_owed_usd)), 0);
 
   const handleSettle = async () => {
     setSettling(true); setSettleErr('');
     try {
-      await doSettle({ note: settleNote || null, user_id: profileId });
+      await doSettle({ note: settleNote || null, user_id: profileId, division });
       setSettleOpen(false); setSettleNote('');
       reloadBal(); reloadPay(); reloadSettlements();
     } catch (e: unknown) {
@@ -365,6 +369,7 @@ export function VendorTab() {
         amount_usd: amt,
         paid_by_user_id: profileId,
         note: note || null,
+        division,
       });
       setPayOpen(false); setAmount(''); setNote('');
       reloadBal(); reloadPay();
@@ -447,7 +452,7 @@ export function VendorTab() {
         </CardContent>
       </Card>
 
-      <OnChainWalletCheck />
+      <OnChainWalletCheck division={division} />
 
       <Card>
         <CardHeader><CardTitle className="text-base">Settlement History</CardTitle></CardHeader>

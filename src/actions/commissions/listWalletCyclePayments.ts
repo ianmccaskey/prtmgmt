@@ -17,7 +17,10 @@ function listWalletCyclePayments() {
       JOIN customers c ON c.id = so.customer_id
       WHERE op.receive_wallet_id = {{params.wallet_id}}::bigint
         AND op.verification_status = 'verified'
-        AND COALESCE(op.verified_at, op.quoted_at) > COALESCE((SELECT MAX(settled_at) FROM settlements), '-infinity'::timestamptz)
+        AND COALESCE(op.verified_at, op.quoted_at) > COALESCE(
+          (SELECT MAX(settled_at) FROM settlements
+           WHERE division = (SELECT division FROM receive_wallets WHERE id = {{params.wallet_id}}::bigint)),
+          '-infinity'::timestamptz)
       ORDER BY recorded_at DESC
     `,
   });

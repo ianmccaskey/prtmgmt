@@ -9,6 +9,7 @@ function listVendorPayments() {
       FROM commission_payments cp
       LEFT JOIN user_profiles up ON up.id = cp.paid_by_user_id
       WHERE cp.payee_type = 'vendor'
+        AND cp.division = COALESCE(NULLIF({{params.division}}, ''), 'us')
       ORDER BY cp.paid_at DESC
     `,
   });

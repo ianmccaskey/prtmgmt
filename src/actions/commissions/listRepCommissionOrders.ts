@@ -13,7 +13,8 @@ function listRepCommissionOrders() {
       FROM sales_orders so
       JOIN user_profiles up ON up.id = so.sales_rep_user_profile_id
       JOIN customers c ON c.id = so.customer_id
-      WHERE ({{params.sales_rep_user_profile_id}} IS NULL OR up.id = {{params.sales_rep_user_profile_id}}::bigint)
+      WHERE up.division = COALESCE(NULLIF({{params.division}}, ''), 'us')
+        AND ({{params.sales_rep_user_profile_id}} IS NULL OR up.id = {{params.sales_rep_user_profile_id}}::bigint)
         AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
         AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
         AND so.status NOT IN ('cancelled','quote')

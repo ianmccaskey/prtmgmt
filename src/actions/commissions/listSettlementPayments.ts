@@ -19,11 +19,15 @@ function listSettlementPayments() {
       LEFT JOIN warehouses w ON w.id = cp.warehouse_id
       WHERE cp.settlement_id = {{params.settlement_id}}::bigint
          OR (
+           -- Mid-cycle window within the SAME division: after that
+           -- division's previous stamp, up to this one.
            cp.settlement_id IS NULL
+           AND cp.division = (SELECT division FROM settlements WHERE id = {{params.settlement_id}}::bigint)
            AND cp.paid_at <= (SELECT settled_at FROM settlements WHERE id = {{params.settlement_id}}::bigint)
            AND cp.paid_at > COALESCE(
              (SELECT MAX(s2.settled_at) FROM settlements s2
-              WHERE s2.settled_at < (SELECT settled_at FROM settlements WHERE id = {{params.settlement_id}}::bigint)),
+              WHERE s2.division = (SELECT division FROM settlements WHERE id = {{params.settlement_id}}::bigint)
+                AND s2.settled_at < (SELECT settled_at FROM settlements WHERE id = {{params.settlement_id}}::bigint)),
              '-infinity'::timestamptz
            )
          )

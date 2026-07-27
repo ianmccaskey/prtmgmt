@@ -24,7 +24,7 @@ type Payment = {
 
 const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
 
-export function CommissionReportsTab() {
+export function CommissionReportsTab({ division }: { division: string }) {
   const [preset, setPreset] = useState('this_year');
   const [range, setRange] = useState<DateRange>(() => getPresetRange('this_year'));
   const [payeeFilter, setPayeeFilter] = useState<string>('all');
@@ -34,12 +34,12 @@ export function CommissionReportsTab() {
     setRange(r);
   };
 
-  const [summaryRaw] = useLoadAction(getCommissionSummary, [range.from, range.to], {
-    date_from: range.from || null, date_to: range.to || null,
+  const [summaryRaw] = useLoadAction(getCommissionSummary, [range.from, range.to, division], {
+    date_from: range.from || null, date_to: range.to || null, division,
   });
-  const [paymentsRaw] = useLoadAction(listCommissionPayments, [range.from, range.to, payeeFilter], {
+  const [paymentsRaw] = useLoadAction(listCommissionPayments, [range.from, range.to, payeeFilter, division], {
     payee_type: payeeFilter === 'all' ? null : payeeFilter,
-    date_from: range.from || null, date_to: range.to || null,
+    date_from: range.from || null, date_to: range.to || null, division,
   });
 
   const summary = (Array.isArray(summaryRaw) ? summaryRaw[0] : summaryRaw) as Summary | undefined;
