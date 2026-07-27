@@ -37,18 +37,21 @@ type TrackRow = {
   tracking_number: string; tracking_status: string | null;
 };
 
+async function main() {
 const keyRows = await sql`
   SELECT w.shippo_api_key
   FROM warehouses w
   JOIN app_settings s ON s.key = 'shippo_tracking_warehouse_id' AND s.value = w.id::text
-  WHERE COALESCE(w.shippo_api_key, '') <> ''` as { shippo_api_key: string }[];
+  WHERE w.is_active = true AND COALESCE(w.shippo_api_key, '') <> ''` as { shippo_api_key: string }[];
 const apiKey = keyRows[0]?.shippo_api_key;
 if (!apiKey) {
   console.log('No tracking Shippo key configured (Settings → Warehouses) — nothing to do.');
-  process.exit(0);
+  return;
 }
 
 // Same population and throttle as the old in-app listTrackableShipments.
+// Least-recently-polled first so a backlog beyond LIMIT can't starve the
+// tail (ORDER BY id would re-poll the same lowest ids every run).
 const ships = await sql`
   SELECT so2.id, so2.sales_order_id, so2.carrier, so2.tracking_number, so2.tracking_status
   FROM shipments_outbound so2
@@ -57,7 +60,7 @@ const ships = await sql`
     AND so2.carrier IN ('USPS', 'UPS', 'FedEx', 'DHL')
     AND (so2.tracking_checked_at IS NULL OR so2.tracking_checked_at < NOW() - INTERVAL '25 minutes')
     AND (so2.tracking_status IS NULL OR so2.tracking_status NOT IN ('RETURNED', 'FAILURE'))
-  ORDER BY so2.id
+  ORDER BY so2.tracking_checked_at ASC NULLS FIRST, so2.id
   LIMIT 100` as TrackRow[];
 
 console.log(`${ships.length} shipment(s) due for a tracking poll.`);
@@ -115,10 +118,23 @@ for (const s of ships) {
       console.log(`  shipment ${s.id} (${s.carrier} ${num}): DELIVERED`);
     } else {
       // Stamp the poll time even when Shippo had nothing usable, so the
-      // row isn't permanently due.
+      // row isn't permanently due. Mirrors the old updateShipmentTracking:
+      // RETURNED auto-raises the returned_to_sender issue flag so the
+      // shipment surfaces on the dashboard instead of silently dropping
+      // out of the poll population.
+      const st = status ?? s.tracking_status ?? null;
       await sql`
-        UPDATE shipments_outbound
-        SET tracking_status = ${status ?? s.tracking_status ?? null}, tracking_checked_at = NOW()
+        UPDATE shipments_outbound SET
+          tracking_status = ${st},
+          tracking_checked_at = NOW(),
+          issue_flag = CASE
+            WHEN ${st} = 'RETURNED' AND issue_flag IS NULL THEN 'returned_to_sender'
+            ELSE issue_flag
+          END,
+          issue_flagged_at = CASE
+            WHEN ${st} = 'RETURNED' AND issue_flag IS NULL THEN NOW()
+            ELSE issue_flagged_at
+          END
         WHERE id = ${s.id}`;
       updated++;
       if (status) console.log(`  shipment ${s.id} (${s.carrier} ${num}): ${status}`);
@@ -144,4 +160,10 @@ const promoted = await sql`
   RETURNING sales_order_id` as { sales_order_id: number }[];
 
 console.log(`Done: ${delivered} delivered, ${updated} status-stamped, ${failed} failed, ${promoted.length} order(s) promoted by sweep.`);
-await sql.end();
+}
+
+try {
+  await main();
+} finally {
+  await sql.end();
+}
