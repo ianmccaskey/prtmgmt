@@ -393,6 +393,25 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     }
     upLine(l.key, patch);
   };
+  // Tier data can arrive AFTER lines were added (fast user, slow load) —
+  // reprice automatic lines when it lands so a min-quantity-1 tier isn't
+  // silently skipped. Manual/free lines stay untouched; the no-op guard
+  // keeps this from looping.
+  useEffect(() => {
+    if (isFree) return;
+    setLines(prev => {
+      let changed = false;
+      const next = prev.map(l => {
+        if (!l.product || (l.price_mode !== 'list' && l.price_mode !== 'tier')) return l;
+        const priced = autoPriced(l.product, l.quantity);
+        if (priced.unit_price === l.unit_price && priced.price_mode === l.price_mode) return l;
+        changed = true;
+        return { ...l, ...priced };
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tiersRaw, isFree]);
   const rmLine = (key: string) => setLines(prev => prev.filter(l => l.key !== key));
 
   const subtotal = lines.reduce((s, l) => s + (l.product ? l.quantity * l.unit_price : 0), 0);
