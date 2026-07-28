@@ -23,6 +23,7 @@ import getReceiveWallets from '@/actions/orders/getReceiveWallets';
 import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
 import getFreeOrderReasons from '@/actions/orders/getFreeOrderReasons';
 import listSalesReps from '@/actions/orders/listSalesReps';
+import listAllPriceTiers from '@/actions/orders/listAllPriceTiers';
 import createOrder from '@/actions/orders/createOrder';
 import createOrderItem from '@/actions/orders/createOrderItem';
 import createOrderPayment from '@/actions/orders/createOrderPayment';
@@ -364,9 +365,34 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const addLine = (p: Product) => {
     const stock = Number(p.available_stock);
     const src: LineItem['fulfillment_source'] = p.available_warehouse && stock >= 1 ? 'warehouse' : 'china_direct';
-    setLines(prev => [...prev.filter(l => l.product !== null), { key: Math.random().toString(36).slice(2), product: p, quantity: 1, unit_price: isFree ? 0 : Number(p.list_price), fulfillment_source: src, price_mode: isFree ? 'free' : 'list', preferred_batch_id: null, preferred_warehouse_id: null }]);
+    const priced = isFree ? { unit_price: 0, price_mode: 'free' as const } : autoPriced(p, 1);
+    setLines(prev => [...prev.filter(l => l.product !== null), { key: Math.random().toString(36).slice(2), product: p, quantity: 1, ...priced, fulfillment_source: src, preferred_batch_id: null, preferred_warehouse_id: null }]);
   };
   const upLine = (key: string, patch: Partial<LineItem>) => setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l));
+
+  // Quantity price tiers, applied automatically while the line is on
+  // list/tier pricing. A manual price edit (price_mode 'manual') or a free
+  // order always wins — tiers never overwrite an explicit override.
+  const [tiersRaw] = useLoadAction(listAllPriceTiers, [open ? 1 : 0], {}, { enabled: open });
+  const tierPriceFor = (productId: number, qty: number): number | null => {
+    const best = rows<{ product_id: number; min_quantity: number; unit_price: number }>(tiersRaw)
+      .filter(t => Number(t.product_id) === productId && Number(t.min_quantity) <= qty)
+      .sort((a, b) => Number(b.min_quantity) - Number(a.min_quantity))[0];
+    return best ? Number(best.unit_price) : null;
+  };
+  const autoPriced = (product: Product, qty: number): { unit_price: number; price_mode: 'list' | 'tier' } => {
+    const tp = tierPriceFor(product.id, qty);
+    return tp != null
+      ? { unit_price: tp, price_mode: 'tier' }
+      : { unit_price: Number(product.list_price), price_mode: 'list' };
+  };
+  const changeQty = (l: LineItem, qty: number) => {
+    const patch: Partial<LineItem> = { quantity: qty };
+    if (l.product && !isFree && (l.price_mode === 'list' || l.price_mode === 'tier')) {
+      Object.assign(patch, autoPriced(l.product, qty));
+    }
+    upLine(l.key, patch);
+  };
   const rmLine = (key: string) => setLines(prev => prev.filter(l => l.key !== key));
 
   const subtotal = lines.reduce((s, l) => s + (l.product ? l.quantity * l.unit_price : 0), 0);
@@ -689,7 +715,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     <div><Label className="text-xs">Qty (kits)</Label>
-                      <Input type="number" min={1} value={line.quantity} onChange={e => upLine(line.key, { quantity: Number(e.target.value) })} className="h-8" /></div>
+                      <Input type="number" min={1} value={line.quantity} onChange={e => changeQty(line, Number(e.target.value))} className="h-8" /></div>
                     <div><Label className="text-xs">Unit Price</Label>
                       <Input type="number" min={0} step={0.01} value={line.unit_price} onChange={e => upLine(line.key, { unit_price: Number(e.target.value), price_mode: 'manual' })} className="h-8" /></div>
                     <div><Label className="text-xs">Source</Label>
