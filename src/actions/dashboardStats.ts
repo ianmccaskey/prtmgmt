@@ -23,10 +23,11 @@ export function getDashboardStats() {
             WHERE verification_status = 'verified' AND direction = 'incoming'
             GROUP BY sales_order_id
           ) paid ON paid.sales_order_id = so.id
-          -- Cancelled orders are dead deals, not receivables — their unpaid
-          -- remainder must not read as balance owed.
+          -- Cancelled orders are dead deals and quotes are pipeline (they
+          -- confirm only after payment) — neither is a receivable, so
+          -- neither may read as balance owed.
           WHERE so.payment_status IN ('unpaid','partial_paid')
-            AND so.status <> 'cancelled'
+            AND so.status NOT IN ('quote', 'cancelled')
         ) AS unpaid_balance_usd,
         (SELECT COUNT(*) FROM order_payments WHERE verification_status = 'pending' AND direction = 'incoming') AS unverified_payments,
         (SELECT COUNT(*) FROM order_payments WHERE issue_type IS NOT NULL) AS payments_with_issues,
