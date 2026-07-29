@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import createCustomer from '@/actions/orders/createCustomer';
 import checkDuplicateCustomer from '@/actions/orders/checkDuplicateCustomer';
+import { parseCustomerPaste } from '@/lib/parseCustomerPaste';
+import { ClipboardPaste } from 'lucide-react';
 
 type CreatedCustomer = { id: number; full_name: string; [key: string]: unknown };
 
@@ -36,7 +38,24 @@ export function NewCustomerDialog({ open, onClose, onCreated }: NewCustomerDialo
   const sf = (k: keyof typeof initForm) => (v: string | boolean) =>
     setForm(prev => ({ ...prev, [k]: v }));
 
-  const reset = () => { setForm(initForm); setError(''); };
+  // Paste-to-fill: customers usually send their whole shipping block in one
+  // message. Parse it and fill only the fields we confidently recognize —
+  // anything already typed in an unrecognized field stays put.
+  const [pasteText, setPasteText] = useState('');
+  const [pasteResult, setPasteResult] = useState('');
+  const applyPaste = (text: string) => {
+    const parsed = parseCustomerPaste(text);
+    const found = Object.keys(parsed) as (keyof typeof parsed)[];
+    if (found.length === 0) { setPasteResult('Nothing recognized — fill the fields manually.'); return; }
+    setForm(prev => ({ ...prev, ...parsed }));
+    const nice: Record<string, string> = {
+      full_name: 'name', email: 'email', phone: 'phone', ship_address_line1: 'address',
+      ship_address_line2: 'address 2', ship_city: 'city', ship_state: 'state', ship_postal_code: 'ZIP',
+    };
+    setPasteResult(`Filled: ${found.map(k => nice[k] || k).join(', ')} — check the fields below.`);
+  };
+
+  const reset = () => { setForm(initForm); setError(''); setPasteText(''); setPasteResult(''); };
 
   const submit = async (force = false) => {
     if (!form.full_name.trim()) { setError('Name is required'); return; }
@@ -64,6 +83,32 @@ export function NewCustomerDialog({ open, onClose, onCreated }: NewCustomerDialo
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>New Customer</DialogTitle></DialogHeader>
           {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="border rounded-md p-3 bg-muted/20 space-y-2">
+            <Label className="flex items-center gap-1.5 text-sm"><ClipboardPaste className="h-3.5 w-3.5" /> Quick Fill — paste the customer&apos;s message</Label>
+            <Textarea
+              rows={3}
+              placeholder={'Mike Benavidez\n4212 Jamie Trl\nAmarillo, TX 79110'}
+              value={pasteText}
+              onChange={e => setPasteText(e.target.value)}
+              onPaste={e => {
+                const text = e.clipboardData.getData('text');
+                if (text.trim()) {
+                  // Parse straight off the paste event — no second click needed.
+                  setPasteText(text);
+                  applyPaste(text);
+                  e.preventDefault();
+                }
+              }}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground flex-1">{pasteResult || 'Name, address, city/state, ZIP, email, and phone are detected automatically on paste.'}</p>
+              {pasteText.trim() && (
+                <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={() => applyPaste(pasteText)}>
+                  Fill Fields
+                </Button>
+              )}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3 py-2">
             <div className="col-span-2">
               <Label>Full Name *</Label>
