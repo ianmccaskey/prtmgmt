@@ -42,9 +42,10 @@ const STATE_NAMES: Record<string, string> = {
 };
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
-// 10-digit US phone (optionally +1), separators optional — anchored so a
-// ZIP+4 or a house number never half-matches.
-const PHONE_RE = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?!\d)/;
+// 10-digit US phone (optionally +1), separators optional — anchored on
+// BOTH sides so a ZIP+4, house number, or the tail of a longer digit run
+// (tracking number) never half-matches.
+const PHONE_RE = /(?<!\d)(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?!\d)/;
 const ZIP_RE = /\b(\d{5})(?:-\d{4})?\b/;
 const STREET_RE = /^\d+\s+\S|^p\.?\s?o\.?\s*box/i;
 const UNIT_RE = /^(apt|apartment|unit|suite|ste|bldg|building|lot|trlr|trailer|fl|floor|rm|room|#)\b/i;
