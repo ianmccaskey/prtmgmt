@@ -12,7 +12,8 @@ function getMyLabelReturnAddress() {
         label_return_city, label_return_state,
         '#' || label_return_postal AS label_return_postal,
         label_return_country,
-        '#' || label_return_phone AS label_return_phone
+        '#' || label_return_phone AS label_return_phone,
+        label_return_email
       FROM user_profiles
       WHERE id = {{params.user_id}}::bigint
     `,

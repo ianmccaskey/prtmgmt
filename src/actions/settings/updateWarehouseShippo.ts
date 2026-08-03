@@ -13,7 +13,8 @@ function updateWarehouseShippo() {
           WHEN {{params.api_key}}::text IS NULL THEN shippo_api_key
           ELSE NULLIF({{params.api_key}}::text, '')
         END,
-        ship_from_phone = NULLIF({{params.ship_from_phone}}::text, '')
+        ship_from_phone = NULLIF({{params.ship_from_phone}}::text, ''),
+        ship_from_email = NULLIF({{params.ship_from_email}}::text, '')
       WHERE id = {{params.id}}::bigint
       RETURNING id
     `,

@@ -13,7 +13,7 @@ function listWarehouseShipFrom() {
     query: `
       SELECT id, name, ship_from_name, address_line1, address_line2,
         city, state, '#' || postal_code AS postal_code, country,
-        '#' || ship_from_phone AS ship_from_phone, shippo_api_key
+        '#' || ship_from_phone AS ship_from_phone, ship_from_email, shippo_api_key
       FROM warehouses
       WHERE is_active = true
         AND (COALESCE({{params.warehouse_id}}, '') = '' OR id::text = {{params.warehouse_id}})

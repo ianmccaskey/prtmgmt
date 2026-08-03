@@ -29,10 +29,10 @@ type PayoutAddress = { id: number; asset: string; network: string; address: stri
 type ReturnAddrRow = {
   label_return_name: string | null; label_return_line1: string | null; label_return_line2: string | null;
   label_return_city: string | null; label_return_state: string | null; label_return_postal: string | null;
-  label_return_country: string | null; label_return_phone: string | null;
+  label_return_country: string | null; label_return_phone: string | null; label_return_email: string | null;
 };
 
-const EMPTY = { name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US', phone: '' };
+const EMPTY = { name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US', phone: '', email: '' };
 
 /**
  * Self-service per-user settings (opened from the header user chip).
@@ -60,6 +60,7 @@ export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: ()
       postal: dbText(r.label_return_postal),
       country: r.label_return_country || 'US',
       phone: dbText(r.label_return_phone),
+      email: r.label_return_email || '',
     });
   }, [raw, open]);
 
@@ -109,7 +110,7 @@ export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: ()
         city: form.city.trim(), state: form.state.trim(),
         // dbText: never persist a leading '#' (it's the read-side numeric guard)
         postal: dbText(form.postal.trim()),
-        country: form.country.trim(), phone: dbText(form.phone.trim()),
+        country: form.country.trim(), phone: dbText(form.phone.trim()), email: form.email.trim(),
       });
       reload();
       onClose();
@@ -143,6 +144,11 @@ export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: ()
               <div><Label className="text-xs">Postal Code</Label><Input value={form.postal} onChange={set('postal')} /></div>
               <div><Label className="text-xs">Country</Label><Input value={form.country} onChange={set('country')} placeholder="US" /></div>
               <div className="col-span-2"><Label className="text-xs">Phone</Label><Input value={form.phone} onChange={set('phone')} placeholder="+1 555 000 0000" /></div>
+              <div className="col-span-2">
+                <Label className="text-xs">Shipping Email</Label>
+                <Input type="email" value={form.email} onChange={set('email')} placeholder="shipping@example.com" />
+                <p className="text-xs text-muted-foreground mt-0.5">Sent to Shippo as the sender contact — USPS Ground Advantage refuses labels without one. Not your login email.</p>
+              </div>
             </div>
           )}
           {partial && (

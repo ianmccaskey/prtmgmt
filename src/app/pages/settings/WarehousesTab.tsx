@@ -26,7 +26,7 @@ import createParcelTemplate from '@/actions/warehouse/createParcelTemplate';
 import deleteParcelTemplate from '@/actions/warehouse/deleteParcelTemplate';
 
 type Warehouse = {
-  id: number; name: string; ship_from_name: string | null; city: string; state: string; country: string;
+  id: number; name: string; ship_from_name: string | null; ship_from_email: string | null; city: string; state: string; country: string;
   address_line1: string; address_line2: string; postal_code: string;
   notes: string; is_active: boolean;
   ship_from_phone: string | null; has_shippo_key: boolean;
@@ -67,6 +67,7 @@ export function WarehousesTab() {
   const [shippoFor, setShippoFor] = useState<Warehouse | null>(null);
   const [shippoKey, setShippoKey] = useState('');
   const [shippoPhone, setShippoPhone] = useState('');
+  const [shippoEmail, setShippoEmail] = useState('');
   const [shippoSaving, setShippoSaving] = useState(false);
   const [shippoError, setShippoError] = useState('');
   const [shippoTracking, setShippoTracking] = useState(false);
@@ -195,6 +196,7 @@ export function WarehousesTab() {
     setShippoFor(w);
     setShippoKey('');
     setShippoPhone(dbText(w.ship_from_phone));
+    setShippoEmail(w.ship_from_email || '');
     setShippoTracking(trackingWhId === String(w.id));
     setShippoError('');
   };
@@ -208,6 +210,7 @@ export function WarehousesTab() {
         id: shippoFor.id,
         api_key: removeKey ? '' : (shippoKey.trim() || null),
         ship_from_phone: shippoPhone.trim() || null,
+        ship_from_email: shippoEmail.trim() || null,
       });
       const wasTracking = trackingWhId === String(shippoFor.id);
       const wantsTracking = !removeKey && shippoTracking;
@@ -418,6 +421,10 @@ export function WarehousesTab() {
             <div>
               <Label>Ship-From Phone <span className="text-gray-400 font-normal">(some carriers require one)</span></Label>
               <Input value={shippoPhone} onChange={e => setShippoPhone(e.target.value)} placeholder="+1 555 000 0000" />
+            </div>
+            <div>
+              <Label>Ship-From Email <span className="text-gray-400 font-normal">(USPS Ground Advantage requires one)</span></Label>
+              <Input type="email" value={shippoEmail} onChange={e => setShippoEmail(e.target.value)} placeholder="shipping@example.com" />
             </div>
             <div className="flex items-start gap-2 rounded border bg-slate-50 p-2">
               <Switch checked={shippoTracking} onCheckedChange={setShippoTracking} />

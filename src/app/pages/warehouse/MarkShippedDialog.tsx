@@ -43,7 +43,7 @@ type AllocRow = {
 const CARRIERS = ['USPS', 'UPS', 'FedEx', 'DHL', 'other'];
 
 type ShipFromRow = {
-  id: number; name: string; ship_from_name: string | null;
+  id: number; name: string; ship_from_name: string | null; ship_from_email: string | null;
   address_line1: string | null; address_line2: string | null;
   city: string | null; state: string | null; postal_code: string | null; country: string | null;
   ship_from_phone: string | null; shippo_api_key: string | null;
@@ -65,12 +65,10 @@ export type PurchasedLabel = {
  * warehouse's own Shippo account. Quoting state is local; the purchased
  * label is lifted to the dialog so Confirm records it on the shipment.
  */
-function ShippoSection({ wh, order, returnAddr, templates, senderEmail, onPurchased }: {
+function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
   wh: ShipFromRow; order: QueueOrder;
   /** The purchasing user's personal sender address (My Settings); null = not set. */
   returnAddr: ShippoAddress | null;
-  /** Purchaser's login email — required by some carriers on address_from. */
-  senderEmail: string | null;
   /** This warehouse's box templates (Settings → Warehouses → Shipping Box Templates). */
   templates: ParcelTemplate[];
   onPurchased: (carrier: string, label: Omit<PurchasedLabel, 'kits'>) => void;
@@ -130,7 +128,7 @@ function ShippoSection({ wh, order, returnAddr, templates, senderEmail, onPurcha
         zip: dbText(wh.postal_code),
         country: toIsoCountry(wh.country),
         phone: dbText(wh.ship_from_phone) || undefined,
-        email: senderEmail || undefined,
+        email: wh.ship_from_email || undefined,
       };
       const to: ShippoAddress = {
         name: order.ship_to_name || order.customer_name,
@@ -209,6 +207,14 @@ function ShippoSection({ wh, order, returnAddr, templates, senderEmail, onPurcha
         </p>
       )}
       {!shipToOk && <p className="text-xs text-amber-700">The order&apos;s ship-to address is incomplete.</p>}
+      {addressOk && !(usePersonal ? returnAddr?.email : wh.ship_from_email) && (
+        <p className="text-xs text-amber-700">
+          No shipping email on this sender — USPS Ground Advantage will refuse the label.
+          {usePersonal
+            ? ' Add one in My Settings (your name, top right).'
+            : ' Add one under Settings → Warehouses → Shippo.'}
+        </p>
+      )}
       {templates.length > 0 && (
         <Select value={selBox} onValueChange={pickBox}>
           <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Box template…" /></SelectTrigger>
@@ -319,7 +325,7 @@ function ShipToBlock({ order }: { order: QueueOrder }) {
 export function MarkShippedDialog({ order, onClose, onDone }: {
   order: QueueOrder; onClose: () => void; onDone: () => void;
 }) {
-  const { profileId, displayName, email: myEmail, isWarehouse, assignedWarehouseId } = useAppUser();
+  const { profileId, displayName, isWarehouse, assignedWarehouseId } = useAppUser();
   const [stockRaw, stockLoading] = useLoadAction(getFifoStockAction, [order.order_id], { order_id: order.order_id });
   const [planRaw, planLoading] = useLoadAction(getActiveRatePlanAction, [], {});
   // Warehouse users only receive their own warehouse's Shippo key.
@@ -363,7 +369,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
     const r = asRows<{
       label_return_name: string | null; label_return_line1: string | null; label_return_line2: string | null;
       label_return_city: string | null; label_return_state: string | null; label_return_postal: string | null;
-      label_return_country: string | null; label_return_phone: string | null;
+      label_return_country: string | null; label_return_phone: string | null; label_return_email: string | null;
     }>(myRetRaw)[0];
     if (!r || !r.label_return_line1 || !r.label_return_city || !dbText(r.label_return_postal)) return null;
     return {
@@ -375,11 +381,11 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
       zip: dbText(r.label_return_postal),
       country: toIsoCountry(r.label_return_country),
       phone: dbText(r.label_return_phone) || undefined,
-      // USPS Ground Advantage refuses labels without address_from.email —
-      // the purchaser's login email always exists, so supply it silently.
-      email: myEmail || undefined,
+      // Dedicated shipping email (My Settings) — deliberately NOT the login
+      // email. USPS Ground Advantage refuses labels without one.
+      email: r.label_return_email || undefined,
     };
-  }, [myRetRaw, displayName, myEmail]);
+  }, [myRetRaw, displayName]);
 
   // A purchased label already cost real money — closing without confirming
   // would leave it unrecorded, so double-check the intent.
@@ -677,7 +683,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                         const wh = shipFromFor(g.warehouse_id);
                         return wh?.shippo_api_key ? (
                           <ShippoSection
-                            wh={wh} order={order} returnAddr={myReturnAddr} senderEmail={myEmail || null}
+                            wh={wh} order={order} returnAddr={myReturnAddr}
                             templates={parcelTemplates.filter(t => Number(t.warehouse_id) === g.warehouse_id)}
                             onPurchased={(carrier, label) => {
                               setLabels(l => ({ ...l, [g.warehouse_id]: { ...label, kits: g.kits } }));

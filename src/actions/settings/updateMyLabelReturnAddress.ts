@@ -13,7 +13,8 @@ function updateMyLabelReturnAddress() {
         label_return_state = NULLIF({{params.state}}::text, ''),
         label_return_postal = NULLIF({{params.postal}}::text, ''),
         label_return_country = NULLIF({{params.country}}::text, ''),
-        label_return_phone = NULLIF({{params.phone}}::text, '')
+        label_return_phone = NULLIF({{params.phone}}::text, ''),
+        label_return_email = NULLIF({{params.email}}::text, '')
       WHERE id = {{params.user_id}}::bigint
       RETURNING id
     `,
