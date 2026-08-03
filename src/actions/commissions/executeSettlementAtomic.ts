@@ -18,6 +18,13 @@ import { action } from '@uibakery/data';
  * A payment's division is its order's rep's division (no rep = us); rep
  * balances follow the rep's CURRENT division, mirroring listRepBalances /
  * getVendorBalance / listSettlementPayments exactly.
+ *
+ * Known race (accepted, same class as correction-vs-settlement): a
+ * commission payment committing in the same instant as the close may land
+ * with paid_at just inside the closed window without being in the stamp's
+ * sums. Both operations are manual and typically the same person seconds
+ * apart; a hit only skews the stamped summary line, never a balance —
+ * balances are always recomputed live.
  */
 function executeSettlementAtomic() {
   return action('executeSettlementAtomic', 'SQL', {
