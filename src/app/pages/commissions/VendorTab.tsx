@@ -90,6 +90,10 @@ function reconcile(paymentsIn: CyclePayment[], deposits: OnChainDeposit[]) {
 function OnChainWalletCheck({ division }: { division: string }) {
   const [keyRaw] = useLoadAction(getAppSetting, [], { key: 'moralis_api_key' });
   const moralisKey = String(asRows<{ value: string }>(keyRaw)[0]?.value ?? '');
+  // Optional Helius key: Solana deposit history works without it via the
+  // public RPC, but Helius is far less rate-limited.
+  const [heliusRaw] = useLoadAction(getAppSetting, [], { key: 'helius_api_key' });
+  const heliusKey = String(asRows<{ value: string }>(heliusRaw)[0]?.value ?? '');
   const [inflowsRaw, inflowsLoading] = useLoadAction(getWalletExpectedInflows, [division], { division });
   const allInflows = asRows<WalletInflow>(inflowsRaw);
   const wallets = allInflows.filter(w => w.id != null);
@@ -115,16 +119,19 @@ function OnChainWalletCheck({ division }: { division: string }) {
 
   useEffect(() => {
     setDeposits(null);
-    if (openWallet == null || !moralisKey) return;
-    if (openWallet.network !== 'ethereum') { setDeposits(null); return; }
+    if (openWallet == null) return;
+    // EVM history needs the Moralis key; Solana works keyless via the
+    // public RPC (Helius when configured).
+    if (openWallet.network === 'ethereum' && !moralisKey) return;
+    if (openWallet.network !== 'ethereum' && openWallet.network !== 'solana') return;
     let alive = true;
     setDeposits('loading');
-    getTokenDeposits(moralisKey, openWallet.asset, openWallet.network, openWallet.address, cycleStart)
+    getTokenDeposits(moralisKey, openWallet.asset, openWallet.network, openWallet.address, cycleStart, heliusKey || null)
       .then(d => { if (alive) setDeposits(d); })
       .catch(() => { if (alive) setDeposits('error'); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openWalletId, moralisKey, cycleStart]);
+  }, [openWalletId, moralisKey, heliusKey, cycleStart]);
 
   const runCheck = async () => {
     if (!moralisKey) return;
@@ -238,8 +245,17 @@ function OnChainWalletCheck({ division }: { division: string }) {
                                       {rec && (
                                         p.direction === 'refund' ? (
                                           <Badge variant="outline" className="text-xs text-muted-foreground">refund — outgoing, not matched</Badge>
-                                        ) : rec.matches.get(p.id) ? (
-                                          <Badge variant="outline" className="text-xs text-green-600 border-green-300" title={`on-chain ${dep?.amount} @ ${dep?.at || ''}`}>on-chain ✓</Badge>
+                                        ) : dep ? (
+                                          // The TX exists on-chain but may have carried a different
+                                          // amount than what was recorded — that mismatch IS the
+                                          // discrepancy, so surface it, don't hide it behind a ✓.
+                                          Math.abs(dep.amount - Number(p.amount_usd)) >= 0.01 ? (
+                                            <Badge variant="outline" className="text-xs text-amber-700 border-amber-300" title={`TX ${dep.txHash}`}>
+                                              on-chain {dep.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} ≠ recorded {money(p.amount_usd)}
+                                            </Badge>
+                                          ) : (
+                                            <Badge variant="outline" className="text-xs text-green-600 border-green-300" title={`on-chain ${dep.amount} @ ${dep.at || ''}`}>on-chain ✓</Badge>
+                                          )
                                         ) : (
                                           <Badge variant="outline" className="text-xs text-red-600 border-red-300">not found on-chain</Badge>
                                         )
@@ -261,11 +277,17 @@ function OnChainWalletCheck({ division }: { division: string }) {
                             </div>
                           )}
                           {deposits === 'loading' && <p className="text-xs text-muted-foreground">Fetching on-chain deposits…</p>}
-                          {deposits === 'error' && <p className="text-xs text-red-600">Could not fetch on-chain deposits from Moralis.</p>}
-                          {deposits === null && w.network !== 'ethereum' && (
+                          {deposits === 'error' && (
+                            <p className="text-xs text-red-600">
+                              Could not fetch on-chain deposits{w.network === 'solana'
+                                ? heliusKey ? ' from Helius.' : ' — the public Solana RPC is rate-limited; add a Helius API key under Settings → Wallets and retry.'
+                                : ' from Moralis.'}
+                            </p>
+                          )}
+                          {deposits === null && w.network !== 'ethereum' && w.network !== 'solana' && (
                             <p className="text-xs text-muted-foreground">
-                              Auto-matching against on-chain deposits is Ethereum-only (Moralis doesn&apos;t serve Solana transfer
-                              history here) — compare these records against the wallet&apos;s history in a Solana explorer.
+                              Auto-matching isn&apos;t available for this chain — compare these records against the wallet&apos;s
+                              history in a block explorer.
                             </p>
                           )}
                           <p className="text-xs text-muted-foreground">

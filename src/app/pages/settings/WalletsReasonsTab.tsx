@@ -55,6 +55,23 @@ export function WalletsReasonsTab() {
     }
   };
 
+  // Helius API key (Solana deposit history in the wallet check drill-down;
+  // without it the public Solana RPC is used, which rate-limits quickly).
+  const [heliusRaw, , , reloadHelius] = useLoadAction(getAppSetting, [], { key: 'helius_api_key' });
+  const heliusConfigured = !!String(asRows<{ value: string }>(heliusRaw)[0]?.value ?? '');
+  const [heliusInput, setHeliusInput] = useState('');
+  const [heliusSaving, setHeliusSaving] = useState(false);
+  const saveHelius = async (clear = false) => {
+    setHeliusSaving(true);
+    try {
+      await doSaveSetting({ key: 'helius_api_key', value: clear ? '' : heliusInput.trim() });
+      setHeliusInput('');
+      reloadHelius();
+    } finally {
+      setHeliusSaving(false);
+    }
+  };
+
   // Wallet dialog state: showWalletForm opens the dialog; editWallet != null
   // means it's editing that wallet, otherwise adding.
   const [showWalletForm, setShowWalletForm] = useState(false);
@@ -222,6 +239,33 @@ export function WalletsReasonsTab() {
           </Button>
           {moralisConfigured && (
             <Button size="sm" variant="outline" onClick={() => saveMoralis(true)} disabled={moralisSaving}>Remove</Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Helius (Solana deposit history) */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Lock className="h-4 w-4" /> Helius API Key
+            {heliusConfigured && <Badge variant="outline" className="text-xs text-green-600 border-green-300">configured</Badge>}
+          </CardTitle>
+          <p className="text-xs text-gray-400">
+            Speeds up Solana deposit history in the wallet-check drill-down (per-payment on-chain matching for
+            USDC/USDT on Solana). Optional — without it the public Solana RPC is used, which rate-limits quickly.
+          </p>
+        </CardHeader>
+        <CardContent className="flex items-center gap-2 flex-wrap">
+          <Input
+            type="password" value={heliusInput} onChange={e => setHeliusInput(e.target.value)}
+            placeholder={heliusConfigured ? '•••••••••••• (enter new key to replace)' : 'Helius API key…'}
+            className="max-w-md"
+          />
+          <Button size="sm" onClick={() => saveHelius(false)} disabled={heliusSaving || !heliusInput.trim()}>
+            {heliusSaving ? 'Saving…' : 'Save Key'}
+          </Button>
+          {heliusConfigured && (
+            <Button size="sm" variant="outline" onClick={() => saveHelius(true)} disabled={heliusSaving}>Remove</Button>
           )}
         </CardContent>
       </Card>

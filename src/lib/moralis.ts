@@ -49,15 +49,82 @@ export type OnChainDeposit = {
   from: string | null;
 };
 
+// Helius (when a key is configured) is far less rate-limited than the
+// public RPC and serves the same JSON-RPC methods.
+const solanaRpcUrl = (heliusKey?: string | null) =>
+  heliusKey ? `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(heliusKey)}` : 'https://api.mainnet-beta.solana.com';
+
+async function solanaRpc(method: string, params: unknown[], heliusKey?: string | null): Promise<unknown> {
+  const res = await fetch(solanaRpcUrl(heliusKey), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  if (!res.ok) throw new Error(`Solana RPC HTTP ${res.status}`);
+  const j = await res.json() as { result?: unknown; error?: { message?: string } };
+  if (j.error) throw new Error(j.error.message || 'Solana RPC error');
+  return j.result;
+}
+
 /**
- * Incoming token deposits to a wallet since a timestamp. EVM only — the
- * Solana gateway doesn't expose SPL transfer history here; callers should
- * fall back to manual comparison for Solana wallets. Returns null when the
- * chain/asset isn't queryable.
+ * Incoming SPL token deposits to a Solana wallet since a timestamp, via the
+ * public Solana RPC (Moralis' gateway has no SPL transfer history). For each
+ * recent signature on the wallet's token account, the owner's pre/post token
+ * balance delta IS the deposited amount — so a transfer whose amount differs
+ * from the recorded payment is caught, not just missing ones.
+ */
+async function getSolanaTokenDeposits(
+  mint: string, owner: string, sinceIso: string | null, heliusKey?: string | null,
+): Promise<OnChainDeposit[]> {
+  const sinceEpoch = sinceIso ? Date.parse(sinceIso) / 1000 : 0;
+  const accs = await solanaRpc('getTokenAccountsByOwner', [owner, { mint }, { encoding: 'jsonParsed' }], heliusKey) as
+    { value?: { pubkey: string }[] };
+  const deposits: OnChainDeposit[] = [];
+  for (const acc of accs.value || []) {
+    const sigs = await solanaRpc('getSignaturesForAddress', [acc.pubkey, { limit: 50 }], heliusKey) as
+      { signature: string; blockTime?: number | null; err?: unknown }[];
+    const due = (sigs || []).filter(s => !s.err && (s.blockTime ?? 0) >= sinceEpoch).slice(0, 30);
+    for (const s of due) {
+      const tx = await solanaRpc('getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }], heliusKey) as {
+        blockTime?: number | null;
+        meta?: {
+          err: unknown;
+          preTokenBalances?: { owner?: string; mint?: string; uiTokenAmount: { uiAmount: number | null } }[];
+          postTokenBalances?: { owner?: string; mint?: string; uiTokenAmount: { uiAmount: number | null } }[];
+        };
+      } | null;
+      if (!tx || tx.meta?.err) continue;
+      const bal = (rows?: { owner?: string; mint?: string; uiTokenAmount: { uiAmount: number | null } }[]) =>
+        (rows || []).filter(b => b.owner === owner && b.mint === mint)
+          .reduce((sum, b) => sum + (b.uiTokenAmount.uiAmount ?? 0), 0);
+      const delta = bal(tx.meta?.postTokenBalances) - bal(tx.meta?.preTokenBalances);
+      if (delta > 0) {
+        deposits.push({
+          txHash: s.signature,
+          amount: delta,
+          at: tx.blockTime ? new Date(tx.blockTime * 1000).toISOString() : null,
+          from: null,
+        });
+      }
+    }
+  }
+  return deposits;
+}
+
+/**
+ * Incoming token deposits to a wallet since a timestamp. EVM via Moralis;
+ * Solana via the public Solana RPC (no API key needed — Moralis' gateway
+ * has no SPL transfer history). Returns null when the chain/asset isn't
+ * queryable (BTC).
  */
 export async function getTokenDeposits(
   apiKey: string, asset: string, network: string, address: string, sinceIso: string | null,
+  heliusKey?: string | null,
 ): Promise<OnChainDeposit[] | null> {
+  if (network === 'solana') {
+    const mint = TOKENS.solana[asset];
+    if (!mint) return null;
+    return getSolanaTokenDeposits(mint, address, sinceIso, heliusKey);
+  }
   if (network !== 'ethereum') return null;
   const token = TOKENS.ethereum[asset];
   if (!token) return null;
