@@ -45,6 +45,7 @@ import listSalesReps from '@/actions/orders/listSalesReps';
 import updateOrderPreferredWarehouse from '@/actions/orders/updateOrderPreferredWarehouse';
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 import updatePaymentWallet from '@/actions/orders/updatePaymentWallet';
+import updatePaymentAmount from '@/actions/orders/updatePaymentAmount';
 import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 
 interface OrderDetailDrawerProps {
@@ -106,7 +107,16 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const fixWallet = walletList.find(w => w.asset === fixAsset && w.network === fixNetwork);
   const [createPayment] = useMutateAction(createOrderPayment);
   const [repointPayment] = useMutateAction(updatePaymentWallet);
+  const [correctAmount] = useMutateAction(updatePaymentAmount);
   const [writeAudit] = useMutateAction(insertAuditLog);
+
+  // Correct Amount — admin correction when the recorded amount doesn't
+  // match what actually arrived on-chain. Audit-logged, reason required.
+  const [amtOpen, setAmtOpen] = useState<number | null>(null);
+  const [amtValue, setAmtValue] = useState('');
+  const [amtReason, setAmtReason] = useState('');
+  const [amtSaving, setAmtSaving] = useState(false);
+  const [amtErr, setAmtErr] = useState('');
 
   const copyWallet = () => {
     if (!selectedWallet) return;
@@ -151,6 +161,37 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
     await flagPayment({ paymentId: flagOpen, issueType, issueNotes });
     setFlagOpen(null); setIssueType(''); setIssueNotes('');
     reloadPay();
+  };
+
+  const doCorrectAmount = async () => {
+    if (amtOpen == null) return;
+    const before = payList.find(p => Number(p.id) === amtOpen);
+    const amt = Number(amtValue);
+    if (!(amt > 0)) { setAmtErr('Enter the amount that actually arrived (USD).'); return; }
+    if (!amtReason.trim()) { setAmtErr('A reason is required — it goes to the order audit log.'); return; }
+    setAmtSaving(true); setAmtErr('');
+    try {
+      const res = await correctAmount({ paymentId: amtOpen, amount_usd: amt }) as unknown[];
+      if (!res || res.length === 0) {
+        setAmtErr('This payment is part of an already-stamped settlement cycle — its amount can’t be rewritten.');
+        return;
+      }
+      await writeAudit({
+        orderId, userId: profileId, changeType: 'other', fieldName: 'payment_amount',
+        oldValue: before != null ? `$${Number(before.amount_usd).toFixed(2)}` : null,
+        newValue: `$${amt.toFixed(2)}`,
+        note: `Payment #${amtOpen} amount corrected: ${amtReason.trim()}`,
+      });
+      // Amount changed — the order's paid/partial/unpaid state must re-derive.
+      await recomputePayment({ orderId });
+      setAmtOpen(null); setAmtValue(''); setAmtReason('');
+      reloadPay();
+      parentReload();
+    } catch (e: unknown) {
+      setAmtErr(e instanceof Error ? e.message : 'Failed to correct amount');
+    } finally {
+      setAmtSaving(false);
+    }
   };
 
   const doFixWallet = async () => {
@@ -216,6 +257,15 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 setFixOpen(Number(p.id));
               }}>
                 <Pencil className="h-3 w-3 mr-1" /> Fix Wallet
+              </Button>
+            )}
+            {isAdmin && (
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                setAmtValue(String(Number(p.amount_usd)));
+                setAmtReason(''); setAmtErr('');
+                setAmtOpen(Number(p.id));
+              }}>
+                <Pencil className="h-3 w-3 mr-1" /> Correct Amount
               </Button>
             )}
           </div>}
@@ -294,6 +344,33 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
           </div>
         </div>
       )}
+
+      <Dialog open={amtOpen != null} onOpenChange={v => !v && setAmtOpen(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Correct Payment Amount</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              For a record whose amount doesn&apos;t match what actually arrived on-chain (e.g. an underpayment).
+              The change is audit-logged with your reason and the order&apos;s payment status re-derives — if money
+              is still owed, record it as a <span className="font-medium">new</span> payment with its own TX when it arrives.
+            </p>
+            <div>
+              <Label className="text-xs">Actual amount received (USD)</Label>
+              <Input type="number" min={0} step="0.01" value={amtValue} onChange={e => setAmtValue(e.target.value)} className="h-8" />
+            </div>
+            <div>
+              <Label className="text-xs">Reason * <span className="text-muted-foreground font-normal">(written to the order audit log)</span></Label>
+              <Textarea rows={2} value={amtReason} onChange={e => setAmtReason(e.target.value)}
+                placeholder="e.g. TX 3f7LzR8… delivered $170 on-chain, $170 short — confirmed via wallet check" />
+            </div>
+            {amtErr && <p className="text-xs text-red-600">{amtErr}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAmtOpen(null)} disabled={amtSaving}>Cancel</Button>
+            <Button onClick={doCorrectAmount} disabled={amtSaving}>{amtSaving ? 'Saving…' : 'Correct Amount'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={fixOpen != null} onOpenChange={v => !v && setFixOpen(null)}>
         <DialogContent className="max-w-sm">
