@@ -165,25 +165,19 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
 
   const doCorrectAmount = async () => {
     if (amtOpen == null) return;
-    const before = payList.find(p => Number(p.id) === amtOpen);
     const amt = Number(amtValue);
     if (!(amt > 0)) { setAmtErr('Enter the amount that actually arrived (USD).'); return; }
     if (!amtReason.trim()) { setAmtErr('A reason is required — it goes to the order audit log.'); return; }
     setAmtSaving(true); setAmtErr('');
     try {
-      const res = await correctAmount({ paymentId: amtOpen, amount_usd: amt }) as unknown[];
+      // One atomic statement: amount update + audit-log row (old value read
+      // server-side) + payment-status recompute — a correction can never
+      // exist unaudited.
+      const res = await correctAmount({ paymentId: amtOpen, amount_usd: amt, userId: profileId, note: amtReason.trim() }) as unknown[];
       if (!res || res.length === 0) {
         setAmtErr('This payment is part of an already-stamped settlement cycle — its amount can’t be rewritten.');
         return;
       }
-      await writeAudit({
-        orderId, userId: profileId, changeType: 'other', fieldName: 'payment_amount',
-        oldValue: before != null ? `$${Number(before.amount_usd).toFixed(2)}` : null,
-        newValue: `$${amt.toFixed(2)}`,
-        note: `Payment #${amtOpen} amount corrected: ${amtReason.trim()}`,
-      });
-      // Amount changed — the order's paid/partial/unpaid state must re-derive.
-      await recomputePayment({ orderId });
       setAmtOpen(null); setAmtValue(''); setAmtReason('');
       reloadPay();
       parentReload();
