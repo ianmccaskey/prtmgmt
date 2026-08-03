@@ -65,10 +65,12 @@ export type PurchasedLabel = {
  * warehouse's own Shippo account. Quoting state is local; the purchased
  * label is lifted to the dialog so Confirm records it on the shipment.
  */
-function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
+function ShippoSection({ wh, order, returnAddr, templates, senderEmail, onPurchased }: {
   wh: ShipFromRow; order: QueueOrder;
   /** The purchasing user's personal sender address (My Settings); null = not set. */
   returnAddr: ShippoAddress | null;
+  /** Purchaser's login email — required by some carriers on address_from. */
+  senderEmail: string | null;
   /** This warehouse's box templates (Settings → Warehouses → Shipping Box Templates). */
   templates: ParcelTemplate[];
   onPurchased: (carrier: string, label: Omit<PurchasedLabel, 'kits'>) => void;
@@ -128,6 +130,7 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
         zip: dbText(wh.postal_code),
         country: toIsoCountry(wh.country),
         phone: dbText(wh.ship_from_phone) || undefined,
+        email: senderEmail || undefined,
       };
       const to: ShippoAddress = {
         name: order.ship_to_name || order.customer_name,
@@ -316,7 +319,7 @@ function ShipToBlock({ order }: { order: QueueOrder }) {
 export function MarkShippedDialog({ order, onClose, onDone }: {
   order: QueueOrder; onClose: () => void; onDone: () => void;
 }) {
-  const { profileId, displayName, isWarehouse, assignedWarehouseId } = useAppUser();
+  const { profileId, displayName, email: myEmail, isWarehouse, assignedWarehouseId } = useAppUser();
   const [stockRaw, stockLoading] = useLoadAction(getFifoStockAction, [order.order_id], { order_id: order.order_id });
   const [planRaw, planLoading] = useLoadAction(getActiveRatePlanAction, [], {});
   // Warehouse users only receive their own warehouse's Shippo key.
@@ -372,8 +375,11 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
       zip: dbText(r.label_return_postal),
       country: toIsoCountry(r.label_return_country),
       phone: dbText(r.label_return_phone) || undefined,
+      // USPS Ground Advantage refuses labels without address_from.email —
+      // the purchaser's login email always exists, so supply it silently.
+      email: myEmail || undefined,
     };
-  }, [myRetRaw, displayName]);
+  }, [myRetRaw, displayName, myEmail]);
 
   // A purchased label already cost real money — closing without confirming
   // would leave it unrecorded, so double-check the intent.
@@ -671,7 +677,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
                         const wh = shipFromFor(g.warehouse_id);
                         return wh?.shippo_api_key ? (
                           <ShippoSection
-                            wh={wh} order={order} returnAddr={myReturnAddr}
+                            wh={wh} order={order} returnAddr={myReturnAddr} senderEmail={myEmail || null}
                             templates={parcelTemplates.filter(t => Number(t.warehouse_id) === g.warehouse_id)}
                             onPurchased={(carrier, label) => {
                               setLabels(l => ({ ...l, [g.warehouse_id]: { ...label, kits: g.kits } }));

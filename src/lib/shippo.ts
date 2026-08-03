@@ -15,6 +15,8 @@ export type ShippoAddress = {
   zip: string;
   country: string;
   phone?: string;
+  /** Some carriers (USPS Ground Advantage) refuse labels without a sender email. */
+  email?: string;
 };
 
 export type ShippoParcel = {
