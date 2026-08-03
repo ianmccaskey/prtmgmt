@@ -16,6 +16,12 @@ import { action } from '@uibakery/data';
  * Snapshot note: CTEs read the pre-update state, so the recompute
  * substitutes the NEW amount for this payment's row explicitly. The
  * status CASE mirrors recomputePaymentStatus exactly.
+ *
+ * Known race (accepted, same as Fix Wallet / verify-vs-settle): a
+ * settlement committing in the same instant as this statement won't see
+ * the correction and this guard won't see that stamp. Settlements are
+ * rare and manual; if it ever happens, the carried_adjustment line in
+ * Vendor Owed absorbs the cent difference into the next cycle.
  */
 export function updatePaymentAmount() {
   return action('updatePaymentAmount', 'SQL', {
