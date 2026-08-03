@@ -1,18 +1,23 @@
 import { action } from '@uibakery/data';
 
 /**
- * Full wallet settlement in ONE statement (one snapshot — the "stamp"),
- * scoped to ONE division (us | china — the two pipelines never mix):
- * computes every in-division rep balance, warehouse balances (US only —
- * warehouses live entirely in the US pipeline), and the division's vendor
- * share as of this instant, writes a settlements row with the stamped
- * totals, and inserts one commission_payment per payee for exactly the
- * owed amount (all linked via settlement_id and carrying the division).
- * Every in-division ledger reads zero immediately after; later activity
- * accrues to that division's next settlement. A payment's division is its
- * ORDER's rep's division (no rep = us). Balance formulas mirror
- * listRepBalances / listWarehouseBalances / getVendorBalance exactly.
- * A negative vendor share stamps/pays 0 (the shortfall carries).
+ * Close the division's settlement cycle — the stamp AFTER the money moved,
+ * never a step that records payouts itself. Refuses (settlement_id NULL,
+ * outstanding figures returned) unless every balance has been paid down to
+ * zero via actually-recorded payments: every in-division rep, every
+ * warehouse (US pipeline only), and the vendor. When clean, ONE statement
+ * stamps the settlements row with the CYCLE's figures — collections since
+ * the division's last stamp and the payments recorded during the cycle —
+ * and inserts nothing else. Every ledger already reads zero; the stamp
+ * just closes the window the next cycle accrues against.
+ *
+ * (Historical note: stamps #1–2 recorded payouts at settle time and stored
+ * lifetime collections. Ian's real flow is pay-first-then-close, so the
+ * old mode could invent payments that never happened.)
+ *
+ * A payment's division is its order's rep's division (no rep = us); rep
+ * balances follow the rep's CURRENT division, mirroring listRepBalances /
+ * getVendorBalance / listSettlementPayments exactly.
  */
 function executeSettlementAtomic() {
   return action('executeSettlementAtomic', 'SQL', {
@@ -21,14 +26,20 @@ function executeSettlementAtomic() {
       WITH div AS (
         SELECT COALESCE(NULLIF({{params.division}}, ''), 'us') AS d
       ),
-      rep_bal AS (
-        SELECT up.id AS rep_id, COALESCE(o.earned, 0) - COALESCE(p.paid, 0) AS owed
+      last_stamp AS (
+        SELECT COALESCE(MAX(settled_at), '-infinity'::timestamptz) AS t
+        FROM settlements WHERE division = (SELECT d FROM div)
+      ),
+      rep_out AS (
+        -- Positive balances only: an overpaid rep must not offset an
+        -- unpaid one.
+        SELECT COALESCE(SUM(GREATEST(0, COALESCE(o.earned, 0) - COALESCE(p.paid, 0))), 0) AS owed
         FROM user_profiles up
         LEFT JOIN (
           SELECT so.sales_rep_user_profile_id AS rid, ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS earned
           FROM sales_orders so
           JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
-          WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status NOT IN ('cancelled', 'quote')
+          WHERE so.status NOT IN ('cancelled', 'quote')
           GROUP BY so.sales_rep_user_profile_id
         ) o ON o.rid = up.id
         LEFT JOIN (
@@ -37,10 +48,9 @@ function executeSettlementAtomic() {
           GROUP BY sales_rep_user_profile_id
         ) p ON p.rid = up.id
         WHERE up.division = (SELECT d FROM div)
-          AND COALESCE(o.earned, 0) - COALESCE(p.paid, 0) > 0
       ),
-      wh_bal AS (
-        SELECT w.id AS wh_id, COALESCE(e.earned, 0) - COALESCE(p.paid, 0) AS owed
+      wh_out AS (
+        SELECT COALESCE(SUM(GREATEST(0, COALESCE(e.earned, 0) - COALESCE(p.paid, 0))), 0) AS owed
         FROM warehouses w
         LEFT JOIN (
           SELECT origin_warehouse_id AS wid, SUM(internal_shipping_cost_usd) AS earned
@@ -54,26 +64,19 @@ function executeSettlementAtomic() {
           GROUP BY warehouse_id
         ) p ON p.wid = w.id
         WHERE (SELECT d FROM div) = 'us'
-          AND COALESCE(e.earned, 0) - COALESCE(p.paid, 0) > 0
       ),
-      collected AS (
-        -- The division's collections: a payment belongs to its order's
-        -- rep's division (orders with no rep are US).
-        SELECT COALESCE(SUM(CASE WHEN op.direction = 'refund' THEN -op.amount_usd ELSE op.amount_usd END), 0) AS total
-        FROM order_payments op
-        JOIN sales_orders so2 ON so2.id = op.sales_order_id
-        LEFT JOIN user_profiles orp ON orp.id = so2.sales_rep_user_profile_id
-        WHERE op.verification_status = 'verified'
-          AND COALESCE(orp.division, 'us') = (SELECT d FROM div)
-      ),
-      vendor_bal AS (
-        -- Vendor gets the CASH remaining in this division: collected minus
-        -- what each in-division payee consumed — GREATEST(earned, paid) per
-        -- payee, since an overpaid payee (e.g. a rep whose rate was lowered
-        -- after payment) already took the cash even though their earned
-        -- figure shrank. Warehouses consume from the US pipeline only.
-        SELECT GREATEST(0,
-          (SELECT total FROM collected)
+      vendor_out AS (
+        -- Lifetime vendor balance (cash remaining), mirroring
+        -- getVendorBalance: collected minus per-payee GREATEST(earned,
+        -- paid) minus vendor payments. Negative (overpaid vendor) does not
+        -- block closing.
+        SELECT (
+          COALESCE((SELECT SUM(CASE WHEN op.direction = 'refund' THEN -op.amount_usd ELSE op.amount_usd END)
+                    FROM order_payments op
+                    JOIN sales_orders so2 ON so2.id = op.sales_order_id
+                    LEFT JOIN user_profiles orp ON orp.id = so2.sales_rep_user_profile_id
+                    WHERE op.verification_status = 'verified'
+                      AND COALESCE(orp.division, 'us') = (SELECT d FROM div)), 0)
           - COALESCE((SELECT SUM(GREATEST(COALESCE(o.earned, 0), COALESCE(p.paid, 0)))
                       FROM user_profiles up2
                       LEFT JOIN (
@@ -103,45 +106,46 @@ function executeSettlementAtomic() {
                       WHERE payee_type = 'vendor' AND division = (SELECT d FROM div)), 0)
         ) AS owed
       ),
+      ok AS (
+        SELECT (SELECT owed FROM rep_out) <= 0.004
+           AND (SELECT owed FROM wh_out) <= 0.004
+           AND (SELECT owed FROM vendor_out) <= 0.004 AS pass
+      ),
       stamp AS (
         INSERT INTO settlements (note, created_by_user_id, collected_usd, rep_commissions_usd, warehouse_earned_usd, vendor_share_usd, division)
         SELECT
           {{params.note}},
           {{params.user_id}}::bigint,
-          (SELECT total FROM collected),
-          COALESCE((SELECT SUM(owed) FROM rep_bal), 0),
-          COALESCE((SELECT SUM(owed) FROM wh_bal), 0),
-          (SELECT owed FROM vendor_bal),
+          COALESCE((SELECT SUM(CASE WHEN op.direction = 'refund' THEN -op.amount_usd ELSE op.amount_usd END)
+                    FROM order_payments op
+                    JOIN sales_orders so2 ON so2.id = op.sales_order_id
+                    LEFT JOIN user_profiles orp ON orp.id = so2.sales_rep_user_profile_id
+                    WHERE op.verification_status = 'verified'
+                      AND COALESCE(orp.division, 'us') = (SELECT d FROM div)
+                      AND COALESCE(op.verified_at, op.quoted_at) > (SELECT t FROM last_stamp)), 0),
+          COALESCE((SELECT SUM(cp.amount_usd) FROM commission_payments cp
+                    WHERE cp.payee_type = 'sales_rep'
+                      AND cp.paid_at > (SELECT t FROM last_stamp)
+                      AND (cp.division = (SELECT d FROM div)
+                           OR EXISTS (SELECT 1 FROM user_profiles pu
+                                      WHERE pu.id = cp.sales_rep_user_profile_id
+                                        AND pu.division = (SELECT d FROM div)))), 0),
+          COALESCE((SELECT SUM(cp.amount_usd) FROM commission_payments cp
+                    WHERE cp.payee_type = 'warehouse'
+                      AND (SELECT d FROM div) = 'us'
+                      AND cp.paid_at > (SELECT t FROM last_stamp)), 0),
+          COALESCE((SELECT SUM(cp.amount_usd) FROM commission_payments cp
+                    WHERE cp.payee_type = 'vendor' AND cp.division = (SELECT d FROM div)
+                      AND cp.paid_at > (SELECT t FROM last_stamp)), 0),
           (SELECT d FROM div)
-        RETURNING id
-      ),
-      pay_reps AS (
-        INSERT INTO commission_payments (payee_type, sales_rep_user_profile_id, warehouse_id, amount_usd, paid_by_user_id, note, settlement_id, division)
-        SELECT 'sales_rep', rep_id, NULL, owed, {{params.user_id}}::bigint,
-               'Settlement #' || (SELECT id FROM stamp), (SELECT id FROM stamp), (SELECT d FROM div)
-        FROM rep_bal
-        RETURNING id
-      ),
-      pay_whs AS (
-        INSERT INTO commission_payments (payee_type, sales_rep_user_profile_id, warehouse_id, amount_usd, paid_by_user_id, note, settlement_id, division)
-        SELECT 'warehouse', NULL, wh_id, owed, {{params.user_id}}::bigint,
-               'Settlement #' || (SELECT id FROM stamp), (SELECT id FROM stamp), (SELECT d FROM div)
-        FROM wh_bal
-        RETURNING id
-      ),
-      pay_vendor AS (
-        INSERT INTO commission_payments (payee_type, sales_rep_user_profile_id, warehouse_id, amount_usd, paid_by_user_id, note, settlement_id, division)
-        SELECT 'vendor', NULL, NULL, owed, {{params.user_id}}::bigint,
-               'Settlement #' || (SELECT id FROM stamp), (SELECT id FROM stamp), (SELECT d FROM div)
-        FROM vendor_bal
-        WHERE owed > 0
+        WHERE (SELECT pass FROM ok)
         RETURNING id
       )
       SELECT
         (SELECT id FROM stamp) AS settlement_id,
-        (SELECT COUNT(*) FROM pay_reps)::int AS rep_payments,
-        (SELECT COUNT(*) FROM pay_whs)::int AS warehouse_payments,
-        (SELECT COUNT(*) FROM pay_vendor)::int AS vendor_payments
+        (SELECT owed FROM rep_out)::numeric(14,2) AS rep_outstanding,
+        (SELECT owed FROM wh_out)::numeric(14,2) AS warehouse_outstanding,
+        (SELECT owed FROM vendor_out)::numeric(14,2) AS vendor_outstanding
     `,
   });
 }

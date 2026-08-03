@@ -369,7 +369,17 @@ export function VendorTab({ division }: { division: string }) {
   const handleSettle = async () => {
     setSettling(true); setSettleErr('');
     try {
-      await doSettle({ note: settleNote || null, user_id: profileId, division });
+      const res = await doSettle({ note: settleNote || null, user_id: profileId, division }) as
+        { settlement_id: number | null; rep_outstanding: number; warehouse_outstanding: number; vendor_outstanding: number }[];
+      const row = res?.[0];
+      if (!row || row.settlement_id == null) {
+        // Server-side re-check refused: balances moved between preview and
+        // confirm (or the preview was stale).
+        setSettleErr(row
+          ? `Cycle can't close — still outstanding: reps ${money(Math.max(0, Number(row.rep_outstanding)))}, warehouses ${money(Math.max(0, Number(row.warehouse_outstanding)))}, vendor ${money(Math.max(0, Number(row.vendor_outstanding)))}. Record the actual payments first.`
+          : 'Cycle could not be closed — refresh and retry.');
+        return;
+      }
       setSettleOpen(false); setSettleNote('');
       reloadBal(); reloadPay(); reloadSettlements();
     } catch (e: unknown) {
@@ -576,7 +586,7 @@ export function VendorTab({ division }: { division: string }) {
                 </React.Fragment>
               ))}
               {settlements.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="text-center text-gray-400 py-6">No settlements yet — Settle All Now stamps and zeroes every balance in one step.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center text-gray-400 py-6">No settlements yet — pay every balance to zero, then Settle All closes the cycle.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -616,35 +626,43 @@ export function VendorTab({ division }: { division: string }) {
 
       <Dialog open={settleOpen} onOpenChange={v => !v && !settling && setSettleOpen(false)}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Settle All — stamp &amp; zero every balance</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Settle All — close the cycle</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-gray-600">
-              This stamps the value of everything <span className="font-medium">right now</span> in one atomic step:
-              a payout is recorded for every positive rep balance, warehouse balance, and the vendor share.
-              All of those read <span className="font-medium">zero</span> afterward; new activity counts toward
-              the next settlement. (Overpaid — negative — balances aren&apos;t clawed back; they carry forward
-              and offset the payee&apos;s next accruals.)
+              Closing the cycle is the <span className="font-medium">last</span> step: it stamps this cycle&apos;s
+              collections and payouts and starts the next cycle. It records <span className="font-medium">no
+              payments itself</span> — every balance must already be paid down to zero via recorded payments
+              (Rep and Warehouse tabs, and Record Vendor Payment here). (Overpaid — negative — balances
+              don&apos;t block closing; they carry forward.)
             </p>
             <div className="rounded border bg-slate-50 p-3 space-y-1 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Rep commissions to pay</span><span className="tabular-nums">{money(repOwedTotal)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Warehouse balances to pay</span><span className="tabular-nums">{money(whOwedTotal)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Vendor share to pay</span><span className="tabular-nums">{bal ? money(Math.max(0, Number(bal.balance_owed_usd))) : '—'}</span></div>
-              <div className="flex justify-between border-t pt-1 font-semibold"><span>Total leaving the wallet</span><span className="tabular-nums">{bal ? money(repOwedTotal + whOwedTotal + Math.max(0, Number(bal.balance_owed_usd))) : '—'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Rep commissions outstanding</span><span className={`tabular-nums ${repOwedTotal > 0.004 ? 'text-red-600 font-medium' : ''}`}>{money(repOwedTotal)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Warehouse balances outstanding</span><span className={`tabular-nums ${whOwedTotal > 0.004 ? 'text-red-600 font-medium' : ''}`}>{money(whOwedTotal)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Vendor share outstanding</span><span className={`tabular-nums ${bal && Number(bal.balance_owed_usd) > 0.004 ? 'text-red-600 font-medium' : ''}`}>{bal ? money(Math.max(0, Number(bal.balance_owed_usd))) : '—'}</span></div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Send the actual crypto to each payee (their addresses are on the Rep/Warehouse tabs), then
-              confirm here. The exact amounts are re-computed at the moment you confirm — the stamp and the
-              recorded payouts can never disagree.
-            </p>
+            {(repOwedTotal > 0.004 || whOwedTotal > 0.004 || (bal != null && Number(bal.balance_owed_usd) > 0.004)) ? (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                Balances are still outstanding — send the crypto, record each payment, and come back. The
+                cycle can only close at zero.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                All balances read zero — closing will stamp the cycle. The server re-checks at the moment you
+                confirm.
+              </p>
+            )}
             <div>
               <Label>Note (optional)</Label>
-              <Textarea value={settleNote} onChange={e => setSettleNote(e.target.value)} placeholder="e.g. July settlement — wallet emptied to vendor" rows={2} />
+              <Textarea value={settleNote} onChange={e => setSettleNote(e.target.value)} placeholder="e.g. July cycle closed — wallet emptied to vendor" rows={2} />
             </div>
             {settleErr && <p className="text-sm text-red-600">{settleErr}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSettleOpen(false)} disabled={settling}>Cancel</Button>
-            <Button onClick={handleSettle} disabled={settling}>{settling ? 'Settling…' : 'Stamp & Settle All'}</Button>
+            <Button onClick={handleSettle}
+              disabled={settling || repOwedTotal > 0.004 || whOwedTotal > 0.004 || bal == null || Number(bal.balance_owed_usd) > 0.004}>
+              {settling ? 'Closing…' : 'Close Cycle'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
