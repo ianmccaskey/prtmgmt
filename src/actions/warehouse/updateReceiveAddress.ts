@@ -1,6 +1,12 @@
 import { action } from '@uibakery/data';
 
-/** Edit a receive address (all label/address/contact fields; '' clears optionals). */
+/**
+ * Edit a receive address (all label/address/contact fields; '' clears
+ * optionals). Deliberately NO used-lock (unlike wallets): receive
+ * addresses are operational aliases — a typo fix or phone addition should
+ * flow through everywhere, including historical shipment displays, which
+ * join this table live.
+ */
 function updateReceiveAddress() {
   return action('updateReceiveAddress', 'SQL', {
     datasourceName: 'Peptide Ops DB',
