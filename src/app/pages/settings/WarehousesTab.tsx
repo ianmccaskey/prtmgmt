@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, MapPin, ChevronDown, ChevronRight, Home, Tag } from 'lucide-react';
+import { Plus, MapPin, ChevronDown, ChevronRight, Home, Tag, Pencil } from 'lucide-react';
 import listWarehouses from '@/actions/settings/listWarehouses';
 import createWarehouse from '@/actions/settings/createWarehouse';
 import updateWarehouseActive from '@/actions/settings/updateWarehouseActive';
@@ -21,6 +21,7 @@ import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 import listReceiveAddresses from '@/actions/warehouse/listReceiveAddresses';
 import createReceiveAddress from '@/actions/warehouse/createReceiveAddress';
 import setReceiveAddressActive from '@/actions/warehouse/setReceiveAddressActive';
+import updateReceiveAddress from '@/actions/warehouse/updateReceiveAddress';
 import listParcelTemplates from '@/actions/warehouse/listParcelTemplates';
 import createParcelTemplate from '@/actions/warehouse/createParcelTemplate';
 import deleteParcelTemplate from '@/actions/warehouse/deleteParcelTemplate';
@@ -38,7 +39,7 @@ type ParcelTemplate = {
 type ReceiveAddress = {
   id: number; warehouse_id: number; label: string; address_name: string | null;
   address_line1: string; address_line2: string; city: string; state: string;
-  postal_code: string; country: string; is_active: boolean; notes: string;
+  postal_code: string; country: string; phone: string | null; is_active: boolean; notes: string;
 };
 
 export function WarehousesTab() {
@@ -58,8 +59,10 @@ export function WarehousesTab() {
   // Receive addresses (multiple per warehouse; ship-from stays on the warehouse row)
   const [expandedWh, setExpandedWh] = useState<number | null>(null);
   const [addAddrFor, setAddAddrFor] = useState<Warehouse | null>(null);
-  const emptyAddr = { label: '', address_name: '', address_line1: '', address_line2: '', city: '', state: '', postal_code: '', country: 'US', notes: '' };
+  const emptyAddr = { label: '', address_name: '', address_line1: '', address_line2: '', city: '', state: '', postal_code: '', country: 'US', phone: '', notes: '' };
   const [addrForm, setAddrForm] = useState(emptyAddr);
+  // Non-null while editing an existing address (the dialog is shared).
+  const [editAddr, setEditAddr] = useState<ReceiveAddress | null>(null);
   const [addrSaving, setAddrSaving] = useState(false);
   const [addrError, setAddrError] = useState('');
 
@@ -93,6 +96,7 @@ export function WarehousesTab() {
   const trackingWhId = String(asRows<{ value: string | number }>(trackSettingRaw)[0]?.value ?? '');
   const [doUpsertSetting] = useMutateAction(upsertAppSetting);
   const [doCreateAddr] = useMutateAction(createReceiveAddress);
+  const [doUpdateAddr] = useMutateAction(updateReceiveAddress);
   const [doToggleAddr] = useMutateAction(setReceiveAddressActive);
 
   const list = asRows<Warehouse>(warehouses);
@@ -129,8 +133,7 @@ export function WarehousesTab() {
     }
     setAddrSaving(true); setAddrError('');
     try {
-      await doCreateAddr({
-        warehouse_id: addAddrFor.id,
+      const payload = {
         label: addrForm.label.trim(),
         address_name: addrForm.address_name.trim() || null,
         address_line1: addrForm.address_line1.trim(),
@@ -139,9 +142,18 @@ export function WarehousesTab() {
         state: addrForm.state || null,
         postal_code: addrForm.postal_code || null,
         country: addrForm.country || 'US',
+        // '#' strip: the datasource numeric-parses digit-only strings on the
+        // way OUT, never on the way in — but the form may hold a prefilled
+        // guarded value.
+        phone: dbText(addrForm.phone) || null,
         notes: addrForm.notes || null,
-      });
-      setAddAddrFor(null);
+      };
+      if (editAddr) {
+        await doUpdateAddr({ id: editAddr.id, ...payload });
+      } else {
+        await doCreateAddr({ warehouse_id: addAddrFor.id, ...payload });
+      }
+      setAddAddrFor(null); setEditAddr(null);
       setAddrForm(emptyAddr);
       reloadAddresses();
     } catch (e: unknown) {
@@ -331,7 +343,7 @@ export function WarehousesTab() {
                           })()}
                           <div className="flex items-center justify-between">
                             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Receive Addresses</p>
-                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setAddAddrFor(w); setAddrForm(emptyAddr); setAddrError(''); }}>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setAddAddrFor(w); setEditAddr(null); setAddrForm(emptyAddr); setAddrError(''); }}>
                               <Plus className="h-3 w-3 mr-1" /> Add Receive Address
                             </Button>
                           </div>
@@ -343,8 +355,10 @@ export function WarehousesTab() {
                                 <tr className="text-left text-gray-500">
                                   <th className="py-1 pr-3 font-medium">Label</th>
                                   <th className="py-1 pr-3 font-medium">Address</th>
+                                  <th className="py-1 pr-3 font-medium">Phone</th>
                                   <th className="py-1 pr-3 font-medium">Notes</th>
                                   <th className="py-1 font-medium text-center">Active</th>
+                                  <th className="py-1"></th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -352,9 +366,22 @@ export function WarehousesTab() {
                                   <tr key={a.id} className={`border-t ${!a.is_active ? 'opacity-50' : ''}`}>
                                     <td className="py-1.5 pr-3 font-medium">{a.label}</td>
                                     <td className="py-1.5 pr-3 text-gray-600">{fmtAddr(a, a.address_name)}</td>
+                                    <td className="py-1.5 pr-3 text-gray-500">{dbText(a.phone) || '—'}</td>
                                     <td className="py-1.5 pr-3 text-gray-500">{a.notes || '—'}</td>
                                     <td className="py-1.5 text-center">
                                       <Switch checked={!!a.is_active} onCheckedChange={() => handleToggleAddr(a.id, a.is_active)} />
+                                    </td>
+                                    <td className="py-1.5 text-right">
+                                      <Button size="icon" variant="ghost" className="h-6 w-6" title="Edit receive address" onClick={() => {
+                                        setAddAddrFor(w); setEditAddr(a); setAddrError('');
+                                        setAddrForm({
+                                          label: a.label, address_name: a.address_name || '',
+                                          address_line1: a.address_line1, address_line2: a.address_line2 || '',
+                                          city: a.city || '', state: a.state || '',
+                                          postal_code: dbText(a.postal_code), country: a.country || 'US',
+                                          phone: dbText(a.phone), notes: a.notes || '',
+                                        });
+                                      }}><Pencil className="h-3 w-3" /></Button>
                                     </td>
                                   </tr>
                                 ))}
@@ -474,10 +501,10 @@ export function WarehousesTab() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Receive Address Dialog */}
-      <Dialog open={!!addAddrFor} onOpenChange={v => !v && setAddAddrFor(null)}>
+      {/* Add / Edit Receive Address Dialog */}
+      <Dialog open={!!addAddrFor} onOpenChange={v => !v && (setAddAddrFor(null), setEditAddr(null))}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Add Receive Address — {addAddrFor?.name}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editAddr ? 'Edit' : 'Add'} Receive Address — {addAddrFor?.name}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>Label *</Label><Input value={addrForm.label} onChange={e => setAddrForm(f => ({ ...f, label: e.target.value }))} placeholder='e.g. "Unit B dock", "PO Box 12"' /></div>
             <div><Label>Name Line</Label><Input value={addrForm.address_name} onChange={e => setAddrForm(f => ({ ...f, address_name: e.target.value }))} placeholder='e.g. "SND Fulfillment" — the recipient line on the label' /></div>
@@ -488,13 +515,14 @@ export function WarehousesTab() {
               <div><Label>State</Label><Input value={addrForm.state} onChange={e => setAddrForm(f => ({ ...f, state: e.target.value }))} /></div>
               <div><Label>Postal Code</Label><Input value={addrForm.postal_code} onChange={e => setAddrForm(f => ({ ...f, postal_code: e.target.value }))} /></div>
               <div><Label>Country</Label><Input value={addrForm.country} onChange={e => setAddrForm(f => ({ ...f, country: e.target.value }))} /></div>
+              <div className="col-span-2"><Label>Phone</Label><Input value={addrForm.phone} onChange={e => setAddrForm(f => ({ ...f, phone: e.target.value }))} placeholder="+1 555 000 0000 — carriers ask for a contact on inbound deliveries" /></div>
             </div>
             <div><Label>Notes</Label><Textarea value={addrForm.notes} onChange={e => setAddrForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></div>
             {addrError && <p className="text-sm text-red-600">{addrError}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddAddrFor(null)}>Cancel</Button>
-            <Button onClick={handleAddAddress} disabled={addrSaving}>{addrSaving ? 'Saving…' : 'Add Address'}</Button>
+            <Button variant="outline" onClick={() => { setAddAddrFor(null); setEditAddr(null); }}>Cancel</Button>
+            <Button onClick={handleAddAddress} disabled={addrSaving}>{addrSaving ? 'Saving…' : editAddr ? 'Save Changes' : 'Add Address'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
