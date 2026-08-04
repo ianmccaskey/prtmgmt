@@ -23,6 +23,8 @@ export type QueueItem = {
   sku: string; product_name: string;
   allocated_qty: number; stock_available: number; order_reserved_qty: number;
   fulfill_warehouses: string[] | string;
+  reserved_warehouses: string[] | string;
+  reserved_summary: string | null;
 };
 
 export type QueueOrder = {
@@ -96,8 +98,11 @@ export function groupQueueRows(rows: QueueItem[]): QueueOrder[] {
 
 /**
  * Scope the queue to a warehouse ('' = all): keep orders with at least one
- * line preferring it (line preference falls back to the order's), or — when
- * a line has no preference — with stock for that product there.
+ * line preferring it (line preference falls back to the order's); with no
+ * preference, the line's ACTUAL reservations decide (an auto order that
+ * reserved R10 at Oklahoma belongs in Oklahoma's queue even when the
+ * reservation consumed the last available units); only lines with no
+ * reservations at all fall back to where sellable stock sits.
  */
 export function scopeQueueOrders(
   orders: QueueOrder[], warehouseId: string, warehouseList: { id: number; name: string }[],
@@ -108,7 +113,10 @@ export function scopeQueueOrders(
     o.items.some(it => {
       const pref = it.line_preferred_warehouse_id ?? o.preferred_warehouse_id;
       if (pref != null) return String(pref) === String(warehouseId);
-      return whName ? parseWarehouses(it.fulfill_warehouses).includes(whName) : true;
+      if (!whName) return true;
+      const reserved = parseWarehouses(it.reserved_warehouses);
+      if (reserved.length > 0) return reserved.includes(whName);
+      return parseWarehouses(it.fulfill_warehouses).includes(whName);
     })
   );
 }
@@ -157,7 +165,12 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
                 const hasGap = gaps.size > 0;
                 const blocked = hasGap && !o.partial_fulfillment_allowed;
                 const totalRemaining = o.items.reduce((s, it) => s + itemRemaining(it), 0);
-                const warehouses = [...new Set(o.items.flatMap(it => parseWarehouses(it.fulfill_warehouses)))];
+                // Where the order's stock actually sits: reservations first,
+                // free-stock hints for unreserved lines.
+                const warehouses = [...new Set(o.items.flatMap(it => {
+                  const reserved = parseWarehouses(it.reserved_warehouses);
+                  return reserved.length > 0 ? reserved : parseWarehouses(it.fulfill_warehouses);
+                }))];
                 return (
                   <div key={o.order_id} className={`p-3 space-y-2 ${hasGap ? 'bg-red-50/60' : ''}`}>
                     <div className="flex items-center justify-between gap-2">
@@ -176,9 +189,10 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
                         const gap = gaps.has(it.product_id);
                         const shippable = Number(it.stock_available) + Number(it.order_reserved_qty);
                         return (
-                          <div key={it.item_id} className={`text-xs flex items-center gap-1 ${gap ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
+                          <div key={it.item_id} className={`text-xs flex items-center gap-1 flex-wrap ${gap ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
                             {gap && <AlertTriangle className="h-3 w-3" />}
                             {rem}× {it.product_name}
+                            {it.reserved_summary && <span className="text-blue-600">· reserved {it.reserved_summary}</span>}
                             {gap && <span className="text-red-400">({shippable} shippable)</span>}
                           </div>
                         );
@@ -225,7 +239,10 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
                   const hasGap = gaps.size > 0;
                   const blocked = hasGap && !o.partial_fulfillment_allowed;
                   const totalRemaining = o.items.reduce((s, it) => s + itemRemaining(it), 0);
-                  const warehouses = [...new Set(o.items.flatMap(it => parseWarehouses(it.fulfill_warehouses)))];
+                  const warehouses = [...new Set(o.items.flatMap(it => {
+                    const reserved = parseWarehouses(it.reserved_warehouses);
+                    return reserved.length > 0 ? reserved : parseWarehouses(it.fulfill_warehouses);
+                  }))];
                   return (
                     <tr key={o.order_id} className={`border-b ${hasGap ? 'bg-red-50/60' : 'hover:bg-slate-50'}`}>
                       <td className="px-4 py-2">
@@ -248,9 +265,10 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
                             const gap = gaps.has(it.product_id);
                             const shippable = Number(it.stock_available) + Number(it.order_reserved_qty);
                             return (
-                              <div key={it.item_id} className={`text-xs flex items-center gap-1 ${gap ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
+                              <div key={it.item_id} className={`text-xs flex items-center gap-1 flex-wrap ${gap ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
                                 {gap && <AlertTriangle className="h-3 w-3" />}
                                 {rem}× {it.product_name}
+                                {it.reserved_summary && <span className="text-blue-600">· reserved {it.reserved_summary}</span>}
                                 {gap && <span className="text-red-400">({shippable} shippable)</span>}
                               </div>
                             );

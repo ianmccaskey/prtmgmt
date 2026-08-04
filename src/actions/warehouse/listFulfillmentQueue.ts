@@ -25,6 +25,8 @@ function listFulfillmentQueue() {
         COALESCE(alloc.allocated_qty, 0) AS allocated_qty,
         COALESCE(stock.available_qty, 0) AS stock_available,
         COALESCE(res.reserved_qty, 0) AS order_reserved_qty,
+        COALESCE(res.reserved_warehouse_names, '{}') AS reserved_warehouses,
+        res.reserved_summary,
         COALESCE(stock.warehouse_names, '{}') AS fulfill_warehouses
       FROM sales_orders so
       JOIN customers c ON c.id = so.customer_id
@@ -38,8 +40,22 @@ function listFulfillmentQueue() {
         FROM sales_order_item_allocations GROUP BY sales_order_item_id
       ) alloc ON alloc.sales_order_item_id = soi.id
       LEFT JOIN (
-        SELECT ir.sales_order_id, ir.product_id, SUM(ir.quantity) AS reserved_qty
-        FROM inventory_reservations ir GROUP BY ir.sales_order_id, ir.product_id
+        -- The order's OWN reservations, with WHERE they live: reserved
+        -- stock isn't "available", so the stock-based warehouse hints go
+        -- blind exactly when a reservation consumed the last units — the
+        -- queue must scope and display by these, not just by free stock.
+        SELECT x.sales_order_id, x.product_id,
+          SUM(x.qty) AS reserved_qty,
+          ARRAY_AGG(x.wh_name ORDER BY x.wh_name) AS reserved_warehouse_names,
+          STRING_AGG(x.wh_name || ' ×' || x.qty, ', ' ORDER BY x.wh_name) AS reserved_summary
+        FROM (
+          SELECT ir.sales_order_id, ir.product_id, w2.name AS wh_name, SUM(ir.quantity) AS qty
+          FROM inventory_reservations ir
+          JOIN inventory i2 ON i2.id = ir.inventory_id
+          JOIN warehouses w2 ON w2.id = i2.warehouse_id
+          WHERE ir.sales_order_id IS NOT NULL
+          GROUP BY ir.sales_order_id, ir.product_id, w2.name
+        ) x GROUP BY x.sales_order_id, x.product_id
       ) res ON res.sales_order_id = so.id AND res.product_id = soi.product_id
       LEFT JOIN (
         SELECT i.product_id,
