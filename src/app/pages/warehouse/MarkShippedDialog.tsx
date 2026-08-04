@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Skeleton } from '@/components/ui/skeleton';
 import { ExternalLink, Plus, Trash2, Truck } from 'lucide-react';
 import { calcShippingCost, RatePlan } from '@/lib/shippingCost';
-import { QueueOrder, itemRemaining } from '@/app/pages/warehouse/FulfillmentTab';
+import { QueueOrder, itemRemaining, lineFulfillableAt } from '@/app/pages/warehouse/FulfillmentTab';
 import {
   ShippoAddress, ShippoRate, getShippoRates, buyShippoLabel, providerToCarrier, toIsoCountry,
 } from '@/lib/shippo';
@@ -322,11 +322,23 @@ function ShipToBlock({ order }: { order: QueueOrder }) {
   );
 }
 
-export function MarkShippedDialog({ order, onClose, onDone }: {
+export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouseName, onClose, onDone }: {
   order: QueueOrder; onClose: () => void; onDone: () => void;
+  /** Queue's warehouse scope: '' = whole order; an id = only that warehouse's portion. */
+  scopeWarehouseId?: string;
+  scopeWarehouseName?: string;
 }) {
   const { profileId, displayName, isWarehouse, assignedWarehouseId } = useAppUser();
   const [stockRaw, stockLoading] = useLoadAction(getFifoStockAction, [order.order_id], { order_id: order.order_id });
+
+  // Scoped view: each warehouse sees, allocates, packs, and labels ONLY its
+  // own portion of a split order — the same membership rule the queue used
+  // to route the order here. The All view keeps the whole order.
+  const visibleItems = scopeWarehouseId
+    ? order.items.filter(it => lineFulfillableAt(it, order.preferred_warehouse_id, scopeWarehouseId, scopeWarehouseName))
+    : order.items;
+  const hiddenLineCount = order.items.length - visibleItems.length;
+  const inScopeRow = (whId: number) => !scopeWarehouseId || String(whId) === scopeWarehouseId;
   const [planRaw, planLoading] = useLoadAction(getActiveRatePlanAction, [], {});
   // Warehouse users only receive their own warehouse's Shippo key.
   const shipFromScope = isWarehouse && assignedWarehouseId ? String(assignedWarehouseId) : '';
@@ -407,7 +419,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
     if (stockLoading || allocs.length > 0) return;
     const next: AllocRow[] = [];
     const usedByRow: Record<number, number> = {};
-    const itemsOrdered = [...order.items].sort((a, b) => (b.preferred_batch_id != null ? 1 : 0) - (a.preferred_batch_id != null ? 1 : 0));
+    const itemsOrdered = [...visibleItems].sort((a, b) => (b.preferred_batch_id != null ? 1 : 0) - (a.preferred_batch_id != null ? 1 : 0));
     for (const it of itemsOrdered) {
       let remaining = itemRemaining(it);
       // Own reservations outrank an unreserved pinned-batch row: shipping
@@ -425,7 +437,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
         (it.preferred_batch_id != null && r.batch_id === it.preferred_batch_id ? 2 : 0) +
         (prefWh != null && r.warehouse_id === prefWh ? 1 : 0);
       const candidates = stock
-        .filter(s => s.product_id === it.product_id)
+        .filter(s => s.product_id === it.product_id && inScopeRow(s.warehouse_id))
         .slice()
         .sort((a, b) => score(b) - score(a));
       for (const r of candidates) {
@@ -455,7 +467,7 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
   if (allocs.some(a => a.qty > 0 && a.inventory_id == null)) {
     problems.push('Every allocation row with a quantity needs a batch/warehouse selected (or remove the row).');
   }
-  for (const it of order.items) {
+  for (const it of visibleItems) {
     const lineTotal = allocs.filter(a => a.item_id === it.item_id && a.inventory_id != null).reduce((s, a) => s + a.qty, 0);
     const rem = itemRemaining(it);
     if (lineTotal > rem) problems.push(`${it.product_name}: allocated ${lineTotal} exceeds the ${rem} remaining.`);
@@ -558,6 +570,14 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
 
         {stockLoading || planLoading ? <Skeleton className="h-40 w-full" /> : (
           <div className="space-y-5">
+            {scopeWarehouseId && hiddenLineCount > 0 && (
+              <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
+                Showing only {scopeWarehouseName || 'this warehouse'}&apos;s portion of this order — {hiddenLineCount} other
+                line{hiddenLineCount === 1 ? '' : 's'} fulfill{hiddenLineCount === 1 ? 's' : ''} from another warehouse and
+                appear{hiddenLineCount === 1 ? 's' : ''} in its queue. The order goes to <span className="font-medium">partially
+                shipped</span> until every warehouse has shipped its part.
+              </p>
+            )}
             {/* Ship-to address — everything needed for a shipping label */}
             <ShipToBlock order={order} />
             {!plan && (
@@ -568,11 +588,11 @@ export function MarkShippedDialog({ order, onClose, onDone }: {
 
             {/* Per-line allocation editor */}
             <div className="space-y-4">
-              {order.items.map(it => {
+              {visibleItems.map(it => {
                 const lineAllocs = allocs.filter(a => a.item_id === it.item_id);
                 const lineTotal = lineAllocs.reduce((s, a) => s + a.qty, 0);
                 const rem = itemRemaining(it);
-                const productRows = stock.filter(s => s.product_id === it.product_id);
+                const productRows = stock.filter(s => s.product_id === it.product_id && inScopeRow(s.warehouse_id));
                 return (
                   <div key={it.item_id} className="border rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">

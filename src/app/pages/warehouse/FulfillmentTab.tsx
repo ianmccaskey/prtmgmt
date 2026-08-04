@@ -104,20 +104,30 @@ export function groupQueueRows(rows: QueueItem[]): QueueOrder[] {
  * reservation consumed the last available units); only lines with no
  * reservations at all fall back to where sellable stock sits.
  */
+/**
+ * Whether one queue line is this warehouse's to fulfill: explicit
+ * preference first (line, falling back to order), actual reservations
+ * second, free-stock presence last. Shared by queue scoping AND the
+ * Mark Shipped dialog so both always agree on whose line it is.
+ */
+export function lineFulfillableAt(
+  it: QueueItem, orderPrefWhId: number | null, warehouseId: string, whName: string | undefined,
+): boolean {
+  const pref = it.line_preferred_warehouse_id ?? orderPrefWhId;
+  if (pref != null) return String(pref) === String(warehouseId);
+  if (!whName) return true;
+  const reserved = parseWarehouses(it.reserved_warehouses);
+  if (reserved.length > 0) return reserved.includes(whName);
+  return parseWarehouses(it.fulfill_warehouses).includes(whName);
+}
+
 export function scopeQueueOrders(
   orders: QueueOrder[], warehouseId: string, warehouseList: { id: number; name: string }[],
 ): QueueOrder[] {
   if (!warehouseId) return orders;
   const whName = warehouseList.find(w => String(w.id) === warehouseId)?.name;
   return orders.filter(o =>
-    o.items.some(it => {
-      const pref = it.line_preferred_warehouse_id ?? o.preferred_warehouse_id;
-      if (pref != null) return String(pref) === String(warehouseId);
-      if (!whName) return true;
-      const reserved = parseWarehouses(it.reserved_warehouses);
-      if (reserved.length > 0) return reserved.includes(whName);
-      return parseWarehouses(it.fulfill_warehouses).includes(whName);
-    })
+    o.items.some(it => lineFulfillableAt(it, o.preferred_warehouse_id, warehouseId, whName))
   );
 }
 
@@ -310,6 +320,8 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
       {shipOrder && (
         <MarkShippedDialog
           order={shipOrder}
+          scopeWarehouseId={warehouseId}
+          scopeWarehouseName={whName}
           onClose={() => setShipOrder(null)}
           onDone={() => { setShipOrder(null); reload(); }}
         />
