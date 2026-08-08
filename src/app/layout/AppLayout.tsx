@@ -40,7 +40,9 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { label: 'Home', href: '/', icon: Home },
   { label: 'Sales Orders', href: '/orders', icon: ShoppingCart },
-  { label: 'Customers', href: '/customers', icon: Users, roles: ['admin', 'sales_rep', 'logistics'] },
+  // Sales reps create/pick customers inside the order form but don't get
+  // the browsable customer list.
+  { label: 'Customers', href: '/customers', icon: Users, roles: ['admin', 'logistics'] },
   { label: 'Products', href: '/products', icon: Package },
   { label: 'Batches', href: '/batches', icon: FlaskConical },
   { label: 'Warehouse', href: '/warehouse', icon: Warehouse },

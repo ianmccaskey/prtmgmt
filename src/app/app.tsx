@@ -28,8 +28,8 @@ function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/orders" element={<OrdersPage />} />
-            <Route path="/customers" element={<RequireRole roles={['admin', 'sales_rep', 'logistics']}><CustomersPage /></RequireRole>} />
-            <Route path="/customers/:id" element={<RequireRole roles={['admin', 'sales_rep', 'logistics']}><CustomerDetailPage /></RequireRole>} />
+            <Route path="/customers" element={<RequireRole roles={['admin', 'logistics']}><CustomersPage /></RequireRole>} />
+            <Route path="/customers/:id" element={<RequireRole roles={['admin', 'logistics']}><CustomerDetailPage /></RequireRole>} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/products/:id" element={<ProductDetailPage />} />
             <Route path="/batches" element={<BatchesPage />} />

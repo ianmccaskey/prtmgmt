@@ -42,6 +42,26 @@ export function listOrders() {
         AND (COALESCE({{params.channel}}, '') = '' OR so.order_channel = {{params.channel}})
         AND ({{params.isFreeOrder}} IS NULL OR so.is_free_order = {{params.isFreeOrder}}::boolean)
         AND (COALESCE({{params.division}}, '') = '' OR COALESCE(rp.division, 'us') = {{params.division}})
+        AND (
+          -- Sales-rep visibility scope ('' = unscoped, admins/logistics):
+          -- reps see only their OWN orders, and delivered ones only for a
+          -- month after delivery (delivery date = latest shipment
+          -- delivered_date, else the status-flip audit row; an undatable
+          -- delivered order stays visible rather than vanishing).
+          COALESCE({{params.repScope}}, '') = ''
+          OR (
+            so.sales_rep_user_profile_id::text = {{params.repScope}}
+            AND (
+              so.status <> 'delivered'
+              OR COALESCE(
+                   (SELECT MAX(o2.delivered_date) FROM shipments_outbound o2 WHERE o2.sales_order_id = so.id),
+                   (SELECT MAX(al.changed_at)::date FROM order_audit_log al
+                    WHERE al.sales_order_id = so.id AND al.change_type = 'status' AND al.new_value = 'delivered'),
+                   CURRENT_DATE
+                 ) >= CURRENT_DATE - INTERVAL '1 month'
+            )
+          )
+        )
         AND ({{params.dateFrom}} IS NULL OR so.order_date >= {{params.dateFrom}}::date)
         AND ({{params.dateTo}} IS NULL OR so.order_date <= {{params.dateTo}}::date)
       ORDER BY so.order_date DESC, so.id DESC

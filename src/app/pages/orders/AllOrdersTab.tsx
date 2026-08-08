@@ -36,8 +36,11 @@ const PAYMENT_OPTIONS = ['', 'unpaid', 'partial_paid', 'paid', 'refunded'];
 const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
 
 export function AllOrdersTab() {
-  const { isWarehouse, isLogistics, profileId } = useAppUser();
+  const { isWarehouse, isLogistics, isSalesRep, profileId } = useAppUser();
   const readOnlyOrders = isWarehouse || isLogistics;
+  // Sales reps see only their OWN orders, and delivered ones only for a
+  // month after delivery (the data stays; only their view narrows).
+  const repScope = isSalesRep && profileId != null ? String(profileId) : null;
   const [doUpdateStatus] = useMutateAction(updateOrderStatus);
   const [doAudit] = useMutateAction(insertAuditLog);
 
@@ -64,9 +67,10 @@ export function AllOrdersTab() {
     paymentStatus: paymentFilter || null, channel: channelFilter || null,
     isFreeOrder: null, dateFrom: dateFrom || null, dateTo: dateTo || null,
     division: divisionFilter || null,
+    repScope,
   };
 
-  const [orders, loading, , reload] = useLoadAction(listOrders, [search, statusFilter, paymentFilter, channelFilter, divisionFilter, dateFrom, dateTo], params);
+  const [orders, loading, , reload] = useLoadAction(listOrders, [search, statusFilter, paymentFilter, channelFilter, divisionFilter, dateFrom, dateTo, repScope], params);
 
   const pg = usePagination(asRows<Order>(orders));
   const openDetail = (id: number) => { setSelectedOrderId(id); setDrawerOpen(true); };

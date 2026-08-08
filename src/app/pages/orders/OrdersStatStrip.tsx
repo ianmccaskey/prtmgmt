@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLoadAction } from '@uibakery/data';
 import getOrdersStatStrip from '@/actions/orders/getOrdersStatStrip';
+import { useAppUser } from '@/app/AppContext';
 
 type StatStripRow = {
   confirmed_count: string;
@@ -21,7 +22,10 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function OrdersStatStrip() {
-  const [raw] = useLoadAction(getOrdersStatStrip, []);
+  const { isSalesRep, profileId } = useAppUser();
+  // Reps' stat cards cover their own orders only, matching the list below.
+  const repScope = isSalesRep && profileId != null ? String(profileId) : null;
+  const [raw] = useLoadAction(getOrdersStatStrip, [repScope], { repScope });
   const data: StatStripRow = (raw as StatStripRow[])[0] ?? {} as StatStripRow;
 
   const fmtUSD = (v: string) => {
