@@ -257,7 +257,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 const a = String(p.asset); const n = String(p.network);
                 setFixAsset(ASSETS.includes(a) ? a : 'USDC');
                 setFixNetwork((NETWORKS[a] || []).includes(n) ? n : (NETWORKS[a]?.[0] || 'ethereum'));
-                const tx = String(p.tx_hash || '');
+                const tx = dbText(p.tx_hash as string | null) || String(p.tx_hash || '');
                 setFixTx(tx); setFixTxOriginal(tx);
                 setFixErr('');
                 setFixOpen(Number(p.id));
