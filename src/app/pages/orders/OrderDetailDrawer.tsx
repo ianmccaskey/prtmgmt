@@ -95,6 +95,10 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const [fixOpen, setFixOpen] = useState<number | null>(null);
   const [fixAsset, setFixAsset] = useState('USDC');
   const [fixNetwork, setFixNetwork] = useState('ethereum');
+  // TX hash is editable too — when a deposit was swapped to another
+  // asset/wallet, the record must follow the money to the swap TX.
+  const [fixTx, setFixTx] = useState('');
+  const [fixTxOriginal, setFixTxOriginal] = useState('');
   const [fixSaving, setFixSaving] = useState(false);
   const [fixErr, setFixErr] = useState('');
 
@@ -191,20 +195,26 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const doFixWallet = async () => {
     if (fixOpen == null || !fixWallet) return;
     const before = payList.find(p => Number(p.id) === fixOpen);
+    const txChanged = fixTx.trim() !== fixTxOriginal;
     setFixSaving(true); setFixErr('');
     try {
-      const res = await repointPayment({ paymentId: fixOpen, asset: fixAsset, network: fixNetwork, walletId: fixWallet.id }) as unknown[];
+      const res = await repointPayment({
+        paymentId: fixOpen, asset: fixAsset, network: fixNetwork, walletId: fixWallet.id,
+        // NULL = keep current hash; '' clears; else replace.
+        txHash: txChanged ? fixTx.trim() : null,
+      }) as unknown[];
       if (!res || res.length === 0) {
         setFixErr('This payment is part of an already-stamped settlement cycle — repointing it would rewrite settled history. It has to stay as recorded.');
         return;
       }
+      const snip = (h: string) => h ? `${h.slice(0, 14)}…` : '(none)';
       await writeAudit({
         // 'other' — the order_audit_log change_type CHECK has no payment
         // entry; field_name carries the specifics.
         orderId, userId: profileId, changeType: 'other', fieldName: 'payment_wallet',
-        oldValue: before ? `${String(before.asset)}/${String(before.network)}` : null,
-        newValue: `${fixAsset}/${fixNetwork}`,
-        note: `Payment #${fixOpen} repointed to ${fixWallet.label}`,
+        oldValue: before ? `${String(before.asset)}/${String(before.network)}${txChanged ? ` TX ${snip(fixTxOriginal)}` : ''}` : null,
+        newValue: `${fixAsset}/${fixNetwork}${txChanged ? ` TX ${snip(fixTx.trim())}` : ''}`,
+        note: `Payment #${fixOpen} repointed to ${fixWallet.label}${txChanged ? ` — TX hash changed from ${fixTxOriginal || '(none)'} to ${fixTx.trim() || '(none)'}` : ''}`,
       });
       setFixOpen(null);
       reloadPay();
@@ -247,6 +257,8 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 const a = String(p.asset); const n = String(p.network);
                 setFixAsset(ASSETS.includes(a) ? a : 'USDC');
                 setFixNetwork((NETWORKS[a] || []).includes(n) ? n : (NETWORKS[a]?.[0] || 'ethereum'));
+                const tx = String(p.tx_hash || '');
+                setFixTx(tx); setFixTxOriginal(tx);
                 setFixErr('');
                 setFixOpen(Number(p.id));
               }}>
@@ -371,8 +383,9 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
           <DialogHeader><DialogTitle>Fix Payment Wallet</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-xs text-muted-foreground">
-              For payments recorded against the wrong asset, network, or wallet — the money actually arrived somewhere else.
-              Amount and verified status stay as they are; the change is audit-logged.
+              For payments recorded against the wrong asset, network, wallet, or transaction — the money actually
+              arrived somewhere else, or was swapped and the record must follow it to the swap TX. Amount and
+              verified status stay as they are; the change is audit-logged.
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div><Label className="text-xs">Asset</Label>
@@ -398,6 +411,13 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 No active {fixAsset} wallet on {NETWORK_LABELS[fixNetwork] || fixNetwork} — add one under Settings → Wallets, or pick another asset.
               </p>
             )}
+            <div>
+              <Label className="text-xs">TX Hash <span className="text-muted-foreground font-normal">(the deposit into the wallet above — for swaps, the swap TX; keep the original TX in the reason/notes)</span></Label>
+              <Input value={fixTx} onChange={e => setFixTx(e.target.value)} placeholder="0x… / signature" className="h-8" />
+              {fixTx.trim() !== fixTxOriginal && (
+                <p className="text-xs text-amber-700 mt-0.5">TX hash will change — the old hash goes to the audit log.</p>
+              )}
+            </div>
             {fixErr && <p className="text-xs text-red-600">{fixErr}</p>}
           </div>
           <DialogFooter>

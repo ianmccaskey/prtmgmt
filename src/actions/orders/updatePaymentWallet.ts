@@ -2,8 +2,11 @@ import { action } from '@uibakery/data';
 
 /**
  * Admin correction for a payment recorded against the wrong asset, network,
- * or receive wallet (e.g. USDC-SOL money logged as USDC-ETH). Amount and
- * verification status are untouched; callers audit-log the change.
+ * receive wallet, or transaction (e.g. USDC-SOL money logged as USDC-ETH,
+ * or an ETH deposit swapped into USDC where the record must follow the
+ * money to the swap TX). Amount and verification status are untouched;
+ * callers audit-log the change. tx_hash semantics: NULL = keep the current
+ * hash, '' = clear it, anything else = replace it.
  *
  * Refuses (0 rows) when the payment is a verified one that already counted
  * in a stamped settlement cycle — repointing it would rewrite settled
@@ -17,7 +20,11 @@ export function updatePaymentWallet() {
       UPDATE order_payments op
       SET asset = {{params.asset}},
           network = {{params.network}},
-          receive_wallet_id = {{params.walletId}}::bigint
+          receive_wallet_id = {{params.walletId}}::bigint,
+          tx_hash = CASE
+            WHEN {{params.txHash}}::text IS NULL THEN op.tx_hash
+            ELSE NULLIF({{params.txHash}}::text, '')
+          END
       WHERE op.id = {{params.paymentId}}::bigint
         AND (op.verification_status <> 'verified'
              -- Division-aware: only the payment's OWN division's stamp
