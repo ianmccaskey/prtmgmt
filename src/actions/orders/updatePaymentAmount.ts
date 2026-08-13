@@ -62,6 +62,11 @@ export function updatePaymentAmount() {
       recompute AS (
         UPDATE sales_orders so
         SET payment_status = CASE
+          -- Mirrors recomputePaymentStatus: China-division orders always
+          -- read 'paid' (their money lives outside the app).
+          WHEN EXISTS (SELECT 1 FROM user_profiles rp2
+                       WHERE rp2.id = so.sales_rep_user_profile_id
+                         AND rp2.division = 'china') THEN 'paid'
           WHEN COALESCE(calc.refund_cnt, 0) > 0 AND COALESCE(calc.net, 0) <= 0 THEN 'refunded'
           WHEN COALESCE(calc.net, 0) >= so.total_usd THEN 'paid'
           WHEN COALESCE(calc.net, 0) > 0 THEN 'partial_paid'

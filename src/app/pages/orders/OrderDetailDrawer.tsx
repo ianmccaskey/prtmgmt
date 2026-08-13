@@ -130,6 +130,9 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   };
 
   const doAddPayment = async () => {
+    // Race guard: the form may have been opened before the order's rep was
+    // switched to the China division (whose money is never recorded here).
+    if (division === 'china') { setAddOpen(false); return; }
     const amt = Number(payAmount);
     if (!selectedWallet) { setAddErr('No active wallet for this asset/network — add one under Settings → Wallets.'); return; }
     if (!(amt > 0)) { setAddErr('Enter the payment amount in USD.'); return; }
@@ -299,7 +302,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
           <Plus className="h-3 w-3 mr-1" /> Add Payment
         </Button>
       )}
-      {!readOnlyRole && addOpen && (
+      {!readOnlyRole && division !== 'china' && addOpen && (
         <div className="border rounded-md p-3 space-y-3 bg-muted/20">
           <p className="text-sm font-medium">Add Crypto Payment</p>
           <div className="grid grid-cols-2 gap-2">
@@ -621,6 +624,9 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [notificationsRaw] = useLoadAction(getOrderNotifications, [orderId], { orderId }, { enabled: !!orderId });
   const [salesReps] = useLoadAction(listSalesReps, []);
   const [doUpdateRep] = useMutateAction(updateOrderSalesRep);
+  // Rep changes can change the order's division, which drives the derived
+  // payment status (China = always 'paid') — re-derive right away.
+  const [recomputeAfterRepChange] = useMutateAction(recomputePaymentStatus);
   const [warehousesRaw] = useLoadAction(listWarehousesAction, [], {});
   const [doUpdateWarehouse] = useMutateAction(updateOrderPreferredWarehouse);
   const [doSaveNotes] = useMutateAction(updateOrderNotes);
@@ -711,6 +717,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                           value={order.sales_rep_user_profile_id ? String(order.sales_rep_user_profile_id) : ''}
                           onValueChange={async (v) => {
                             await doUpdateRep({ orderId, salesRepUserProfileId: v ? Number(v) : null });
+                            await recomputeAfterRepChange({ orderId });
                             setEditingRep(false);
                             reloadDetail();
                           }}
@@ -839,7 +846,9 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
 
                   {!readOnlyRole && <div className="flex gap-2 flex-wrap">
                     {status === 'quote' && (
-                      ['paid', 'partial_paid'].includes(String(order.payment_status)) ? (
+                      // China-division quotes confirm without payment — the
+                      // customer paid the rep's external wallet already.
+                      ['paid', 'partial_paid'].includes(String(order.payment_status)) || String(order.sales_rep_division) === 'china' ? (
                         <Button size="sm" className="h-7 text-xs" disabled={updatingStatus} onClick={() => handleStatusAction('confirmed')}>Confirm Order</Button>
                       ) : (
                         <TooltipProvider>
@@ -886,7 +895,8 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
 
                     <TabsContent value="payments" className="pt-3 space-y-3">
                       <PaymentsPanel orderId={Number(orderId)} orderTotal={Number(order?.total_usd) || 0} division={String(order?.sales_rep_division || 'us')} reload={reloadAll} />
-                      {!readOnlyRole && <RefundTaskForm orderId={Number(orderId)} onCreated={reloadAll} />}
+                      {/* China money lives outside the app — refunds too. */}
+                      {!readOnlyRole && String(order?.sales_rep_division) !== 'china' && <RefundTaskForm orderId={Number(orderId)} onCreated={reloadAll} />}
                     </TabsContent>
 
                     <TabsContent value="shipments" className="pt-3 space-y-2">
