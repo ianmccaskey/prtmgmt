@@ -278,7 +278,13 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
         </div>
       ))}
 
-      {!readOnlyRole && !addOpen && (
+      {division === 'china' && (
+        <p className="text-xs text-muted-foreground border rounded p-2 bg-muted/20">
+          China division — customer payment is handled outside the app; orders are entered after the customer
+          has paid, so no payment records are kept here.
+        </p>
+      )}
+      {!readOnlyRole && division !== 'china' && !addOpen && (
         <Button
           size="sm" variant="outline" className="h-7 text-xs"
           onClick={() => {
@@ -296,11 +302,6 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       {!readOnlyRole && addOpen && (
         <div className="border rounded-md p-3 space-y-3 bg-muted/20">
           <p className="text-sm font-medium">Add Crypto Payment</p>
-          {division === 'china' && (
-            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
-              China-division order — wallets shown are the China division&apos;s; this payment settles through the China settlement.
-            </p>
-          )}
           <div className="grid grid-cols-2 gap-2">
             <div><Label className="text-xs">Asset</Label>
               <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); }}>

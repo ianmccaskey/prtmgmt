@@ -538,7 +538,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     // says — "verified" means money is in the wallet, and a phantom verified
     // payment on a quote (later cancelled) poisons wallet reconciliation and
     // commission accruals. Verify from the order drawer once it's real.
-    if (addPay && total > 0 && selectedWallet) {
+    if (addPay && total > 0 && selectedWallet && orderDivision !== 'china') {
       await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: null, amountAsset: null, amountUsd: total, txHash: payTx || null, verified: s === 'confirmed' && payVerified, userId: profileId });
     }
     // Derive payment_status (free $0 orders roll straight to 'paid').
@@ -552,7 +552,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       const up = await doStatus({ orderId, status: 'confirmed', cancellationReason: null }) as unknown[];
       confirmed = !!up && up.length > 0;
       if (confirmed) {
-        await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: 'quote', newValue: 'confirmed', note: 'Confirmed at creation (payment verified)' });
+        await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: 'quote', newValue: 'confirmed', note: orderDivision === 'china' ? 'Confirmed at creation (China division — payment handled externally)' : 'Confirmed at creation (payment verified)' });
       } else {
         gateRefused = true;
       }
@@ -925,7 +925,16 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
             <div className="flex justify-between font-semibold"><span>Total</span><span>${total.toFixed(2)}</span></div>
           </div>
 
-          {/* Payment */}
+          {/* Payment — China-division orders never record one: the customer
+              pays the rep's own wallet BEFORE the order is entered. */}
+          {orderDivision === 'china' ? (
+            <div className="border rounded p-3 mb-4">
+              <p className="text-xs text-muted-foreground">
+                China division — customer payment is handled outside the app; orders are entered after the
+                customer has paid. No payment record is needed and the order confirms directly.
+              </p>
+            </div>
+          ) : (
           <div className="border rounded p-3 mb-4 space-y-3">
             <div className="flex items-center gap-3">
               <Switch checked={addPay} onCheckedChange={setAddPay} disabled={total === 0} />
@@ -933,12 +942,6 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
             </div>
             {addPay && (
               <div className="space-y-3">
-                {orderDivision === 'china' && (
-                  <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
-                    China-division order — payment wallets below are the China division&apos;s. This order settles
-                    through the China settlement, separate from US settlements.
-                  </p>
-                )}
                 <div className="grid grid-cols-2 gap-2">
                   <div><Label className="text-xs">Asset</Label>
                     <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); }}>
@@ -988,6 +991,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               </div>
             )}
           </div>
+          )}
 
           {/* Free Order */}
           <div className="border rounded p-3 mb-4 space-y-3">
@@ -1032,7 +1036,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
             ) : (<>
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button variant="secondary" onClick={() => save('quote')} disabled={creating || saving}>{saving ? 'Saving…' : 'Save as Quote'}</Button>
-            {canConfirm && (isFree || total === 0 || (addPay && !!selectedWallet && payVerified)) ? (
+            {canConfirm && (isFree || total === 0 || orderDivision === 'china' || (addPay && !!selectedWallet && payVerified)) ? (
               <Button onClick={() => save('confirmed')} disabled={creating || saving}>{saving ? 'Saving…' : 'Confirm Order'}</Button>
             ) : (
               <TooltipProvider>
