@@ -3,9 +3,12 @@ import { action } from '@uibakery/data';
 /**
  * Receive one inbound line in a SINGLE atomic statement: guarded item
  * update (only while unreceived) + inventory credit + optional shortage
- * write-off + activity log. Replaces the old four-call chain, which could
- * be interrupted mid-way and strand the shipment (received line, no
- * write-off, never flipped to delivered, no UI recovery path).
+ * write-off + activity log + the shipment status flip. Replaces the old
+ * multi-call chain, which could be interrupted mid-way and strand the
+ * shipment (received line, never flipped to delivered, no UI recovery
+ * path — SRY-T60-0726 sat in 'freight_forwarder' for weeks that way).
+ * The flip CTE reads the pre-update snapshot, so it counts unreceived
+ * lines EXCLUDING the one this statement just received.
  *
  * Empty result = the line was already received (concurrent action) — the
  * caller skips it, no side effects fire.
@@ -56,6 +59,21 @@ function receiveLineAtomic() {
                product_id, batch_id, {{params.quantity_received}}::int,
                'shipments_inbound_items', id, {{params.discrepancy_notes}}
         FROM upd
+      ),
+      flip AS (
+        UPDATE shipments_inbound si
+        SET status = CASE
+          -- Pre-update snapshot: other lines' state is visible, this
+          -- line's isn't — exclude it from the unreceived count.
+          WHEN (SELECT COUNT(*) FROM shipments_inbound_items x
+                WHERE x.shipment_id = si.id
+                  AND x.id <> {{params.item_id}}::bigint
+                  AND x.quantity_received IS NULL) = 0
+          THEN 'delivered'
+          ELSE 'in_transit'
+        END
+        FROM upd
+        WHERE si.id = (SELECT shipment_id FROM shipments_inbound_items WHERE id = upd.id)
       )
       SELECT id FROM upd
     `,
