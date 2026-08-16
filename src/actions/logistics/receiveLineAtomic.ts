@@ -8,7 +8,12 @@ import { action } from '@uibakery/data';
  * shipment (received line, never flipped to delivered, no UI recovery
  * path — SRY-T60-0726 sat in 'freight_forwarder' for weeks that way).
  * The flip CTE reads the pre-update snapshot, so it counts unreceived
- * lines EXCLUDING the one this statement just received.
+ * lines EXCLUDING the one this statement just received. Known residual
+ * (accepted): two FINAL lines received concurrently each see the other
+ * as unreceived and both set in_transit — the standalone
+ * flipShipmentDelivered the dialog chains afterward repairs that; the
+ * dialog receives sequentially, so hitting it needs two operators plus
+ * a failed follow-up.
  *
  * Empty result = the line was already received (concurrent action) — the
  * caller skips it, no side effects fire.
