@@ -46,6 +46,7 @@ import updateOrderPreferredWarehouse from '@/actions/orders/updateOrderPreferred
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 import updatePaymentWallet from '@/actions/orders/updatePaymentWallet';
 import updatePaymentAmount from '@/actions/orders/updatePaymentAmount';
+import correctShipmentTracking from '@/actions/orders/correctShipmentTracking';
 import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 
 interface OrderDetailDrawerProps {
@@ -65,6 +66,8 @@ type AuditEntry = Record<string, string | number | null>;
 const ISSUE_TYPES = ['lost_in_transit', 'damaged_in_transit', 'returned_to_sender', 'stuck_in_transit', 'other'];
 // Must match the order_payments.issue_type CHECK constraint.
 const PAYMENT_ISSUE_TYPES = ['underpaid', 'overpaid', 'wrong_asset', 'wrong_network', 'wallet_mismatch', 'unconfirmed_onchain', 'other'];
+// Must match the shipments_outbound.carrier CHECK constraint.
+const SHIP_CARRIERS = ['USPS', 'UPS', 'FedEx', 'DHL', 'other'];
 
 function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: { orderId: number; orderTotal: number; division: string; reload: () => void }) {
   const { isLogistics, isWarehouse, isAdmin } = useAppUser();
@@ -508,7 +511,7 @@ function RefundTaskForm({ orderId, onCreated }: { orderId: number; onCreated: ()
 }
 
 function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: () => void }) {
-  const { profileId, isLogistics } = useAppUser();
+  const { profileId, isLogistics, isAdmin, isWarehouse } = useAppUser();
   const [flagOpen, setFlagOpen] = useState(false);
   const [issueFlag, setIssueFlag] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
@@ -517,6 +520,43 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
   const doFlagSubmit = async () => {
     await doFlag({ shipmentId: shipment.id, issueFlag, issueNotes, userId: profileId });
     setFlagOpen(false); onRefresh();
+  };
+
+  // Correct Tracking — replace a wrong carrier/number, audit-logged; a
+  // false auto-delivery from the wrong number gets reverted in the same
+  // atomic statement and the sync re-tracks the corrected number.
+  const [trkOpen, setTrkOpen] = useState(false);
+  const [trkCarrier, setTrkCarrier] = useState('USPS');
+  const [trkNumber, setTrkNumber] = useState('');
+  const [trkReason, setTrkReason] = useState('');
+  const [trkSaving, setTrkSaving] = useState(false);
+  const [trkErr, setTrkErr] = useState('');
+  const [doCorrectTracking] = useMutateAction(correctShipmentTracking);
+  const wasDelivered = String(shipment.status) === 'delivered';
+
+  const openTrk = () => {
+    setTrkCarrier(SHIP_CARRIERS.includes(String(shipment.carrier)) ? String(shipment.carrier) : 'USPS');
+    setTrkNumber(dbText(shipment.tracking_number));
+    setTrkReason(''); setTrkErr('');
+    setTrkOpen(true);
+  };
+  const doTrkSubmit = async () => {
+    if (!trkNumber.trim()) { setTrkErr('Enter the correct tracking number.'); return; }
+    if (!trkReason.trim()) { setTrkErr('A reason is required — it goes to the order audit log.'); return; }
+    setTrkSaving(true); setTrkErr('');
+    try {
+      const res = await doCorrectTracking({
+        shipment_id: shipment.id, carrier: trkCarrier, tracking_number: trkNumber.trim(),
+        userId: profileId, note: trkReason.trim(),
+      }) as unknown[];
+      if (!res || res.length === 0) { setTrkErr('Shipment not found — refresh and retry.'); return; }
+      setTrkOpen(false);
+      onRefresh();
+    } catch (e: unknown) {
+      setTrkErr(e instanceof Error ? e.message : 'Failed to correct tracking');
+    } finally {
+      setTrkSaving(false);
+    }
   };
 
   return (
@@ -540,11 +580,57 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
       </p>}
       {shipment.shipped_date && <p className="text-xs text-muted-foreground">Shipped: {String(shipment.shipped_date)}</p>}
       {shipment.issue_notes && <p className="text-xs text-red-600">{String(shipment.issue_notes)}</p>}
-      {!isLogistics && (
-        <Button size="sm" variant="outline" className="h-7 text-xs mt-1" onClick={() => { setFlagOpen(true); setIssueFlag(String(shipment.issue_flag || '')); setIssueNotes(String(shipment.issue_notes || '')); }}>
-          <Flag className="h-3 w-3 mr-1" /> Flag Issue
-        </Button>
-      )}
+      <div className="flex gap-2 flex-wrap">
+        {!isLogistics && (
+          <Button size="sm" variant="outline" className="h-7 text-xs mt-1" onClick={() => { setFlagOpen(true); setIssueFlag(String(shipment.issue_flag || '')); setIssueNotes(String(shipment.issue_notes || '')); }}>
+            <Flag className="h-3 w-3 mr-1" /> Flag Issue
+          </Button>
+        )}
+        {(isAdmin || isWarehouse) && (
+          <Button size="sm" variant="outline" className="h-7 text-xs mt-1" onClick={openTrk}>
+            <Pencil className="h-3 w-3 mr-1" /> Correct Tracking
+          </Button>
+        )}
+      </div>
+
+      <Dialog open={trkOpen} onOpenChange={v => !v && setTrkOpen(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Correct Tracking</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Replaces this shipment&apos;s carrier/tracking number. The tracking sync starts fresh on the new
+              number. The change is audit-logged with your reason.
+            </p>
+            {wasDelivered && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                This shipment was marked <span className="font-medium">delivered by the wrong number</span> —
+                correcting will revert it (and the order, if fully delivered) to shipped/in-transit, and the
+                sync will re-deliver it when the real package lands.
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label className="text-xs">Carrier</Label>
+                <Select value={trkCarrier} onValueChange={setTrkCarrier}>
+                  <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                  <SelectContent>{SHIP_CARRIERS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2"><Label className="text-xs">Tracking Number *</Label>
+                <Input value={trkNumber} onChange={e => setTrkNumber(e.target.value)} className="h-8 font-mono" /></div>
+            </div>
+            <div>
+              <Label className="text-xs">Reason * <span className="text-muted-foreground font-normal">(written to the order audit log)</span></Label>
+              <Textarea rows={2} value={trkReason} onChange={e => setTrkReason(e.target.value)}
+                placeholder="e.g. wrong label scanned at packout — correct number from the physical label" />
+            </div>
+            {trkErr && <p className="text-xs text-red-600">{trkErr}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTrkOpen(false)} disabled={trkSaving}>Cancel</Button>
+            <Button onClick={doTrkSubmit} disabled={trkSaving}>{trkSaving ? 'Saving…' : 'Correct Tracking'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={flagOpen} onOpenChange={setFlagOpen}>
         <DialogContent className="max-w-sm">
@@ -903,7 +989,9 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       {shipmentsLoading ? <Skeleton className="h-20 w-full" /> : shipmentList.length === 0 ? (
                         <p className="text-sm text-muted-foreground">No shipments yet.</p>
                       ) : (
-                        shipmentList.map(s => <ShipmentCard key={String(s.id)} shipment={s} onRefresh={reloadShipments} />)
+                        // reloadAll: a tracking correction can revert the ORDER
+                        // status too, not just the shipment card.
+                        shipmentList.map(s => <ShipmentCard key={String(s.id)} shipment={s} onRefresh={reloadAll} />)
                       )}
                     </TabsContent>
 
