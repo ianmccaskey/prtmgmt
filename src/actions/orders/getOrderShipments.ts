@@ -7,6 +7,7 @@ export function getOrderShipments() {
       SELECT
         so2.id,
         so2.origin,
+        so2.origin_warehouse_id,
         so2.carrier,
         '#' || so2.tracking_number AS tracking_number,
         so2.shipped_date,

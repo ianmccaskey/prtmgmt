@@ -511,7 +511,10 @@ function RefundTaskForm({ orderId, onCreated }: { orderId: number; onCreated: ()
 }
 
 function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: () => void }) {
-  const { profileId, isLogistics, isAdmin, isWarehouse } = useAppUser();
+  const { profileId, isLogistics, isAdmin, isWarehouse, assignedWarehouseId } = useAppUser();
+  // Warehouse staff correct only THEIR warehouse's shipments; admins any.
+  const canCorrectTracking = isAdmin
+    || (isWarehouse && assignedWarehouseId != null && Number(shipment.origin_warehouse_id) === Number(assignedWarehouseId));
   const [flagOpen, setFlagOpen] = useState(false);
   const [issueFlag, setIssueFlag] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
@@ -586,7 +589,7 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
             <Flag className="h-3 w-3 mr-1" /> Flag Issue
           </Button>
         )}
-        {(isAdmin || isWarehouse) && (
+        {canCorrectTracking && (
           <Button size="sm" variant="outline" className="h-7 text-xs mt-1" onClick={openTrk}>
             <Pencil className="h-3 w-3 mr-1" /> Correct Tracking
           </Button>
@@ -606,6 +609,12 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
                 This shipment was marked <span className="font-medium">delivered by the wrong number</span> —
                 correcting will revert it (and the order, if fully delivered) to shipped/in-transit, and the
                 sync will re-deliver it when the real package lands.
+              </p>
+            )}
+            {shipment.label_url != null && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                A purchased Shippo label is attached to this shipment — it belongs to the <span className="font-medium">old</span> number
+                and stays linked for reference only. Don&apos;t ship with that label against the corrected number.
               </p>
             )}
             <div className="grid grid-cols-2 gap-2">
