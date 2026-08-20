@@ -212,6 +212,9 @@ function OnChainWalletCheck({ division }: { division: string }) {
           res = await doAutoRepair({
             paymentId: p.id, asset: siblingAsset, network: openWallet.network,
             walletId: sibling.id, userId: profileId,
+            // Proof re-asserted server-side: the row must still carry this
+            // hash and amount at update time, not just when the UI checked.
+            txHash: String(p.tx_hash).trim(), amountUsd: Number(p.amount_usd),
             note: `Auto-repair (wallet check): recorded TX ${p.tx_hash} was confirmed on-chain as a ${siblingAsset} deposit of ${hit.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} to ${sibling.label} — asset corrected from ${openWallet.asset}`,
           }) as unknown[];
         } catch {
