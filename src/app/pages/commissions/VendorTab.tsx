@@ -14,7 +14,7 @@ import getWalletExpectedInflows from '@/actions/commissions/getWalletExpectedInf
 import listWalletCyclePayments from '@/actions/commissions/listWalletCyclePayments';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import autoRepairPaymentAsset from '@/actions/orders/autoRepairPaymentAsset';
-import { getOnChainBalance, getTokenDeposits, OnChainDeposit } from '@/lib/moralis';
+import { getOnChainBalance, getTokenDeposits, getTxDeposit, OnChainDeposit } from '@/lib/moralis';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -143,97 +143,122 @@ function OnChainWalletCheck({ division }: { division: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openWalletId, moralisKey, heliusKey, cycleStart]);
 
-  // Cross-asset auto-repair: a rep who records USDC when the money actually
-  // arrived as USDT (or vice versa) leaves a "not found on-chain" record here
-  // and an unmatched deposit on the sibling stablecoin's wallet. Repair only
-  // when the chain confirms BOTH the recorded TX hash and the recorded amount
-  // on the sibling wallet — and never when the same hash also appears in this
-  // wallet's own history or on another record (a TX touching both assets, or
-  // duplicate records, is ambiguous and needs a human with Fix Wallet). The
-  // repoint and its audit row are one atomic statement; settled-cycle and
-  // double-claim refusals are surfaced, never silently skipped. Admin-only:
-  // logistics can read this screen but must not mutate payments.
+  // Resolving unmatched records: a payment whose hash isn't in the cycle-
+  // windowed deposit list gets a direct by-hash lookup before it's called a
+  // problem. Step 1 (all users, read-only): verify the TX on THIS wallet
+  // regardless of date — a payment recorded weeks late points at a deposit
+  // from before the cycle started, which is real money in the wrong window,
+  // not a phantom. Step 2 (admins only): if the TX isn't on this wallet at
+  // all, check the sibling stablecoin's wallet (USDC↔USDT, same network);
+  // when the chain confirms BOTH the hash and the recorded amount there,
+  // auto-repair via the atomic repoint+audit action. Hashes shared by more
+  // than one record stay manual (ambiguous); settled-cycle and double-claim
+  // refusals are surfaced, never silently skipped.
   const { profileId, isAdmin } = useAppUser();
   const [doAutoRepair] = useMutateAction(autoRepairPaymentAsset);
-  const repairAttempted = useRef<Set<number>>(new Set());
+  // Keyed by wallet+payment so a payment repaired onto the sibling wallet
+  // gets a fresh lookup when THAT wallet's drill-down opens.
+  const resolveTried = useRef<Set<string>>(new Set());
   const [autoRepaired, setAutoRepaired] = useState<{ order_number: string; to: string }[]>([]);
   const [repairBlocked, setRepairBlocked] = useState<string[]>([]);
-  useEffect(() => { setAutoRepaired([]); setRepairBlocked([]); }, [openWalletId]);
+  type TxLookup = { status: 'found' | 'notfound'; amount?: number; at?: string | null };
+  const [txLookups, setTxLookups] = useState<Record<number, TxLookup>>({});
+  useEffect(() => { setAutoRepaired([]); setRepairBlocked([]); setTxLookups({}); }, [openWalletId]);
 
   useEffect(() => {
-    if (!isAdmin || openWallet == null || !Array.isArray(deposits)) return;
-    if (!STABLECOINS.includes(openWallet.asset)) return;
-    const siblingAsset = openWallet.asset === 'USDC' ? 'USDT' : 'USDC';
-    const sibling = wallets.find(s => s.asset === siblingAsset && s.network === openWallet.network && s.id != null);
-    if (!sibling) return;
+    if (openWallet == null || !Array.isArray(deposits) || cyclePayments.length === 0) return;
+    const tryKey = (pid: number) => `${openWallet.id}:${pid}`;
     const recNow = reconcile(cyclePayments, deposits);
-    const primaryHashes = new Set(deposits.map(d => d.txHash.toLowerCase()));
     const hashCounts = new Map<string, number>();
     for (const p of cyclePayments) {
       const h = (p.tx_hash || '').trim().toLowerCase();
       if (h) hashCounts.set(h, (hashCounts.get(h) || 0) + 1);
     }
-    const candidates = cyclePayments.filter(p => {
-      const h = (p.tx_hash || '').trim().toLowerCase();
-      return p.direction !== 'refund'
-        && h !== ''
-        && !recNow.matches.get(p.id)
-        && !repairAttempted.current.has(p.id)
-        // Hash known to THIS wallet's history (another record consumed it)
-        // or shared by another record: ambiguous, leave for manual review.
-        && !primaryHashes.has(h)
-        && (hashCounts.get(h) || 0) === 1;
-    });
+    const candidates = cyclePayments.filter(p =>
+      p.direction !== 'refund'
+      && (p.tx_hash || '').trim() !== ''
+      && !recNow.matches.get(p.id)
+      && !resolveTried.current.has(tryKey(p.id)));
     if (candidates.length === 0) return;
     // Mark up front so overlapping effect runs can't double-fire; unmark on
-    // a transient sibling-fetch failure so the next expand can retry.
-    candidates.forEach(p => repairAttempted.current.add(p.id));
+    // transient failures so the next expand can retry that payment.
+    candidates.forEach(p => resolveTried.current.add(tryKey(p.id)));
+    const siblingAsset = openWallet.asset === 'USDC' ? 'USDT' : 'USDC';
+    const sibling = STABLECOINS.includes(openWallet.asset)
+      ? wallets.find(s => s.asset === siblingAsset && s.network === openWallet.network && s.id != null) || null
+      : null;
     let alive = true;
     (async () => {
-      let sibDeps: OnChainDeposit[] | null = null;
-      try {
-        sibDeps = await getTokenDeposits(moralisKey, siblingAsset, sibling.network, sibling.address, cycleStart, heliusKey || null);
-      } catch {
-        candidates.forEach(p => repairAttempted.current.delete(p.id));
-        return; // sibling history unavailable — records stay not-found
-      }
-      if (!sibDeps) return;
-      const byHash = new Map(sibDeps.map(d => [d.txHash.toLowerCase(), d]));
       let changed = false;
       for (const p of candidates) {
-        const hit = byHash.get(String(p.tx_hash).trim().toLowerCase());
-        if (!hit) continue;
-        if (Math.abs(hit.amount - Number(p.amount_usd)) >= 0.005) {
-          // Right hash, wrong amount: probably the same mix-up plus an amount
-          // error, but that's two corrections — too much to apply unasked.
-          if (alive) setRepairBlocked(prev => [...prev,
-            `${p.order_number}: recorded TX was found on the ${siblingAsset} wallet but carried ${money(hit.amount)}, not the recorded ${money(p.amount_usd)} — review it manually with Fix Wallet / Correct Amount.`]);
-          continue;
-        }
-        let res: unknown[];
+        const hash = String(p.tx_hash).trim();
+        // Step 1: the recorded TX, on the recorded wallet, any date.
+        let ownHit: OnChainDeposit | null;
         try {
-          // Deliberately NOT gated on `alive`: once the mistake is confirmed
-          // the atomic repair (repoint + audit together) should land even if
-          // the user navigates away mid-flight; only UI updates are gated.
-          res = await doAutoRepair({
-            paymentId: p.id, asset: siblingAsset, network: openWallet.network,
-            walletId: sibling.id, userId: profileId,
-            // Proof re-asserted server-side: the row must still carry this
-            // hash and amount at update time, not just when the UI checked.
-            txHash: String(p.tx_hash).trim(), amountUsd: Number(p.amount_usd),
-            note: `Auto-repair (wallet check): recorded TX ${p.tx_hash} was confirmed on-chain as a ${siblingAsset} deposit of ${hit.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} to ${sibling.label} — asset corrected from ${openWallet.asset}`,
-          }) as unknown[];
+          ownHit = await getTxDeposit(moralisKey, openWallet.asset, openWallet.network, openWallet.address, hash, heliusKey || null);
         } catch {
-          repairAttempted.current.delete(p.id);
+          resolveTried.current.delete(tryKey(p.id));
           continue;
         }
-        if (!res || res.length === 0) {
-          if (alive) setRepairBlocked(prev => [...prev,
-            `${p.order_number}: TX ${String(p.tx_hash).slice(0, 14)}… is confirmed as a ${siblingAsset} deposit, but the record can't be moved automatically (stamped settlement cycle, or a payment on that wallet already claims this TX) — review it manually.`]);
+        if (ownHit) {
+          const hit = ownHit;
+          if (alive) setTxLookups(prev => ({ ...prev, [p.id]: { status: 'found', amount: hit.amount, at: hit.at } }));
           continue;
         }
-        changed = true;
-        if (alive) setAutoRepaired(prev => [...prev, { order_number: p.order_number, to: `${siblingAsset} · ${openWallet.network}` }]);
+        // Step 2: wrong-stablecoin check against the sibling wallet.
+        if (isAdmin && sibling && (hashCounts.get(hash.toLowerCase()) || 0) === 1) {
+          let sibHit: OnChainDeposit | null;
+          try {
+            sibHit = await getTxDeposit(moralisKey, siblingAsset, openWallet.network, String(sibling.address), hash, heliusKey || null);
+          } catch {
+            resolveTried.current.delete(tryKey(p.id));
+            continue;
+          }
+          if (sibHit) {
+            if (Math.abs(sibHit.amount - Number(p.amount_usd)) >= 0.005) {
+              // Right hash, wrong amount: probably the same mix-up plus an
+              // amount error, but that's two corrections — too much to
+              // apply unasked.
+              if (alive) {
+                setRepairBlocked(prev => [...prev,
+                  `${p.order_number}: recorded TX was found on the ${siblingAsset} wallet but carried ${money(sibHit.amount)}, not the recorded ${money(p.amount_usd)} — review it manually with Fix Wallet / Correct Amount.`]);
+                setTxLookups(prev => ({ ...prev, [p.id]: { status: 'notfound' } }));
+              }
+              continue;
+            }
+            let res: unknown[];
+            try {
+              // Deliberately NOT gated on `alive`: once the mistake is
+              // confirmed the atomic repair (repoint + audit together)
+              // should land even if the user navigates away mid-flight;
+              // only UI updates are gated.
+              res = await doAutoRepair({
+                paymentId: p.id, asset: siblingAsset, network: openWallet.network,
+                walletId: sibling.id, userId: profileId,
+                // Proof re-asserted server-side: the row must still carry
+                // this hash and amount at update time, not just when the
+                // UI checked.
+                txHash: hash, amountUsd: Number(p.amount_usd),
+                note: `Auto-repair (wallet check): recorded TX ${hash} was confirmed on-chain as a ${siblingAsset} deposit of ${sibHit.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} to ${sibling.label} — asset corrected from ${openWallet.asset}`,
+              }) as unknown[];
+            } catch {
+              resolveTried.current.delete(tryKey(p.id));
+              continue;
+            }
+            if (!res || res.length === 0) {
+              if (alive) {
+                setRepairBlocked(prev => [...prev,
+                  `${p.order_number}: TX ${hash.slice(0, 14)}… is confirmed as a ${siblingAsset} deposit, but the record can't be moved automatically (stamped settlement cycle, or a payment on that wallet already claims this TX) — review it manually.`]);
+                setTxLookups(prev => ({ ...prev, [p.id]: { status: 'notfound' } }));
+              }
+              continue;
+            }
+            changed = true;
+            if (alive) setAutoRepaired(prev => [...prev, { order_number: p.order_number, to: `${siblingAsset} · ${openWallet.network}` }]);
+            continue;
+          }
+        }
+        if (alive) setTxLookups(prev => ({ ...prev, [p.id]: { status: 'notfound' } }));
       }
       if (changed && alive) { reloadCycle(); reloadInflows(); }
     })();
@@ -365,9 +390,34 @@ function OnChainWalletCheck({ division }: { division: string }) {
                                           ) : (
                                             <Badge variant="outline" className="text-xs text-green-600 border-green-300" title={`on-chain ${dep.amount} @ ${dep.at || ''}`}>on-chain ✓</Badge>
                                           )
-                                        ) : (
-                                          <Badge variant="outline" className="text-xs text-red-600 border-red-300">not found on-chain</Badge>
-                                        )
+                                        ) : (() => {
+                                          // Unmatched in the cycle window — the by-hash lookup decides
+                                          // whether it's a pre-cycle deposit or genuinely missing.
+                                          const hasHash = (p.tx_hash || '').trim() !== '';
+                                          const lk = txLookups[p.id];
+                                          if (!hasHash || lk?.status === 'notfound') {
+                                            return <Badge variant="outline" className="text-xs text-red-600 border-red-300">not found on-chain</Badge>;
+                                          }
+                                          if (!lk) {
+                                            return <Badge variant="outline" className="text-xs text-muted-foreground">verifying TX…</Badge>;
+                                          }
+                                          const preCycle = lk.at != null && cycleStart != null && Date.parse(lk.at) < Date.parse(cycleStart);
+                                          const when = lk.at ? new Date(lk.at).toLocaleDateString() : 'unknown date';
+                                          if (lk.amount != null && Math.abs(lk.amount - Number(p.amount_usd)) >= 0.01) {
+                                            return (
+                                              <Badge variant="outline" className="text-xs text-amber-700 border-amber-300" title={`TX ${p.tx_hash}`}>
+                                                on-chain {lk.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} ≠ recorded {money(p.amount_usd)}{preCycle ? ` — arrived ${when}, before this cycle` : ''}
+                                              </Badge>
+                                            );
+                                          }
+                                          return preCycle ? (
+                                            <Badge variant="outline" className="text-xs text-sky-700 border-sky-300" title={`TX ${p.tx_hash}`}>
+                                              on-chain ✓ — arrived {when}, before this cycle
+                                            </Badge>
+                                          ) : (
+                                            <Badge variant="outline" className="text-xs text-green-600 border-green-300" title={`TX ${p.tx_hash}`}>on-chain ✓ (direct lookup)</Badge>
+                                          );
+                                        })()
                                       )}
                                       <span className="tabular-nums font-medium">{p.direction === 'refund' ? '−' : ''}{money(p.amount_usd)}</span>
                                     </span>
@@ -457,8 +507,11 @@ function OnChainWalletCheck({ division }: { division: string }) {
                             A wallet reads <span className="font-medium">under</span> when a recorded payment never arrived
                             (not found on-chain), arrived short, went to a different wallet, or was recorded with the wrong
                             asset/network. USDC↔USDT mix-ups are repaired automatically when the recorded TX is confirmed on
-                            the other stablecoin&apos;s wallet. <span className="font-medium">Over</span> usually means an
-                            unrecorded deposit or pre-cycle leftovers.
+                            the other stablecoin&apos;s wallet. A record marked <span className="font-medium">before this
+                            cycle</span> is real money verified by direct lookup — it just landed before the last Settle All,
+                            so this cycle&apos;s balance still reads under by that amount (last cycle read over by the same).
+                            <span className="font-medium"> Over</span> usually means an unrecorded deposit or pre-cycle
+                            leftovers.
                           </p>
                         </div>
                       </TableCell>

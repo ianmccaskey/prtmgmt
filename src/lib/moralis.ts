@@ -84,19 +84,9 @@ async function getSolanaTokenDeposits(
       { signature: string; blockTime?: number | null; err?: unknown }[];
     const due = (sigs || []).filter(s => !s.err && (s.blockTime ?? 0) >= sinceEpoch).slice(0, 30);
     for (const s of due) {
-      const tx = await solanaRpc('getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }], heliusKey) as {
-        blockTime?: number | null;
-        meta?: {
-          err: unknown;
-          preTokenBalances?: { owner?: string; mint?: string; uiTokenAmount: { uiAmount: number | null } }[];
-          postTokenBalances?: { owner?: string; mint?: string; uiTokenAmount: { uiAmount: number | null } }[];
-        };
-      } | null;
+      const tx = await solanaRpc('getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }], heliusKey) as SolanaParsedTx;
       if (!tx || tx.meta?.err) continue;
-      const bal = (rows?: { owner?: string; mint?: string; uiTokenAmount: { uiAmount: number | null } }[]) =>
-        (rows || []).filter(b => b.owner === owner && b.mint === mint)
-          .reduce((sum, b) => sum + (b.uiTokenAmount.uiAmount ?? 0), 0);
-      const delta = bal(tx.meta?.postTokenBalances) - bal(tx.meta?.preTokenBalances);
+      const delta = splOwnerDelta(tx, owner, mint);
       if (delta > 0) {
         deposits.push({
           txHash: s.signature,
@@ -108,6 +98,81 @@ async function getSolanaTokenDeposits(
     }
   }
   return deposits;
+}
+
+type SolanaParsedTx = {
+  blockTime?: number | null;
+  meta?: {
+    err: unknown;
+    preTokenBalances?: { owner?: string; mint?: string; uiTokenAmount: { uiAmount: number | null } }[];
+    postTokenBalances?: { owner?: string; mint?: string; uiTokenAmount: { uiAmount: number | null } }[];
+  };
+} | null;
+
+/** The owner's net gain of `mint` in one parsed Solana TX (pre/post delta). */
+function splOwnerDelta(tx: SolanaParsedTx, owner: string, mint: string): number {
+  const bal = (rows?: { owner?: string; mint?: string; uiTokenAmount: { uiAmount: number | null } }[]) =>
+    (rows || []).filter(b => b.owner === owner && b.mint === mint)
+      .reduce((sum, b) => sum + (b.uiTokenAmount.uiAmount ?? 0), 0);
+  return bal(tx?.meta?.postTokenBalances) - bal(tx?.meta?.preTokenBalances);
+}
+
+/**
+ * Targeted verification of ONE transaction: does this TX exist on-chain and
+ * move `asset` into `address`? Used when a recorded hash isn't in the
+ * cycle-windowed deposit list — a payment recorded late can point at a
+ * perfectly valid deposit from before the cycle started, and only a direct
+ * by-hash lookup can tell that apart from a phantom TX. Returns the deposit
+ * (amount, timestamp) or null when the TX is unknown, reverted, or moves no
+ * such funds to the wallet. Throws on transport errors so callers can retry.
+ */
+export async function getTxDeposit(
+  apiKey: string, asset: string, network: string, address: string, txHash: string,
+  heliusKey?: string | null,
+): Promise<OnChainDeposit | null> {
+  if (network === 'solana') {
+    const mint = TOKENS.solana[asset];
+    if (!mint) return null;
+    const tx = await solanaRpc('getTransaction',
+      [txHash, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }], heliusKey) as SolanaParsedTx;
+    if (!tx || tx.meta?.err) return null;
+    const delta = splOwnerDelta(tx, address, mint);
+    if (delta <= 0) return null;
+    return { txHash, amount: delta, at: tx.blockTime ? new Date(tx.blockTime * 1000).toISOString() : null, from: null };
+  }
+  if (network !== 'ethereum') return null;
+  const token = TOKENS.ethereum[asset];
+  if (!token) return null;
+  let res: Response;
+  try {
+    res = await fetch(`${EVM_BASE}/transaction/${txHash}/verbose?chain=eth`,
+      { headers: { 'X-API-Key': apiKey, accept: 'application/json' } });
+  } catch {
+    throw new Error('Could not reach Moralis — check your network connection.');
+  }
+  // Unknown hash: the TX simply doesn't exist on this chain.
+  if (res.status === 404 || res.status === 400) return null;
+  if (!res.ok) throw new Error(`Moralis request failed (HTTP ${res.status}).`);
+  const tx = await res.json() as {
+    block_timestamp?: string; receipt_status?: string | number;
+    logs?: { address?: string; decoded_event?: { label?: string; params?: { name?: string; value?: string }[] } }[];
+  };
+  if (tx.receipt_status != null && String(tx.receipt_status) !== '1') return null; // reverted
+  let amount = 0;
+  let from: string | null = null;
+  for (const l of tx.logs || []) {
+    if (String(l.address || '').toLowerCase() !== token.toLowerCase()) continue;
+    const d = l.decoded_event;
+    if (!d || d.label !== 'Transfer') continue;
+    const param = (n: string) => (d.params || []).find(p => p.name === n)?.value;
+    if (String(param('to') || '').toLowerCase() !== address.toLowerCase()) continue;
+    // Moralis decodes the ERC-20 amount as 'amount' (USDT) or 'value'
+    // (standard ABI); both stablecoins are 6-decimal on Ethereum.
+    amount += Number(param('amount') ?? param('value') ?? 0) / 1e6;
+    from = String(param('from') ?? '') || from;
+  }
+  if (amount <= 0) return null;
+  return { txHash, amount, at: tx.block_timestamp || null, from };
 }
 
 /**
