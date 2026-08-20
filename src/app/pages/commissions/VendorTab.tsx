@@ -163,7 +163,11 @@ function OnChainWalletCheck({ division }: { division: string }) {
   const [repairBlocked, setRepairBlocked] = useState<string[]>([]);
   type TxLookup = { status: 'found' | 'notfound'; amount?: number; at?: string | null };
   const [txLookups, setTxLookups] = useState<Record<number, TxLookup>>({});
-  useEffect(() => { setAutoRepaired([]); setRepairBlocked([]); setTxLookups({}); }, [openWalletId]);
+  // resolveTried clears with the notices/lookups: it only needs to hold off
+  // duplicate work while a drill-down sits open (repair idempotence is
+  // enforced by the SQL action itself), and keeping it across a close/reopen
+  // would strand reopened rows on "verifying TX…" forever.
+  useEffect(() => { setAutoRepaired([]); setRepairBlocked([]); setTxLookups({}); resolveTried.current.clear(); }, [openWalletId]);
 
   useEffect(() => {
     if (openWallet == null || !Array.isArray(deposits) || cyclePayments.length === 0) return;

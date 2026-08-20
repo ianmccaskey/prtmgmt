@@ -133,8 +133,18 @@ export async function getTxDeposit(
   if (network === 'solana') {
     const mint = TOKENS.solana[asset];
     if (!mint) return null;
-    const tx = await solanaRpc('getTransaction',
-      [txHash, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }], heliusKey) as SolanaParsedTx;
+    let tx: SolanaParsedTx;
+    try {
+      tx = await solanaRpc('getTransaction',
+        [txHash, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }], heliusKey) as SolanaParsedTx;
+    } catch (e: unknown) {
+      // A malformed signature (e.g. an EVM hash recorded on a Solana
+      // payment) is a deterministic "no such TX", not a transient failure
+      // to retry — the RPC rejects it as an invalid param.
+      const msg = e instanceof Error ? e.message.toLowerCase() : '';
+      if (msg.includes('invalid')) return null;
+      throw e;
+    }
     if (!tx || tx.meta?.err) return null;
     const delta = splOwnerDelta(tx, address, mint);
     if (delta <= 0) return null;
