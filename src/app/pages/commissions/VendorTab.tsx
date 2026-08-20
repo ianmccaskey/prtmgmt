@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
@@ -13,6 +13,8 @@ import listSettlementPayments from '@/actions/commissions/listSettlementPayments
 import getWalletExpectedInflows from '@/actions/commissions/getWalletExpectedInflows';
 import listWalletCyclePayments from '@/actions/commissions/listWalletCyclePayments';
 import getAppSetting from '@/actions/settings/getAppSetting';
+import updatePaymentWallet from '@/actions/orders/updatePaymentWallet';
+import insertAuditLog from '@/actions/orders/insertAuditLog';
 import { getOnChainBalance, getTokenDeposits, OnChainDeposit } from '@/lib/moralis';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,9 +52,12 @@ type WalletInflow = {
 };
 type ChainCheck = { amount?: number; supported?: boolean; error?: string };
 type CyclePayment = {
-  id: number; amount_usd: number; tx_hash: string | null; direction: string;
+  id: number; sales_order_id: number; amount_usd: number; tx_hash: string | null; direction: string;
   recorded_at: string; order_number: string; customer: string;
 };
+
+/** Unmatched on-chain deposits below this are listed as dust, not alarms. */
+const UNMATCHED_DEPOSIT_FLOOR_USD = 20;
 
 const STABLECOINS = ['USDC', 'USDT'];
 
@@ -94,7 +99,7 @@ function OnChainWalletCheck({ division }: { division: string }) {
   // public RPC, but Helius is far less rate-limited.
   const [heliusRaw] = useLoadAction(getAppSetting, [], { key: 'helius_api_key' });
   const heliusKey = String(asRows<{ value: string }>(heliusRaw)[0]?.value ?? '');
-  const [inflowsRaw, inflowsLoading] = useLoadAction(getWalletExpectedInflows, [division], { division });
+  const [inflowsRaw, inflowsLoading, , reloadInflows] = useLoadAction(getWalletExpectedInflows, [division], { division });
   const allInflows = asRows<WalletInflow>(inflowsRaw);
   const wallets = allInflows.filter(w => w.id != null);
   const unassigned = allInflows.find(w => w.id == null) || null;
@@ -106,7 +111,7 @@ function OnChainWalletCheck({ division }: { division: string }) {
   // expected figure, auto-matched against on-chain deposits (EVM only).
   const [openWalletId, setOpenWalletId] = useState<number | null>(null);
   const openWallet = wallets.find(w => Number(w.id) === openWalletId) || null;
-  const [cycleRaw, cycleLoading] = useLoadAction(listWalletCyclePayments, [openWalletId], { wallet_id: openWalletId ?? 0 }, { enabled: openWalletId != null });
+  const [cycleRaw, cycleLoading, , reloadCycle] = useLoadAction(listWalletCyclePayments, [openWalletId], { wallet_id: openWalletId ?? 0 }, { enabled: openWalletId != null });
   const cyclePayments = asRows<CyclePayment>(cycleRaw);
   // Keyed by wallet id so every expand refetches the cycle start (a
   // settlement while a row sat open would otherwise leave it stale).
@@ -132,6 +137,73 @@ function OnChainWalletCheck({ division }: { division: string }) {
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openWalletId, moralisKey, heliusKey, cycleStart]);
+
+  // Cross-asset auto-repair: a rep who records USDC when the money actually
+  // arrived as USDT (or vice versa) leaves a "not found on-chain" record here
+  // and an unmatched deposit on the sibling stablecoin's wallet. When the
+  // recorded TX hash is confirmed in the sibling wallet's deposit history on
+  // the same network, the chain itself proves the mistake — repoint the
+  // payment automatically and audit-log it on the order. Settled-cycle rows
+  // are refused by updatePaymentWallet and surfaced, never silently skipped.
+  const { profileId } = useAppUser();
+  const [repointPayment] = useMutateAction(updatePaymentWallet);
+  const [writeAudit] = useMutateAction(insertAuditLog);
+  const repairAttempted = useRef<Set<number>>(new Set());
+  const [autoRepaired, setAutoRepaired] = useState<{ order_number: string; to: string }[]>([]);
+  const [repairBlocked, setRepairBlocked] = useState<string[]>([]);
+  useEffect(() => { setAutoRepaired([]); setRepairBlocked([]); }, [openWalletId]);
+
+  useEffect(() => {
+    if (openWallet == null || !Array.isArray(deposits)) return;
+    if (!STABLECOINS.includes(openWallet.asset)) return;
+    const siblingAsset = openWallet.asset === 'USDC' ? 'USDT' : 'USDC';
+    const sibling = wallets.find(s => s.asset === siblingAsset && s.network === openWallet.network && s.id != null);
+    if (!sibling) return;
+    const recNow = reconcile(cyclePayments, deposits);
+    const candidates = cyclePayments.filter(p =>
+      p.direction !== 'refund'
+      && (p.tx_hash || '').trim() !== ''
+      && !recNow.matches.get(p.id)
+      && !repairAttempted.current.has(p.id));
+    if (candidates.length === 0) return;
+    candidates.forEach(p => repairAttempted.current.add(p.id));
+    let alive = true;
+    (async () => {
+      let sibDeps: OnChainDeposit[] | null = null;
+      try {
+        sibDeps = await getTokenDeposits(moralisKey, siblingAsset, sibling.network, sibling.address, cycleStart, heliusKey || null);
+      } catch { return; /* sibling history unavailable — records stay not-found */ }
+      if (!alive || !sibDeps) return;
+      const byHash = new Map(sibDeps.map(d => [d.txHash.toLowerCase(), d]));
+      let changed = false;
+      for (const p of candidates) {
+        const hit = byHash.get(String(p.tx_hash).trim().toLowerCase());
+        if (!hit) continue;
+        const res = await repointPayment({
+          paymentId: p.id, asset: siblingAsset, network: openWallet.network,
+          walletId: sibling.id, txHash: null,
+        }) as unknown[];
+        if (!alive) return;
+        if (!res || res.length === 0) {
+          setRepairBlocked(prev => [...prev,
+            `${p.order_number}: TX ${String(p.tx_hash).slice(0, 14)}… is actually a ${siblingAsset} deposit, but the payment sits in a stamped settlement cycle — it has to stay as recorded.`]);
+          continue;
+        }
+        await writeAudit({
+          orderId: p.sales_order_id, userId: profileId, changeType: 'other', fieldName: 'payment_wallet',
+          oldValue: `${openWallet.asset}/${openWallet.network}`,
+          newValue: `${siblingAsset}/${openWallet.network}`,
+          note: `Auto-repair (wallet check): recorded TX ${p.tx_hash} was confirmed on-chain as a ${siblingAsset} deposit of ${hit.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} to ${sibling.label} — asset corrected from ${openWallet.asset}`,
+        });
+        changed = true;
+        if (alive) setAutoRepaired(prev => [...prev, { order_number: p.order_number, to: `${siblingAsset} · ${openWallet.network}` }]);
+      }
+      if (changed && alive) { reloadCycle(); reloadInflows(); }
+    })();
+    return () => { alive = false; };
+    // cycleRaw (not the derived array) keeps the dep identity stable per fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openWalletId, deposits, cycleRaw]);
 
   const runCheck = async () => {
     if (!moralisKey) return;
@@ -268,14 +340,54 @@ function OnChainWalletCheck({ division }: { division: string }) {
                               {cyclePayments.length === 0 && <p className="text-sm text-muted-foreground">No payment records this cycle.</p>}
                             </div>
                           )}
-                          {rec && rec.extraDeposits.length > 0 && (
-                            <div className="text-xs text-amber-700 bg-amber-50 rounded p-2 space-y-0.5">
-                              <p className="font-medium">On-chain deposits with no matching record ({rec.extraDeposits.length}):</p>
-                              {rec.extraDeposits.map(d => (
-                                <p key={d.txHash} className="font-mono break-all">{d.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} — {d.txHash.slice(0, 18)}… {d.at ? `(${new Date(d.at).toLocaleDateString()})` : ''}</p>
+                          {autoRepaired.length > 0 && (
+                            <div className="text-xs text-green-700 bg-green-50 rounded p-2 space-y-0.5">
+                              <p className="font-medium">
+                                Auto-repaired {autoRepaired.length} record{autoRepaired.length === 1 ? '' : 's'} — the recorded TX was
+                                confirmed on the other stablecoin&apos;s wallet (audit-logged on the order):
+                              </p>
+                              {autoRepaired.map((r, i) => (
+                                <p key={i}><span className="font-mono">{r.order_number}</span> → moved to {r.to}</p>
                               ))}
                             </div>
                           )}
+                          {repairBlocked.map((msg, i) => (
+                            <p key={i} className="text-xs text-amber-700 bg-amber-50 rounded p-2">{msg}</p>
+                          ))}
+                          {rec && rec.extraDeposits.length > 0 && (() => {
+                            // A wallet collects real dust — swap change, fee refunds,
+                            // test sends. Alarming on those buries the deposits that
+                            // actually explain an imbalance, so anything under the
+                            // floor rolls up into one summary line instead.
+                            const big = rec.extraDeposits.filter(d => d.amount >= UNMATCHED_DEPOSIT_FLOOR_USD);
+                            const dust = rec.extraDeposits.filter(d => d.amount < UNMATCHED_DEPOSIT_FLOOR_USD);
+                            const bigTotal = big.reduce((s, d) => s + d.amount, 0);
+                            const dustTotal = dust.reduce((s, d) => s + d.amount, 0);
+                            return (
+                              <div className="space-y-1">
+                                {big.length > 0 && (
+                                  <div className="text-xs text-amber-700 bg-amber-50 rounded p-2 space-y-1">
+                                    <p className="font-medium">
+                                      On-chain deposits with no matching record — {big.length} totaling {money(bigTotal)}:
+                                    </p>
+                                    {big.map(d => (
+                                      <p key={d.txHash} className="flex flex-wrap items-baseline gap-x-2">
+                                        <span className="tabular-nums font-semibold shrink-0">{money(d.amount)}</span>
+                                        {d.at && <span className="shrink-0">{new Date(d.at).toLocaleDateString()}</span>}
+                                        <span className="font-mono break-all text-amber-700/70">{d.txHash.slice(0, 18)}…</span>
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
+                                {dust.length > 0 && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {dust.length} unmatched deposit{dust.length === 1 ? '' : 's'} under {money(UNMATCHED_DEPOSIT_FLOOR_USD)} (total {money(dustTotal)}) treated
+                                    as dust and not listed.
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
                           {deposits === 'loading' && <p className="text-xs text-muted-foreground">Fetching on-chain deposits…</p>}
                           {deposits === 'error' && (
                             <p className="text-xs text-red-600">
@@ -293,8 +405,9 @@ function OnChainWalletCheck({ division }: { division: string }) {
                           <p className="text-xs text-muted-foreground">
                             A wallet reads <span className="font-medium">under</span> when a recorded payment never arrived
                             (not found on-chain), arrived short, went to a different wallet, or was recorded with the wrong
-                            asset/network. <span className="font-medium">Over</span> usually means an unrecorded deposit or
-                            pre-cycle leftovers.
+                            asset/network. USDC↔USDT mix-ups are repaired automatically when the recorded TX is confirmed on
+                            the other stablecoin&apos;s wallet. <span className="font-medium">Over</span> usually means an
+                            unrecorded deposit or pre-cycle leftovers.
                           </p>
                         </div>
                       </TableCell>

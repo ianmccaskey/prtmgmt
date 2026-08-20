@@ -9,7 +9,7 @@ function listWalletCyclePayments() {
   return action('listWalletCyclePayments', 'SQL', {
     datasourceName: 'Peptide Ops DB',
     query: `
-      SELECT op.id, op.amount_usd, op.tx_hash, op.direction,
+      SELECT op.id, op.sales_order_id, op.amount_usd, op.tx_hash, op.direction,
         COALESCE(op.verified_at, op.quoted_at) AS recorded_at,
         so.order_number, c.full_name AS customer
       FROM order_payments op
