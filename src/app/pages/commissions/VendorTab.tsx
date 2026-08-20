@@ -24,7 +24,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, ChevronRight, Factory, RefreshCw, Stamp, Wallet as WalletIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, ExternalLink, Factory, RefreshCw, Stamp, Wallet as WalletIcon } from 'lucide-react';
 
 type VendorBalance = {
   last_settlement_id: number | null; last_settled_at: string | null;
@@ -59,6 +59,12 @@ type CyclePayment = {
 const UNMATCHED_DEPOSIT_FLOOR_USD = 20;
 
 const STABLECOINS = ['USDC', 'USDT'];
+
+/** Block-explorer TX link for the chains the wallet check supports. */
+const txExplorerUrl = (network: string, hash: string) =>
+  network === 'ethereum' ? `https://etherscan.io/tx/${hash}`
+  : network === 'solana' ? `https://solscan.io/tx/${hash}`
+  : null;
 
 /**
  * Match recorded payments against on-chain deposits: by tx hash first, then
@@ -401,13 +407,27 @@ function OnChainWalletCheck({ division }: { division: string }) {
                                     <p className="font-medium">
                                       On-chain deposits with no matching record — {big.length} totaling {money(bigTotal)}:
                                     </p>
-                                    {big.map(d => (
-                                      <p key={d.txHash} className="flex flex-wrap items-baseline gap-x-2">
-                                        <span className="tabular-nums font-semibold shrink-0">{money(d.amount)}</span>
-                                        {d.at && <span className="shrink-0">{new Date(d.at).toLocaleDateString()}</span>}
-                                        <span className="font-mono break-all text-amber-700/70">{d.txHash.slice(0, 18)}…</span>
-                                      </p>
-                                    ))}
+                                    {big.map(d => {
+                                      const url = txExplorerUrl(w.network, d.txHash);
+                                      return (
+                                        <p key={d.txHash} className="flex flex-wrap items-baseline gap-x-2">
+                                          <span className="tabular-nums font-semibold shrink-0">{money(d.amount)}</span>
+                                          {d.at && <span className="shrink-0">{new Date(d.at).toLocaleDateString()}</span>}
+                                          {url ? (
+                                            <a
+                                              href={url} target="_blank" rel="noreferrer"
+                                              onClick={e => e.stopPropagation()}
+                                              className="font-mono break-all text-blue-600 hover:underline inline-flex items-center gap-1"
+                                              title={`View on ${w.network === 'ethereum' ? 'Etherscan' : 'Solscan'}`}
+                                            >
+                                              {d.txHash.slice(0, 18)}…<ExternalLink className="h-3 w-3 shrink-0" />
+                                            </a>
+                                          ) : (
+                                            <span className="font-mono break-all text-amber-700/70">{d.txHash.slice(0, 18)}…</span>
+                                          )}
+                                        </p>
+                                      );
+                                    })}
                                   </div>
                                 )}
                                 {dust.length > 0 && (
