@@ -13,8 +13,7 @@ import listSettlementPayments from '@/actions/commissions/listSettlementPayments
 import getWalletExpectedInflows from '@/actions/commissions/getWalletExpectedInflows';
 import listWalletCyclePayments from '@/actions/commissions/listWalletCyclePayments';
 import getAppSetting from '@/actions/settings/getAppSetting';
-import updatePaymentWallet from '@/actions/orders/updatePaymentWallet';
-import insertAuditLog from '@/actions/orders/insertAuditLog';
+import autoRepairPaymentAsset from '@/actions/orders/autoRepairPaymentAsset';
 import { getOnChainBalance, getTokenDeposits, OnChainDeposit } from '@/lib/moralis';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -140,61 +139,90 @@ function OnChainWalletCheck({ division }: { division: string }) {
 
   // Cross-asset auto-repair: a rep who records USDC when the money actually
   // arrived as USDT (or vice versa) leaves a "not found on-chain" record here
-  // and an unmatched deposit on the sibling stablecoin's wallet. When the
-  // recorded TX hash is confirmed in the sibling wallet's deposit history on
-  // the same network, the chain itself proves the mistake — repoint the
-  // payment automatically and audit-log it on the order. Settled-cycle rows
-  // are refused by updatePaymentWallet and surfaced, never silently skipped.
-  const { profileId } = useAppUser();
-  const [repointPayment] = useMutateAction(updatePaymentWallet);
-  const [writeAudit] = useMutateAction(insertAuditLog);
+  // and an unmatched deposit on the sibling stablecoin's wallet. Repair only
+  // when the chain confirms BOTH the recorded TX hash and the recorded amount
+  // on the sibling wallet — and never when the same hash also appears in this
+  // wallet's own history or on another record (a TX touching both assets, or
+  // duplicate records, is ambiguous and needs a human with Fix Wallet). The
+  // repoint and its audit row are one atomic statement; settled-cycle and
+  // double-claim refusals are surfaced, never silently skipped. Admin-only:
+  // logistics can read this screen but must not mutate payments.
+  const { profileId, isAdmin } = useAppUser();
+  const [doAutoRepair] = useMutateAction(autoRepairPaymentAsset);
   const repairAttempted = useRef<Set<number>>(new Set());
   const [autoRepaired, setAutoRepaired] = useState<{ order_number: string; to: string }[]>([]);
   const [repairBlocked, setRepairBlocked] = useState<string[]>([]);
   useEffect(() => { setAutoRepaired([]); setRepairBlocked([]); }, [openWalletId]);
 
   useEffect(() => {
-    if (openWallet == null || !Array.isArray(deposits)) return;
+    if (!isAdmin || openWallet == null || !Array.isArray(deposits)) return;
     if (!STABLECOINS.includes(openWallet.asset)) return;
     const siblingAsset = openWallet.asset === 'USDC' ? 'USDT' : 'USDC';
     const sibling = wallets.find(s => s.asset === siblingAsset && s.network === openWallet.network && s.id != null);
     if (!sibling) return;
     const recNow = reconcile(cyclePayments, deposits);
-    const candidates = cyclePayments.filter(p =>
-      p.direction !== 'refund'
-      && (p.tx_hash || '').trim() !== ''
-      && !recNow.matches.get(p.id)
-      && !repairAttempted.current.has(p.id));
+    const primaryHashes = new Set(deposits.map(d => d.txHash.toLowerCase()));
+    const hashCounts = new Map<string, number>();
+    for (const p of cyclePayments) {
+      const h = (p.tx_hash || '').trim().toLowerCase();
+      if (h) hashCounts.set(h, (hashCounts.get(h) || 0) + 1);
+    }
+    const candidates = cyclePayments.filter(p => {
+      const h = (p.tx_hash || '').trim().toLowerCase();
+      return p.direction !== 'refund'
+        && h !== ''
+        && !recNow.matches.get(p.id)
+        && !repairAttempted.current.has(p.id)
+        // Hash known to THIS wallet's history (another record consumed it)
+        // or shared by another record: ambiguous, leave for manual review.
+        && !primaryHashes.has(h)
+        && (hashCounts.get(h) || 0) === 1;
+    });
     if (candidates.length === 0) return;
+    // Mark up front so overlapping effect runs can't double-fire; unmark on
+    // a transient sibling-fetch failure so the next expand can retry.
     candidates.forEach(p => repairAttempted.current.add(p.id));
     let alive = true;
     (async () => {
       let sibDeps: OnChainDeposit[] | null = null;
       try {
         sibDeps = await getTokenDeposits(moralisKey, siblingAsset, sibling.network, sibling.address, cycleStart, heliusKey || null);
-      } catch { return; /* sibling history unavailable — records stay not-found */ }
-      if (!alive || !sibDeps) return;
+      } catch {
+        candidates.forEach(p => repairAttempted.current.delete(p.id));
+        return; // sibling history unavailable — records stay not-found
+      }
+      if (!sibDeps) return;
       const byHash = new Map(sibDeps.map(d => [d.txHash.toLowerCase(), d]));
       let changed = false;
       for (const p of candidates) {
         const hit = byHash.get(String(p.tx_hash).trim().toLowerCase());
         if (!hit) continue;
-        const res = await repointPayment({
-          paymentId: p.id, asset: siblingAsset, network: openWallet.network,
-          walletId: sibling.id, txHash: null,
-        }) as unknown[];
-        if (!alive) return;
-        if (!res || res.length === 0) {
-          setRepairBlocked(prev => [...prev,
-            `${p.order_number}: TX ${String(p.tx_hash).slice(0, 14)}… is actually a ${siblingAsset} deposit, but the payment sits in a stamped settlement cycle — it has to stay as recorded.`]);
+        if (Math.abs(hit.amount - Number(p.amount_usd)) >= 0.005) {
+          // Right hash, wrong amount: probably the same mix-up plus an amount
+          // error, but that's two corrections — too much to apply unasked.
+          if (alive) setRepairBlocked(prev => [...prev,
+            `${p.order_number}: recorded TX was found on the ${siblingAsset} wallet but carried ${money(hit.amount)}, not the recorded ${money(p.amount_usd)} — review it manually with Fix Wallet / Correct Amount.`]);
           continue;
         }
-        await writeAudit({
-          orderId: p.sales_order_id, userId: profileId, changeType: 'other', fieldName: 'payment_wallet',
-          oldValue: `${openWallet.asset}/${openWallet.network}`,
-          newValue: `${siblingAsset}/${openWallet.network}`,
-          note: `Auto-repair (wallet check): recorded TX ${p.tx_hash} was confirmed on-chain as a ${siblingAsset} deposit of ${hit.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} to ${sibling.label} — asset corrected from ${openWallet.asset}`,
-        });
+        let res: unknown[];
+        try {
+          // Deliberately NOT gated on `alive`: once the mistake is confirmed
+          // the atomic repair (repoint + audit together) should land even if
+          // the user navigates away mid-flight; only UI updates are gated.
+          res = await doAutoRepair({
+            paymentId: p.id, asset: siblingAsset, network: openWallet.network,
+            walletId: sibling.id, userId: profileId,
+            note: `Auto-repair (wallet check): recorded TX ${p.tx_hash} was confirmed on-chain as a ${siblingAsset} deposit of ${hit.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} to ${sibling.label} — asset corrected from ${openWallet.asset}`,
+          }) as unknown[];
+        } catch {
+          repairAttempted.current.delete(p.id);
+          continue;
+        }
+        if (!res || res.length === 0) {
+          if (alive) setRepairBlocked(prev => [...prev,
+            `${p.order_number}: TX ${String(p.tx_hash).slice(0, 14)}… is confirmed as a ${siblingAsset} deposit, but the record can't be moved automatically (stamped settlement cycle, or a payment on that wallet already claims this TX) — review it manually.`]);
+          continue;
+        }
         changed = true;
         if (alive) setAutoRepaired(prev => [...prev, { order_number: p.order_number, to: `${siblingAsset} · ${openWallet.network}` }]);
       }
@@ -203,7 +231,7 @@ function OnChainWalletCheck({ division }: { division: string }) {
     return () => { alive = false; };
     // cycleRaw (not the derived array) keeps the dep identity stable per fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openWalletId, deposits, cycleRaw]);
+  }, [openWalletId, deposits, cycleRaw, isAdmin]);
 
   const runCheck = async () => {
     if (!moralisKey) return;
