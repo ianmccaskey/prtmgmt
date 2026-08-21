@@ -74,12 +74,13 @@ function executeSettlementAtomic() {
       ),
       exp_out AS (
         -- Operator-fronted costs awaiting reimbursement (mirrors
-        -- getVendorBalance exp): lifetime incurred minus lifetime
-        -- reimbursements. Over-reimbursed does not block closing.
+        -- getVendorBalance exp, including the ROUNDs — the gate here and
+        -- the UI figure must agree to the cent). Over-reimbursed does not
+        -- block closing.
         SELECT GREATEST(0,
-          COALESCE((SELECT SUM(amount_usd) FROM operating_expenses
+          COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM operating_expenses
                     WHERE division = (SELECT d FROM div)), 0)
-          - COALESCE((SELECT SUM(amount_usd) FROM commission_payments
+          - COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM commission_payments
                       WHERE payee_type = 'expense' AND division = (SELECT d FROM div)), 0)
         ) AS owed
       ),
@@ -121,9 +122,9 @@ function executeSettlementAtomic() {
                         GROUP BY warehouse_id) p ON p.wid = w2.id
                       WHERE (SELECT d FROM div) = 'us'), 0)
           - GREATEST(
-              COALESCE((SELECT SUM(amount_usd) FROM operating_expenses
+              COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM operating_expenses
                         WHERE division = (SELECT d FROM div)), 0),
-              COALESCE((SELECT SUM(amount_usd) FROM commission_payments
+              COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM commission_payments
                         WHERE payee_type = 'expense' AND division = (SELECT d FROM div)), 0))
           - COALESCE((SELECT SUM(amount_usd) FROM commission_payments
                       WHERE payee_type = 'vendor' AND division = (SELECT d FROM div)), 0)

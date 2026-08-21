@@ -66,11 +66,13 @@ function getVendorBalance() {
       ) wh ON true
       LEFT JOIN LATERAL (
         -- Operator-fronted costs (product testing etc.) reimbursed like a
-        -- payee: lifetime incurred minus lifetime reimbursements.
+        -- payee: lifetime incurred minus lifetime reimbursements. ROUND on
+        -- both sums so the UI gate and executeSettlementAtomic's exp_out
+        -- can never disagree over a sub-cent remainder.
         SELECT (
-          COALESCE((SELECT SUM(amount_usd) FROM operating_expenses
+          COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM operating_expenses
                     WHERE division = div.d), 0)
-          - COALESCE((SELECT SUM(amount_usd) FROM commission_payments
+          - COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM commission_payments
                       WHERE payee_type = 'expense' AND division = div.d), 0)
         )::numeric(14,2) AS outstanding
       ) exp ON true
@@ -119,9 +121,9 @@ function getVendorBalance() {
                         GROUP BY warehouse_id) p ON p.wid = w2.id
                       WHERE div.d = 'us'), 0)
           - GREATEST(
-              COALESCE((SELECT SUM(amount_usd) FROM operating_expenses
+              COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM operating_expenses
                         WHERE division = div.d), 0),
-              COALESCE((SELECT SUM(amount_usd) FROM commission_payments
+              COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM commission_payments
                         WHERE payee_type = 'expense' AND division = div.d), 0))
           - COALESCE((SELECT SUM(amount_usd) FROM commission_payments
                       WHERE payee_type = 'vendor' AND division = div.d), 0)

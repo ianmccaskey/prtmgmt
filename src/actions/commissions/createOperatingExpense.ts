@@ -11,7 +11,7 @@ function createOperatingExpense() {
         COALESCE(NULLIF({{params.expense_date}}, '')::date, CURRENT_DATE),
         COALESCE(NULLIF({{params.category}}, ''), 'other'),
         {{params.description}},
-        {{params.amount_usd}}::numeric,
+        ROUND({{params.amount_usd}}::numeric, 2),
         COALESCE(NULLIF({{params.division}}, ''), 'us'),
         {{params.created_by_user_id}}::bigint
       )

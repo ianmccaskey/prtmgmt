@@ -18,7 +18,7 @@ type Summary = {
 };
 
 type Payment = {
-  id: number; payee_type: 'sales_rep' | 'warehouse' | 'vendor'; amount_usd: number;
+  id: number; payee_type: 'sales_rep' | 'warehouse' | 'vendor' | 'expense'; amount_usd: number;
   paid_at: string; note: string; sales_rep_name: string; warehouse_name: string;
 };
 
@@ -120,6 +120,7 @@ export function CommissionReportsTab({ division }: { division: string }) {
                 <SelectItem value="all">All Payees</SelectItem>
                 <SelectItem value="sales_rep">Sales Reps</SelectItem>
                 <SelectItem value="warehouse">Warehouses</SelectItem>
+                <SelectItem value="expense">Expense Reimbursements</SelectItem>
                 <SelectItem value="vendor">Vendor</SelectItem>
               </SelectContent>
             </Select>
@@ -143,8 +144,8 @@ export function CommissionReportsTab({ division }: { division: string }) {
               {paymentList.map(p => (
                 <TableRow key={p.id}>
                   <TableCell>{new Date(p.paid_at).toLocaleString()}</TableCell>
-                  <TableCell><Badge variant="outline">{p.payee_type === 'sales_rep' ? 'Sales Rep' : p.payee_type === 'warehouse' ? 'Warehouse' : 'Vendor'}</Badge></TableCell>
-                  <TableCell className="font-medium">{p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : 'Vendor'}</TableCell>
+                  <TableCell><Badge variant="outline">{p.payee_type === 'sales_rep' ? 'Sales Rep' : p.payee_type === 'warehouse' ? 'Warehouse' : p.payee_type === 'expense' ? 'Expense' : 'Vendor'}</Badge></TableCell>
+                  <TableCell className="font-medium">{p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : p.payee_type === 'expense' ? 'Expense reimbursement' : 'Vendor'}</TableCell>
                   <TableCell className="text-right">{money(p.amount_usd)}</TableCell>
                   <TableCell className="text-gray-500">{p.note || '—'}</TableCell>
                 </TableRow>
