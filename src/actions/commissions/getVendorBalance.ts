@@ -23,10 +23,11 @@ function getVendorBalance() {
         cyc.collected AS collected_usd,
         rep.outstanding AS rep_commissions_usd,
         wh.outstanding AS warehouse_earned_usd,
-        (cyc.collected - rep.outstanding - wh.outstanding)::numeric(14,2) AS vendor_share_usd,
+        exp.outstanding AS expenses_usd,
+        (cyc.collected - rep.outstanding - wh.outstanding - exp.outstanding)::numeric(14,2) AS vendor_share_usd,
         vpc.paid AS vendor_paid_usd,
         owed.balance AS balance_owed_usd,
-        (owed.balance - (cyc.collected - rep.outstanding - wh.outstanding - vpc.paid))::numeric(14,2) AS carried_adjustment_usd
+        (owed.balance - (cyc.collected - rep.outstanding - wh.outstanding - exp.outstanding - vpc.paid))::numeric(14,2) AS carried_adjustment_usd
       FROM (SELECT COALESCE(NULLIF({{params.division}}, ''), 'us') AS d) div
       LEFT JOIN LATERAL (
         SELECT id, settled_at FROM settlements
@@ -63,6 +64,16 @@ function getVendorBalance() {
           - COALESCE((SELECT SUM(amount_usd) FROM commission_payments WHERE payee_type = 'warehouse'), 0)
         ELSE 0 END)::numeric(14,2) AS outstanding
       ) wh ON true
+      LEFT JOIN LATERAL (
+        -- Operator-fronted costs (product testing etc.) reimbursed like a
+        -- payee: lifetime incurred minus lifetime reimbursements.
+        SELECT (
+          COALESCE((SELECT SUM(amount_usd) FROM operating_expenses
+                    WHERE division = div.d), 0)
+          - COALESCE((SELECT SUM(amount_usd) FROM commission_payments
+                      WHERE payee_type = 'expense' AND division = div.d), 0)
+        )::numeric(14,2) AS outstanding
+      ) exp ON true
       LEFT JOIN LATERAL (
         SELECT COALESCE(SUM(amount_usd), 0)::numeric(14,2) AS paid
         FROM commission_payments
@@ -107,6 +118,11 @@ function getVendorBalance() {
                         FROM commission_payments WHERE payee_type = 'warehouse'
                         GROUP BY warehouse_id) p ON p.wid = w2.id
                       WHERE div.d = 'us'), 0)
+          - GREATEST(
+              COALESCE((SELECT SUM(amount_usd) FROM operating_expenses
+                        WHERE division = div.d), 0),
+              COALESCE((SELECT SUM(amount_usd) FROM commission_payments
+                        WHERE payee_type = 'expense' AND division = div.d), 0))
           - COALESCE((SELECT SUM(amount_usd) FROM commission_payments
                       WHERE payee_type = 'vendor' AND division = div.d), 0)
         )::numeric(14,2) AS balance

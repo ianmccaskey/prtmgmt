@@ -72,6 +72,17 @@ function executeSettlementAtomic() {
         ) p ON p.wid = w.id
         WHERE (SELECT d FROM div) = 'us'
       ),
+      exp_out AS (
+        -- Operator-fronted costs awaiting reimbursement (mirrors
+        -- getVendorBalance exp): lifetime incurred minus lifetime
+        -- reimbursements. Over-reimbursed does not block closing.
+        SELECT GREATEST(0,
+          COALESCE((SELECT SUM(amount_usd) FROM operating_expenses
+                    WHERE division = (SELECT d FROM div)), 0)
+          - COALESCE((SELECT SUM(amount_usd) FROM commission_payments
+                      WHERE payee_type = 'expense' AND division = (SELECT d FROM div)), 0)
+        ) AS owed
+      ),
       vendor_out AS (
         -- Lifetime vendor balance (cash remaining), mirroring
         -- getVendorBalance: collected minus per-payee GREATEST(earned,
@@ -109,6 +120,11 @@ function executeSettlementAtomic() {
                         FROM commission_payments WHERE payee_type = 'warehouse'
                         GROUP BY warehouse_id) p ON p.wid = w2.id
                       WHERE (SELECT d FROM div) = 'us'), 0)
+          - GREATEST(
+              COALESCE((SELECT SUM(amount_usd) FROM operating_expenses
+                        WHERE division = (SELECT d FROM div)), 0),
+              COALESCE((SELECT SUM(amount_usd) FROM commission_payments
+                        WHERE payee_type = 'expense' AND division = (SELECT d FROM div)), 0))
           - COALESCE((SELECT SUM(amount_usd) FROM commission_payments
                       WHERE payee_type = 'vendor' AND division = (SELECT d FROM div)), 0)
         ) AS owed
@@ -116,10 +132,11 @@ function executeSettlementAtomic() {
       ok AS (
         SELECT (SELECT owed FROM rep_out) <= 0.004
            AND (SELECT owed FROM wh_out) <= 0.004
+           AND (SELECT owed FROM exp_out) <= 0.004
            AND (SELECT owed FROM vendor_out) <= 0.004 AS pass
       ),
       stamp AS (
-        INSERT INTO settlements (note, created_by_user_id, collected_usd, rep_commissions_usd, warehouse_earned_usd, vendor_share_usd, division)
+        INSERT INTO settlements (note, created_by_user_id, collected_usd, rep_commissions_usd, warehouse_earned_usd, expenses_usd, vendor_share_usd, division)
         SELECT
           {{params.note}},
           {{params.user_id}}::bigint,
@@ -142,6 +159,9 @@ function executeSettlementAtomic() {
                       AND (SELECT d FROM div) = 'us'
                       AND cp.paid_at > (SELECT t FROM last_stamp)), 0),
           COALESCE((SELECT SUM(cp.amount_usd) FROM commission_payments cp
+                    WHERE cp.payee_type = 'expense' AND cp.division = (SELECT d FROM div)
+                      AND cp.paid_at > (SELECT t FROM last_stamp)), 0),
+          COALESCE((SELECT SUM(cp.amount_usd) FROM commission_payments cp
                     WHERE cp.payee_type = 'vendor' AND cp.division = (SELECT d FROM div)
                       AND cp.paid_at > (SELECT t FROM last_stamp)), 0),
           (SELECT d FROM div)
@@ -152,6 +172,7 @@ function executeSettlementAtomic() {
         (SELECT id FROM stamp) AS settlement_id,
         (SELECT owed FROM rep_out)::numeric(14,2) AS rep_outstanding,
         (SELECT owed FROM wh_out)::numeric(14,2) AS warehouse_outstanding,
+        (SELECT owed FROM exp_out)::numeric(14,2) AS expense_outstanding,
         (SELECT owed FROM vendor_out)::numeric(14,2) AS vendor_outstanding
     `,
   });

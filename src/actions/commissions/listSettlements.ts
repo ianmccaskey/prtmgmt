@@ -6,7 +6,7 @@ function listSettlements() {
     datasourceName: 'Peptide Ops DB',
     query: `
       SELECT s.id, s.settled_at, s.collected_usd, s.rep_commissions_usd,
-        s.warehouse_earned_usd, s.vendor_share_usd, s.note, s.division,
+        s.warehouse_earned_usd, s.expenses_usd, s.vendor_share_usd, s.note, s.division,
         up.display_name AS created_by
       FROM settlements s
       LEFT JOIN user_profiles up ON up.id = s.created_by_user_id

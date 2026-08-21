@@ -11,6 +11,10 @@ import executeSettlementAtomic from '@/actions/commissions/executeSettlementAtom
 import listSettlements from '@/actions/commissions/listSettlements';
 import listSettlementPayments from '@/actions/commissions/listSettlementPayments';
 import getWalletExpectedInflows from '@/actions/commissions/getWalletExpectedInflows';
+import listOperatingExpenses from '@/actions/commissions/listOperatingExpenses';
+import createOperatingExpense from '@/actions/commissions/createOperatingExpense';
+import deleteOperatingExpense from '@/actions/commissions/deleteOperatingExpense';
+import listExpenseReimbursements from '@/actions/commissions/listExpenseReimbursements';
 import listWalletCyclePayments from '@/actions/commissions/listWalletCyclePayments';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import autoRepairPaymentAsset from '@/actions/orders/autoRepairPaymentAsset';
@@ -22,23 +26,39 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, ChevronRight, ExternalLink, Factory, RefreshCw, Stamp, Wallet as WalletIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, ExternalLink, Factory, Receipt, RefreshCw, Stamp, Trash2, Wallet as WalletIcon } from 'lucide-react';
 
 type VendorBalance = {
   last_settlement_id: number | null; last_settled_at: string | null;
   collected_usd: number; rep_commissions_usd: number; warehouse_earned_usd: number;
-  vendor_share_usd: number; vendor_paid_usd: number; balance_owed_usd: number;
-  carried_adjustment_usd: number;
+  expenses_usd: number; vendor_share_usd: number; vendor_paid_usd: number;
+  balance_owed_usd: number; carried_adjustment_usd: number;
 };
 type VendorPayment = { id: number; amount_usd: number; paid_at: string; note: string | null; paid_by: string | null };
 type Settlement = {
   id: number; settled_at: string; collected_usd: number; rep_commissions_usd: number;
-  warehouse_earned_usd: number; vendor_share_usd: number; note: string | null; created_by: string | null;
+  warehouse_earned_usd: number; expenses_usd: number; vendor_share_usd: number;
+  note: string | null; created_by: string | null;
 };
+type OperatingExpense = {
+  id: number; expense_date: string; category: string; description: string;
+  amount_usd: number; created_by: string | null; created_at: string;
+};
+type ExpenseReimbursement = { id: number; amount_usd: number; paid_at: string; note: string | null; paid_by: string | null };
+
+const EXPENSE_CATEGORIES = [
+  { value: 'product_testing', label: 'Product Testing' },
+  { value: 'supplies', label: 'Supplies' },
+  { value: 'shipping', label: 'Shipping' },
+  { value: 'compliance', label: 'Compliance' },
+  { value: 'other', label: 'Other' },
+] as const;
+const expenseCategoryLabel = (v: string) => EXPENSE_CATEGORIES.find(c => c.value === v)?.label ?? v;
 type SettlementPayment = {
-  id: number; payee_type: 'sales_rep' | 'warehouse' | 'vendor'; amount_usd: number;
+  id: number; payee_type: 'sales_rep' | 'warehouse' | 'vendor' | 'expense'; amount_usd: number;
   paid_at: string; note: string | null; at_settlement: boolean;
   sales_rep_name: string | null; warehouse_name: string | null;
 };
@@ -551,6 +571,240 @@ function OnChainWalletCheck({ division }: { division: string }) {
 }
 
 /**
+ * Operator-fronted costs (product testing, supplies…) reimbursed at
+ * settlement as a fourth payee class. Entering an expense reduces the
+ * vendor share; the cycle can't close until outstanding expenses are
+ * reimbursed and recorded, exactly like rep and warehouse balances.
+ */
+function OperatingExpensesCard({ division, onChanged }: { division: string; onChanged: () => void }) {
+  const { profileId, isAdmin } = useAppUser();
+  const [expRaw, expLoading, , reloadExp] = useLoadAction(listOperatingExpenses, [division], { division });
+  const [reimbRaw, , , reloadReimb] = useLoadAction(listExpenseReimbursements, [division], { division });
+  const expenses = asRows<OperatingExpense>(expRaw);
+  const reimbs = asRows<ExpenseReimbursement>(reimbRaw);
+  const incurred = expenses.reduce((s, e) => s + Number(e.amount_usd), 0);
+  const reimbursed = reimbs.reduce((s, r) => s + Number(r.amount_usd), 0);
+  const outstanding = incurred - reimbursed;
+
+  const [doCreate] = useMutateAction(createOperatingExpense);
+  const [doDelete] = useMutateAction(deleteOperatingExpense);
+  const [doReimb] = useMutateAction(recordCommissionPayment);
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [expDate, setExpDate] = useState('');
+  const [expCat, setExpCat] = useState('product_testing');
+  const [expDesc, setExpDesc] = useState('');
+  const [expAmt, setExpAmt] = useState('');
+  const [addErr, setAddErr] = useState('');
+  const [addSaving, setAddSaving] = useState(false);
+
+  const [reimbOpen, setReimbOpen] = useState(false);
+  const [reimbAmt, setReimbAmt] = useState('');
+  const [reimbNote, setReimbNote] = useState('');
+  const [reimbErr, setReimbErr] = useState('');
+  const [reimbSaving, setReimbSaving] = useState(false);
+  const [rowErr, setRowErr] = useState('');
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const handleAdd = async () => {
+    const amt = Number(expAmt);
+    if (!amt || amt <= 0) { setAddErr('Enter a valid amount.'); return; }
+    if (!expDesc.trim()) { setAddErr('Describe the expense.'); return; }
+    setAddSaving(true); setAddErr('');
+    try {
+      await doCreate({
+        expense_date: expDate || null, category: expCat, description: expDesc.trim(),
+        amount_usd: amt, division, created_by_user_id: profileId,
+      });
+      setAddOpen(false); setExpDate(''); setExpDesc(''); setExpAmt('');
+      reloadExp(); onChanged();
+    } catch (e: unknown) {
+      setAddErr(e instanceof Error ? e.message : 'Failed to record expense');
+    } finally {
+      setAddSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    setDeletingId(id); setRowErr('');
+    try {
+      const res = await doDelete({ id }) as unknown[];
+      if (!res || res.length === 0) {
+        setRowErr('This expense can’t be removed — reimbursements already recorded would exceed the remaining expense total. Adjust with a new entry instead.');
+        return;
+      }
+      reloadExp(); onChanged();
+    } catch (e: unknown) {
+      setRowErr(e instanceof Error ? e.message : 'Failed to remove expense');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleReimburse = async () => {
+    const amt = Number(reimbAmt);
+    if (!amt || amt <= 0) { setReimbErr('Enter a valid amount.'); return; }
+    setReimbSaving(true); setReimbErr('');
+    try {
+      await doReimb({
+        payee_type: 'expense', sales_rep_user_profile_id: null, warehouse_id: null,
+        amount_usd: amt, paid_by_user_id: profileId, note: reimbNote || null, division,
+      });
+      setReimbOpen(false); setReimbAmt(''); setReimbNote('');
+      reloadReimb(); onChanged();
+    } catch (e: unknown) {
+      setReimbErr(e instanceof Error ? e.message : 'Failed to record reimbursement');
+    } finally {
+      setReimbSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Receipt className="h-4 w-4 text-violet-600" /> Operating Expenses
+        </CardTitle>
+        {isAdmin && (
+          <div className="flex gap-2 flex-wrap">
+            <Button size="sm" variant="outline" onClick={() => { setAddOpen(true); setAddErr(''); }}>
+              Add Expense
+            </Button>
+            <Button size="sm" variant="outline"
+              onClick={() => { setReimbOpen(true); setReimbAmt(outstanding > 0 ? outstanding.toFixed(2) : ''); setReimbNote(''); setReimbErr(''); }}
+              disabled={outstanding <= 0.004}>
+              Record Reimbursement
+            </Button>
+          </div>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <span className="text-muted-foreground">Incurred (lifetime): <span className="text-foreground tabular-nums">{money(incurred)}</span></span>
+          <span className="text-muted-foreground">Reimbursed: <span className="text-foreground tabular-nums">{money(reimbursed)}</span></span>
+          <span className="font-medium">Outstanding: <span className={`tabular-nums ${outstanding > 0.004 ? 'text-red-600' : 'text-green-700'}`}>{money(outstanding)}</span></span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Costs you front (product testing, supplies…) come out of the vendor share and must be reimbursed
+          and recorded before the cycle can close — same rules as rep and warehouse balances.
+        </p>
+        {rowErr && <p className="text-sm text-red-600">{rowErr}</p>}
+        {expLoading ? <Skeleton className="h-16 w-full" /> : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                {isAdmin && <TableHead className="w-10" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {expenses.map(e => (
+                <TableRow key={e.id}>
+                  <TableCell className="whitespace-nowrap">{new Date(e.expense_date).toLocaleDateString()}</TableCell>
+                  <TableCell><Badge variant="outline" className="text-xs">{expenseCategoryLabel(e.category)}</Badge></TableCell>
+                  <TableCell className="text-muted-foreground">{e.description}</TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">{money(e.amount_usd)}</TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-red-600"
+                        title="Remove (only while not covered by reimbursements)"
+                        onClick={() => handleDelete(e.id)} disabled={deletingId === e.id}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+              {expenses.length === 0 && (
+                <TableRow><TableCell colSpan={isAdmin ? 5 : 4} className="text-center text-gray-400 py-6">No expenses recorded.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        )}
+        {reimbs.length > 0 && (
+          <div className="pt-1">
+            <p className="text-xs font-medium text-muted-foreground mb-1">Reimbursements</p>
+            <div className="space-y-1">
+              {reimbs.map(r => (
+                <div key={r.id} className="flex items-center justify-between gap-2 text-sm border-b border-border/40 pb-1 last:border-0">
+                  <span className="text-muted-foreground min-w-0 truncate">
+                    {new Date(r.paid_at).toLocaleDateString()}{r.paid_by ? ` · ${r.paid_by}` : ''}{r.note ? ` · ${r.note}` : ''}
+                  </span>
+                  <span className="tabular-nums font-medium shrink-0">{money(r.amount_usd)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={addOpen} onOpenChange={v => !v && !addSaving && setAddOpen(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Add Operating Expense</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Date</Label>
+              <Input type="date" value={expDate} onChange={e => setExpDate(e.target.value)} />
+              <p className="text-xs text-muted-foreground mt-0.5">Blank = today.</p>
+            </div>
+            <div>
+              <Label>Category</Label>
+              <Select value={expCat} onValueChange={setExpCat}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {EXPENSE_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input value={expDesc} onChange={e => setExpDesc(e.target.value)} placeholder="e.g. Janoshik test — T60 batch 0726" />
+            </div>
+            <div>
+              <Label>Amount (USD)</Label>
+              <Input type="number" min="0" step="0.01" value={expAmt} onChange={e => setExpAmt(e.target.value)} />
+            </div>
+            {addErr && <p className="text-sm text-red-600">{addErr}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSaving}>Cancel</Button>
+            <Button onClick={handleAdd} disabled={addSaving}>{addSaving ? 'Saving…' : 'Add Expense'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reimbOpen} onOpenChange={v => !v && !reimbSaving && setReimbOpen(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Record Expense Reimbursement</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500">
+              Outstanding: <span className="font-medium text-gray-900">{money(Math.max(0, outstanding))}</span>. Record
+              the reimbursement AFTER the money has actually been paid out — this is the ledger entry, not the transfer.
+            </p>
+            <div>
+              <Label>Amount (USD)</Label>
+              <Input type="number" min="0" step="0.01" value={reimbAmt} onChange={e => setReimbAmt(e.target.value)} />
+            </div>
+            <div>
+              <Label>Note (optional)</Label>
+              <Textarea value={reimbNote} onChange={e => setReimbNote(e.target.value)} placeholder="e.g. reimbursed from USDT wallet, tx …" rows={2} />
+            </div>
+            {reimbErr && <p className="text-sm text-red-600">{reimbErr}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReimbOpen(false)} disabled={reimbSaving}>Cancel</Button>
+            <Button onClick={handleReimburse} disabled={reimbSaving}>{reimbSaving ? 'Saving…' : 'Record Reimbursement'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+/**
  * What's owed to the product vendor: everything verified-collected, minus
  * what reps and warehouses earn, minus vendor remittances already recorded.
  */
@@ -591,13 +845,13 @@ export function VendorTab({ division }: { division: string }) {
     setSettling(true); setSettleErr('');
     try {
       const res = await doSettle({ note: settleNote || null, user_id: profileId, division }) as
-        { settlement_id: number | null; rep_outstanding: number; warehouse_outstanding: number; vendor_outstanding: number }[];
+        { settlement_id: number | null; rep_outstanding: number; warehouse_outstanding: number; expense_outstanding: number; vendor_outstanding: number }[];
       const row = res?.[0];
       if (!row || row.settlement_id == null) {
         // Server-side re-check refused: balances moved between preview and
         // confirm (or the preview was stale).
         setSettleErr(row
-          ? `Cycle can't close — still outstanding: reps ${money(Math.max(0, Number(row.rep_outstanding)))}, warehouses ${money(Math.max(0, Number(row.warehouse_outstanding)))}, vendor ${money(Math.max(0, Number(row.vendor_outstanding)))}. Record the actual payments first.`
+          ? `Cycle can't close — still outstanding: reps ${money(Math.max(0, Number(row.rep_outstanding)))}, warehouses ${money(Math.max(0, Number(row.warehouse_outstanding)))}, expenses ${money(Math.max(0, Number(row.expense_outstanding)))}, vendor ${money(Math.max(0, Number(row.vendor_outstanding)))}. Record the actual payments first.`
           : 'Cycle could not be closed — refresh and retry.');
         return;
       }
@@ -677,6 +931,12 @@ export function VendorTab({ division }: { division: string }) {
                   {Number(bal.warehouse_earned_usd) >= 0 ? '−' : '+'}{money(Math.abs(Number(bal.warehouse_earned_usd)))}
                 </span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">− Operating expenses outstanding</span>
+                <span className={`tabular-nums ${Number(bal.expenses_usd) >= 0 ? 'text-red-600' : 'text-green-700'}`}>
+                  {Number(bal.expenses_usd) >= 0 ? '−' : '+'}{money(Math.abs(Number(bal.expenses_usd)))}
+                </span>
+              </div>
               <div className="flex justify-between border-t pt-1.5 font-medium">
                 <span>Vendor share (this cycle)</span>
                 <span className="tabular-nums">{money(bal.vendor_share_usd)}</span>
@@ -705,6 +965,8 @@ export function VendorTab({ division }: { division: string }) {
         </CardContent>
       </Card>
 
+      <OperatingExpensesCard division={division} onChanged={() => { reloadBal(); }} />
+
       <OnChainWalletCheck division={division} />
 
       <Card>
@@ -717,6 +979,7 @@ export function VendorTab({ division }: { division: string }) {
                 <TableHead>Stamped At</TableHead>
                 <TableHead className="text-right">Reps Paid</TableHead>
                 <TableHead className="text-right">Warehouses Paid</TableHead>
+                <TableHead className="text-right">Expenses Paid</TableHead>
                 <TableHead className="text-right">Vendor Paid</TableHead>
                 <TableHead className="text-right">Collected (lifetime)</TableHead>
                 <TableHead>By / Note</TableHead>
@@ -738,13 +1001,14 @@ export function VendorTab({ division }: { division: string }) {
                     <TableCell className="whitespace-nowrap">{new Date(s.settled_at).toLocaleString()}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(s.rep_commissions_usd)}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(s.warehouse_earned_usd)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{money(s.expenses_usd ?? 0)}</TableCell>
                     <TableCell className="text-right tabular-nums font-medium">{money(s.vendor_share_usd)}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{money(s.collected_usd)}</TableCell>
                     <TableCell className="text-muted-foreground text-xs">{s.created_by || '—'}{s.note ? ` · ${s.note}` : ''}</TableCell>
                   </TableRow>
                   {expandedId === s.id && (
                     <TableRow>
-                      <TableCell colSpan={7} className="bg-muted/20 p-0">
+                      <TableCell colSpan={8} className="bg-muted/20 p-0">
                         {detailLoading ? <div className="p-4"><Skeleton className="h-12 w-full" /></div> : (() => {
                           const atStamp = detailRows.filter(p => p.at_settlement);
                           const midCycle = detailRows.filter(p => !p.at_settlement);
@@ -752,10 +1016,10 @@ export function VendorTab({ division }: { division: string }) {
                             <div key={p.id} className="flex items-center justify-between gap-2 text-sm border-b border-border/40 pb-1 last:border-0">
                               <span className="flex items-center gap-2 min-w-0">
                                 <Badge variant="outline" className="text-xs shrink-0">
-                                  {p.payee_type === 'sales_rep' ? 'Rep' : p.payee_type === 'warehouse' ? 'Warehouse' : 'Vendor'}
+                                  {p.payee_type === 'sales_rep' ? 'Rep' : p.payee_type === 'warehouse' ? 'Warehouse' : p.payee_type === 'expense' ? 'Expense' : 'Vendor'}
                                 </Badge>
                                 <span className="truncate">
-                                  {p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : 'Vendor'}
+                                  {p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : p.payee_type === 'expense' ? 'Expense reimbursement' : 'Vendor'}
                                   {showDate && <span className="text-xs text-muted-foreground ml-1.5">{new Date(p.paid_at).toLocaleDateString()}{p.note ? ` · ${p.note}` : ''}</span>}
                                 </span>
                               </span>
@@ -807,7 +1071,7 @@ export function VendorTab({ division }: { division: string }) {
                 </React.Fragment>
               ))}
               {settlements.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="text-center text-gray-400 py-6">No settlements yet — pay every balance to zero, then Settle All closes the cycle.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center text-gray-400 py-6">No settlements yet — pay every balance to zero, then Settle All closes the cycle.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -859,9 +1123,10 @@ export function VendorTab({ division }: { division: string }) {
             <div className="rounded border bg-slate-50 p-3 space-y-1 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Rep commissions outstanding</span><span className={`tabular-nums ${repOwedTotal > 0.004 ? 'text-red-600 font-medium' : ''}`}>{money(repOwedTotal)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Warehouse balances outstanding</span><span className={`tabular-nums ${whOwedTotal > 0.004 ? 'text-red-600 font-medium' : ''}`}>{money(whOwedTotal)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Expense reimbursements outstanding</span><span className={`tabular-nums ${bal && Number(bal.expenses_usd) > 0.004 ? 'text-red-600 font-medium' : ''}`}>{bal ? money(Math.max(0, Number(bal.expenses_usd))) : '—'}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Vendor share outstanding</span><span className={`tabular-nums ${bal && Number(bal.balance_owed_usd) > 0.004 ? 'text-red-600 font-medium' : ''}`}>{bal ? money(Math.max(0, Number(bal.balance_owed_usd))) : '—'}</span></div>
             </div>
-            {(repOwedTotal > 0.004 || whOwedTotal > 0.004 || (bal != null && Number(bal.balance_owed_usd) > 0.004)) ? (
+            {(repOwedTotal > 0.004 || whOwedTotal > 0.004 || (bal != null && (Number(bal.expenses_usd) > 0.004 || Number(bal.balance_owed_usd) > 0.004))) ? (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
                 Balances are still outstanding — send the crypto, record each payment, and come back. The
                 cycle can only close at zero.
@@ -881,7 +1146,7 @@ export function VendorTab({ division }: { division: string }) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setSettleOpen(false)} disabled={settling}>Cancel</Button>
             <Button onClick={handleSettle}
-              disabled={settling || repOwedTotal > 0.004 || whOwedTotal > 0.004 || bal == null || Number(bal.balance_owed_usd) > 0.004}>
+              disabled={settling || repOwedTotal > 0.004 || whOwedTotal > 0.004 || bal == null || Number(bal.expenses_usd) > 0.004 || Number(bal.balance_owed_usd) > 0.004}>
               {settling ? 'Closing…' : 'Close Cycle'}
             </Button>
           </DialogFooter>
