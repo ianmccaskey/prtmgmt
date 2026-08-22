@@ -74,7 +74,10 @@ export function ProductDetailPage() {
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
-          <ProductDetailsTab product={p} factories={factoryList} />
+          {/* Keyed by id: the tab seeds its edit form from props once, so a
+              route-param change within a mounted page must remount it — a
+              stale form would otherwise save old values onto the new id. */}
+          <ProductDetailsTab key={p.id} product={p} factories={factoryList} />
         </TabsContent>
         {!isWarehouse && (
           <TabsContent value="pricing" className="mt-4">

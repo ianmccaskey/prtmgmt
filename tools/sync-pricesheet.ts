@@ -148,7 +148,11 @@ async function loadRows() {
 
 /** The dc-script the sheet runs — data array injected, promo data-driven. */
 function buildScript(dataRows: readonly (readonly unknown[])[]): string {
-  const dataLiteral = dataRows.map(r => '      ' + JSON.stringify(r)).join(',\n');
+  // "<\/" inside a JS string literal still means "</" — but keeps a literal
+  // "</script>" (possible in product text or a COA URL) out of the script
+  // body, which would otherwise break both the browser's tag parsing and
+  // this tool's own extraction regex on the next run.
+  const dataLiteral = dataRows.map(r => '      ' + JSON.stringify(r).replace(/<\//g, '<\\/')).join(',\n');
   return `
 class Component extends DCLogic {
   renderVals() {
