@@ -10,6 +10,7 @@ function listProducts() {
         p.available_warehouse, p.available_china_direct,
         p.factory_id, p.is_active, p.low_stock_threshold,
         p.image_file, p.created_at, p.updated_at,
+        p.show_on_pricelist, p.promo_badge,
         f.name AS factory_name,
         COALESCE(SUM(i.quantity_on_hand), 0) AS total_stock,
         COALESCE(SUM(i.quantity_on_hand) - SUM(i.quantity_reserved), 0) AS total_available

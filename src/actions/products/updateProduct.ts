@@ -27,6 +27,13 @@ function updateProduct() {
           low_stock_threshold = {{params.low_stock_threshold}},
           image_file = CASE WHEN {{params.image_file}} = '__CLEAR__' THEN NULL
                             ELSE COALESCE({{params.image_file}}, image_file) END,
+          show_on_pricelist = COALESCE({{params.show_on_pricelist}}::boolean, show_on_pricelist),
+          promo_badge = COALESCE({{params.promo_badge}}::boolean, promo_badge),
+          pricelist_status_override = COALESCE(NULLIF({{params.pricelist_status_override}}, ''), pricelist_status_override),
+          pricelist_group = NULLIF({{params.pricelist_group}}::text, ''),
+          pricelist_spec = NULLIF({{params.pricelist_spec}}::text, ''),
+          pricelist_note = NULLIF({{params.pricelist_note}}::text, ''),
+          pricelist_sort = COALESCE({{params.pricelist_sort}}::int, pricelist_sort),
           factory_id = CASE
             WHEN NOT EXISTS (SELECT 1 FROM product_batches pb WHERE pb.product_id = {{params.id}}::bigint)
             THEN COALESCE({{params.factory_id}}::bigint, factory_id)

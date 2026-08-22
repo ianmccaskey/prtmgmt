@@ -23,7 +23,23 @@ type Product = {
   factory_id: number; factory_name: string; is_active: boolean; low_stock_threshold: number;
   total_stock: number; total_available: number; batch_count: number; updated_at: string;
   image_file?: string | null;
+  show_on_pricelist?: boolean; promo_badge?: boolean; pricelist_status_override?: string;
+  pricelist_group?: string | null; pricelist_spec?: string | null; pricelist_note?: string | null;
+  pricelist_sort?: number;
 };
+
+// Default sheet group when none is set: product name minus a trailing
+// dosage token, uppercased ("Tirzepatide 60" → "TIRZEPATIDE"). The sync
+// tool applies the identical rule — keep them in lockstep.
+const derivedGroup = (name: string) => name.replace(/\s+\d+[a-z+]*$/i, '').toUpperCase();
+
+const PRICELIST_STATUS_OPTIONS = [
+  { value: 'auto', label: 'Auto (from stock & inbound)' },
+  { value: 'available', label: 'Available' },
+  { value: 'in_production', label: 'In production' },
+  { value: 'in_transit', label: 'In transit' },
+  { value: 'out_of_stock', label: 'Out of stock' },
+] as const;
 
 type Props = { product: Product; factories: { id: number; name: string }[] };
 
@@ -47,6 +63,13 @@ export function ProductDetailsTab({ product, factories }: Props) {
     standard_cost: String(Number(product.standard_cost ?? 0)),
     factory_id: product.factory_id ? String(product.factory_id) : '',
     image_file: '',
+    show_on_pricelist: Boolean(product.show_on_pricelist),
+    promo_badge: Boolean(product.promo_badge),
+    pricelist_status_override: product.pricelist_status_override || 'auto',
+    pricelist_group: product.pricelist_group || '',
+    pricelist_spec: product.pricelist_spec || '',
+    pricelist_note: product.pricelist_note || '',
+    pricelist_sort: String(product.pricelist_sort ?? 999),
   });
   const [mutate, saving] = useMutateAction(updateProductAction);
   const [saveError, setSaveError] = useState('');
@@ -67,6 +90,7 @@ export function ProductDetailsTab({ product, factories }: Props) {
       // untouched (a stale prop must never clobber an admin's cost change).
       standard_cost: isAdmin ? (parseFloat(form.standard_cost) || 0) : null,
       low_stock_threshold: parseInt(form.low_stock_threshold),
+      pricelist_sort: parseInt(form.pricelist_sort) || 999,
       factory_id: !factoryLocked && form.factory_id ? Number(form.factory_id) : null,
       image_file: form.image_file || null,
       user_id: profileId,
@@ -166,6 +190,59 @@ export function ProductDetailsTab({ product, factories }: Props) {
                   {form.image_file === '__CLEAR__' && <span className="text-xs text-red-500">Image will be removed on save</span>}
                 </div>
               </div>
+              <Separator />
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Public Price List</p>
+                <div className="flex gap-6 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Switch checked={form.show_on_pricelist} onCheckedChange={v => set('show_on_pricelist', v)} id="pl-show" />
+                    <Label htmlFor="pl-show">Show on price list</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={form.promo_badge} onCheckedChange={v => set('promo_badge', v)} id="pl-promo" />
+                    <Label htmlFor="pl-promo">Promo badge</Label>
+                  </div>
+                </div>
+                {form.show_on_pricelist && (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Price List Status</Label>
+                        <Select value={form.pricelist_status_override} onValueChange={v => set('pricelist_status_override', v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {PRICELIST_STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-slate-400 mt-0.5">Auto = Available when sellable stock exists, In transit when inbound, else Out of stock</p>
+                      </div>
+                      <div>
+                        <Label>Sort Order</Label>
+                        <Input type="number" value={form.pricelist_sort} onChange={e => set('pricelist_sort', e.target.value)} />
+                        <p className="text-xs text-slate-400 mt-0.5">Lower numbers list first (ties break by group name)</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Group Name</Label>
+                        <Input value={form.pricelist_group} onChange={e => set('pricelist_group', e.target.value)}
+                          placeholder={derivedGroup(form.name || product.name)} />
+                        <p className="text-xs text-slate-400 mt-0.5">Variants sharing a group render under one heading</p>
+                      </div>
+                      <div>
+                        <Label>Variant / Content</Label>
+                        <Input value={form.pricelist_spec} onChange={e => set('pricelist_spec', e.target.value)}
+                          placeholder={`e.g. 30mg × ${form.vials_per_unit || product.vials_per_unit} vials`} />
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Sub-description (optional)</Label>
+                      <Input value={form.pricelist_note} onChange={e => set('pricelist_note', e.target.value)}
+                        placeholder="e.g. blend composition shown under the group name" />
+                    </div>
+                  </>
+                )}
+              </div>
             </>
           ) : (
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
@@ -181,6 +258,22 @@ export function ProductDetailsTab({ product, factories }: Props) {
                 <div className="flex gap-2 mt-0.5">
                   {product.available_warehouse && <Badge variant="outline">Warehouse</Badge>}
                   {product.available_china_direct && <Badge variant="outline">China Direct</Badge>}
+                </div>
+              </div>
+              <div className="col-span-2"><span className="text-slate-500">Public Price List</span>
+                <div className="flex gap-2 mt-0.5 items-center flex-wrap">
+                  {product.show_on_pricelist ? (
+                    <>
+                      <Badge variant="outline" className="text-green-700 border-green-300">Listed</Badge>
+                      {product.promo_badge && <Badge variant="outline" className="text-amber-700 border-amber-300">Promo badge</Badge>}
+                      {(product.pricelist_status_override || 'auto') !== 'auto' && (
+                        <Badge variant="outline">{PRICELIST_STATUS_OPTIONS.find(o => o.value === product.pricelist_status_override)?.label ?? product.pricelist_status_override}</Badge>
+                      )}
+                      <span className="text-xs text-slate-500">
+                        {(product.pricelist_group || derivedGroup(product.name))}{product.pricelist_spec ? ` — ${product.pricelist_spec}` : ''}
+                      </span>
+                    </>
+                  ) : <Badge variant="secondary">Not listed</Badge>}
                 </div>
               </div>
               {product.description && <div className="col-span-2"><span className="text-slate-500">Description</span><p className="mt-0.5">{product.description}</p></div>}

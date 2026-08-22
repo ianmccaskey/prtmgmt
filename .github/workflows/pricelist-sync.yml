@@ -1,0 +1,34 @@
+# Regenerates the public price sheet (PRTLabs/pricesheet) from the app
+# database every 15 minutes, committing ONLY when the generated sheet
+# differs — effectively sync-on-change, since the app is a browser-only
+# client with no server moment to fire a webhook from.
+#
+# Secrets required:
+#   DATABASE_URL      — Neon connection string (shared with tracking-sync)
+#   PRICESHEET_TOKEN  — fine-grained PAT, Contents read/write on
+#                       PRTLabs/pricesheet only
+name: pricelist-sync
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: pricelist-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Sync price sheet
+        run: bun tools/sync-pricesheet.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PRICESHEET_TOKEN: ${{ secrets.PRICESHEET_TOKEN }}
