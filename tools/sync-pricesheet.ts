@@ -128,7 +128,19 @@ async function loadRows() {
       LIMIT 1
     ) cb ON true
     WHERE p.show_on_pricelist AND p.is_active
-    ORDER BY p.pricelist_sort, COALESCE(NULLIF(p.pricelist_group, ''), p.name), p.name
+    ORDER BY
+      -- Groups order by their best sort value (kept whole even when
+      -- members disagree — a split group would render as two headings)…
+      MIN(p.pricelist_sort) OVER (PARTITION BY COALESCE(NULLIF(p.pricelist_group, ''), p.name)),
+      COALESCE(NULLIF(p.pricelist_group, ''), p.name),
+      -- …and variants inside a group order by mass, low to high: the
+      -- leading number of the spec ("30mg × 10 vials" → 30), else the
+      -- trailing number of the product name ("Tirzepatide 60" → 60).
+      COALESCE(
+        substring(NULLIF(p.pricelist_spec, '') from '^([0-9]+(\\.[0-9]+)?)')::numeric,
+        substring(p.name from '([0-9]+(\\.[0-9]+)?)[ ]*([mM][gG])?[ ]*$')::numeric,
+        0),
+      p.name
   ` as ProductRow[];
 
   const tiers = await sql`

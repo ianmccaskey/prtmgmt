@@ -219,7 +219,7 @@ export function ProductDetailsTab({ product, factories }: Props) {
                       <div>
                         <Label>Sort Order</Label>
                         <Input type="number" value={form.pricelist_sort} onChange={e => set('pricelist_sort', e.target.value)} />
-                        <p className="text-xs text-slate-400 mt-0.5">Lower numbers list first (ties break by group name)</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Orders the groups (lower first); variants inside a group order by mass automatically</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
