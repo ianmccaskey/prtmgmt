@@ -160,16 +160,20 @@ async function loadRows() {
       (p.pricelist_note || '').trim(),
       (p.pricelist_spec || '').trim() || `${Number(p.vials_per_unit)} vials`,
       status,
-      priceAt(p, 1), priceAt(p, 11), priceAt(p, 26),
+      // Sheet columns: 1 kit / 2+ kits / 20+ kits.
+      priceAt(p, 1), priceAt(p, 2), priceAt(p, 20),
       p.coa_url ? (p.coa_ref || '') : '',
       p.coa_url || '',
       p.promo_badge ? 1 : 0,
+      // Total sellable inventory across warehouses — shown under the
+      // Available chip (same figure that drives the auto status).
+      Number(p.sellable),
     ] as const;
   });
 }
 
 /** The dc-script the sheet runs — data array injected, promo data-driven. */
-function buildScript(dataRows: readonly (readonly unknown[])[]): string {
+function buildScript(dataRows: readonly (readonly unknown[])[], stamp: string): string {
   // "<\/" inside a JS string literal still means "</" — but keeps a literal
   // "</script>" (possible in product text or a COA URL) out of the script
   // body, which would otherwise break both the browser's tag parsing and
@@ -192,7 +196,7 @@ ${dataLiteral}
     const fmt = (n) => '$' + (Number.isInteger(n) ? n.toFixed(0) : n.toFixed(2));
     const showOos = this.props.showOutOfStock ?? true;
     const groups = [];
-    data.forEach(([name, sub, content, statusKey, p1, p2, p3, coa, coaUrl, promoFlag]) => {
+    data.forEach(([name, sub, content, statusKey, p1, p2, p3, coa, coaUrl, promoFlag, stock]) => {
       const s = statusStyles[statusKey];
       const oos = statusKey === 'OUT OF STOCK';
       if (!showOos && oos) return;
@@ -203,6 +207,7 @@ ${dataLiteral}
       }
       g.variants.push({
         promo: promoFlag ? (this.props.promoLabel ?? 'Promo') : '',
+        stockNote: (statusKey === 'AVAILABLE' && stock > 0) ? stock + ' in stock' : '',
         content, coa,
         coaUrl: coaUrl || '',
         borderTop: g.variants.length ? '1px solid #eef2f5' : 'none',
@@ -220,26 +225,47 @@ ${dataLiteral}
     });
     return {
       groups,
-      effectiveDate: this.props.effectiveDate ?? '${effectiveDate()}',
+      effectiveDate: this.props.effectiveDate ?? '${stamp}',
     };
   }
 }
 `;
 }
 
-function effectiveDate(): string {
-  return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+/** "August 21, 2026, 9:45 PM CT" — the moment of the last real update. */
+function freshStamp(): string {
+  return new Date().toLocaleString('en-US', {
+    timeZone: 'America/Chicago',
+    month: 'long', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  }) + ' CT';
+}
+
+/** The stamp currently on the published sheet (props default). */
+function currentStamp(indexHtml: string): string | null {
+  const m = indexHtml.match(/<script type="__bundler\/template">([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  const template = JSON.parse(m[1]) as string;
+  const pm = template.match(/data-props="([^"]*)"/);
+  if (!pm) return null;
+  try {
+    const props = JSON.parse(pm[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&')) as
+      { effectiveDate?: { default?: string } };
+    return props.effectiveDate?.default ?? null;
+  } catch {
+    return null;
+  }
 }
 
 const escAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
-function rebuildIndexHtml(indexHtml: string, script: string): string {
+function rebuildIndexHtml(indexHtml: string, script: string, stamp: string): string {
   const m = indexHtml.match(/(<script type="__bundler\/template">)([\s\S]*?)(<\/script>)/);
   if (!m) throw new Error('pricesheet index.html: __bundler/template script tag not found');
   let template = JSON.parse(m[2]) as string;
 
   const props = {
-    effectiveDate: { editor: 'text', default: effectiveDate(), tsType: 'string' },
+    effectiveDate: { editor: 'text', default: stamp, tsType: 'string' },
     showOutOfStock: { editor: 'boolean', default: true, tsType: 'boolean' },
     promoLabel: { editor: 'text', default: 'Promo', tsType: 'string' },
   };
@@ -284,14 +310,19 @@ async function main() {
 
   const indexPath = join(dir, 'index.html');
   const current = await Bun.file(indexPath).text();
-  const rebuilt = rebuildIndexHtml(current, buildScript(rows));
-  await Bun.write(indexPath, rebuilt);
 
+  // Change detection runs with the PUBLISHED timestamp, so the stamp only
+  // advances when the sheet's actual content moved — otherwise a fresh
+  // time every run would commit a "changed" sheet every 15 minutes.
+  const oldStamp = currentStamp(current) ?? freshStamp();
+  await Bun.write(indexPath, rebuildIndexHtml(current, buildScript(rows, oldStamp), oldStamp));
   const dirty = run(dir, ['git', 'status', '--porcelain']).trim() !== '';
   if (!dirty) {
     console.log('Price sheet already up to date — nothing to publish.');
     return;
   }
+  const stamp = freshStamp();
+  await Bun.write(indexPath, rebuildIndexHtml(current, buildScript(rows, stamp), stamp));
   if (DRY) {
     console.log(`DRY RUN: regenerated sheet differs. Preview at ${indexPath} (not committed).`);
     return;
