@@ -130,9 +130,16 @@ async function loadRows() {
     WHERE p.show_on_pricelist AND p.is_active
     ORDER BY
       -- Groups order by their best sort value (kept whole even when
-      -- members disagree — a split group would render as two headings)…
-      MIN(p.pricelist_sort) OVER (PARTITION BY COALESCE(NULLIF(p.pricelist_group, ''), p.name)),
-      COALESCE(NULLIF(p.pricelist_group, ''), p.name),
+      -- members disagree — a split group would render as two headings).
+      -- The partition key MUST match the display grouping exactly:
+      -- trimmed explicit group, else the derivedGroup() rule (name minus
+      -- trailing dosage token, uppercased).
+      MIN(p.pricelist_sort) OVER (PARTITION BY COALESCE(
+        NULLIF(TRIM(p.pricelist_group), ''),
+        UPPER(regexp_replace(p.name, '[[:space:]]+[0-9]+[a-zA-Z+]*$', '')))),
+      COALESCE(
+        NULLIF(TRIM(p.pricelist_group), ''),
+        UPPER(regexp_replace(p.name, '[[:space:]]+[0-9]+[a-zA-Z+]*$', ''))),
       -- …and variants inside a group order by mass, low to high: the
       -- leading number of the spec ("30mg × 10 vials" → 30), else the
       -- trailing number of the product name ("Tirzepatide 60" → 60).
@@ -140,7 +147,7 @@ async function loadRows() {
         substring(NULLIF(p.pricelist_spec, '') from '^([0-9]+(\\.[0-9]+)?)')::numeric,
         substring(p.name from '([0-9]+(\\.[0-9]+)?)[ ]*([mM][gG])?[ ]*$')::numeric,
         0),
-      p.name
+      p.name, p.id
   ` as ProductRow[];
 
   const tiers = await sql`
