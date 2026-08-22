@@ -116,7 +116,10 @@ async function loadRows() {
         HAVING COALESCE(NULLIF(bt.test_report_url, ''), NULLIF(pb.coa_url, '')) IS NOT NULL
         ORDER BY
           MAX(bt.result_value) FILTER (WHERE bt.test_type = 'mass_spec') DESC NULLS LAST,
-          MAX(bt.result_value) FILTER (WHERE bt.test_type = 'hplc_purity') DESC NULLS LAST
+          MAX(bt.result_value) FILTER (WHERE bt.test_type = 'hplc_purity') DESC NULLS LAST,
+          -- Deterministic tiebreak: a coin-flip winner would churn a new
+          -- pricesheet commit on every sync run.
+          COALESCE(NULLIF(bt.test_report_url, ''), NULLIF(pb.coa_url, ''))
         LIMIT 1
       ) rep ON true
       WHERE pb.product_id = p.id AND pb.qc_status = 'passed'
