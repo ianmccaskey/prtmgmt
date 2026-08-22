@@ -14,9 +14,9 @@
  * - Products: show_on_pricelist AND is_active, ordered by pricelist_sort
  *   then group; group/spec default from name ("Tirzepatide 60" →
  *   "TIRZEPATIDE") when the explicit fields are blank.
- * - Prices: effective unit price at qty 1 / 11 / 26 — best price tier
+ * - Prices: effective unit price at qty 1 / 2 / 20 — best price tier
  *   with min_quantity <= qty, else list_price (same rule the New Order
- *   form applies), matching the sheet's fixed 1–10 / 11–25 / 26+ columns.
+ *   form applies), matching the sheet's 1 kit / 2+ kits / 20+ kits columns.
  * - Status: pricelist_status_override wins unless 'auto'; auto derives
  *   AVAILABLE from sellable stock (QC-passed batches, active warehouses,
  *   on_hand − reserved), IN TRANSIT from undelivered inbound shipment
