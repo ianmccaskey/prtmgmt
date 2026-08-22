@@ -21,8 +21,12 @@
  *   AVAILABLE from sellable stock (QC-passed batches, active warehouses,
  *   on_hand − reserved), IN TRANSIT from undelivered inbound shipment
  *   quantity, else OUT OF STOCK.
- * - COA: newest QC-passed batch with a coa_url supplies the link and the
- *   batch number shown beside it.
+ * - COA: from the newest QC-passed batch that has any certificate link.
+ *   Within that batch, passing test reports are grouped by link (tests
+ *   with no report URL of their own belong to the batch's coa_url) and
+ *   scored by mass-spec content, purity as tiebreak — the best-scoring
+ *   report supersedes the others (Ian's rule: publish the strongest
+ *   certificate). The batch number is shown beside the link.
  *
  * Publishes ONLY when the regenerated file differs (quiet no-op runs, so
  * a frequent schedule approximates sync-on-change without churn).
@@ -99,9 +103,24 @@ async function loadRows() {
       cb.batch_number AS coa_ref, cb.coa_url
     FROM products p
     LEFT JOIN LATERAL (
-      SELECT pb.batch_number, pb.coa_url FROM product_batches pb
+      SELECT pb.batch_number, COALESCE(rep.url, NULLIF(pb.coa_url, '')) AS coa_url
+      FROM product_batches pb
+      LEFT JOIN LATERAL (
+        -- Passing tests grouped by certificate link (a test with no report
+        -- URL of its own belongs to the batch's coa_url); highest mass-spec
+        -- content wins, purity breaks ties.
+        SELECT COALESCE(NULLIF(bt.test_report_url, ''), NULLIF(pb.coa_url, '')) AS url
+        FROM batch_tests bt
+        WHERE bt.batch_id = pb.id AND bt.pass_fail = 'pass'
+        GROUP BY COALESCE(NULLIF(bt.test_report_url, ''), NULLIF(pb.coa_url, ''))
+        HAVING COALESCE(NULLIF(bt.test_report_url, ''), NULLIF(pb.coa_url, '')) IS NOT NULL
+        ORDER BY
+          MAX(bt.result_value) FILTER (WHERE bt.test_type = 'mass_spec') DESC NULLS LAST,
+          MAX(bt.result_value) FILTER (WHERE bt.test_type = 'hplc_purity') DESC NULLS LAST
+        LIMIT 1
+      ) rep ON true
       WHERE pb.product_id = p.id AND pb.qc_status = 'passed'
-        AND COALESCE(pb.coa_url, '') <> ''
+        AND (COALESCE(pb.coa_url, '') <> '' OR rep.url IS NOT NULL)
       ORDER BY pb.manufacture_date DESC NULLS LAST, pb.id DESC
       LIMIT 1
     ) cb ON true
