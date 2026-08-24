@@ -5,7 +5,7 @@ function recordCommissionPayment() {
     datasourceName: 'Peptide Ops DB',
     query: `
       INSERT INTO commission_payments (
-        payee_type, sales_rep_user_profile_id, warehouse_id, amount_usd, paid_by_user_id, note, division
+        payee_type, sales_rep_user_profile_id, warehouse_id, amount_usd, paid_by_user_id, note, tx_hash, division
       ) VALUES (
         {{params.payee_type}},
         {{params.sales_rep_user_profile_id}}::bigint,
@@ -13,6 +13,7 @@ function recordCommissionPayment() {
         {{params.amount_usd}}::numeric,
         {{params.paid_by_user_id}}::bigint,
         {{params.note}},
+        NULLIF({{params.tx_hash}}::text, ''),
         COALESCE(
           -- Only REP payments follow the rep's own division (balance math
           -- follows the rep). Expense reimbursements also carry a user id,

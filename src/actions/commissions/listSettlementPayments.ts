@@ -10,7 +10,7 @@ function listSettlementPayments() {
   return action('listSettlementPayments', 'SQL', {
     datasourceName: 'Peptide Ops DB',
     query: `
-      SELECT cp.id, cp.payee_type, cp.amount_usd, cp.paid_at, cp.note,
+      SELECT cp.id, cp.payee_type, cp.amount_usd, cp.paid_at, cp.note, cp.tx_hash,
         (cp.settlement_id IS NOT NULL) AS at_settlement,
         rep.display_name AS sales_rep_name,
         w.name AS warehouse_name
