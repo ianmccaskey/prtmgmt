@@ -14,7 +14,15 @@ function recordCommissionPayment() {
         {{params.paid_by_user_id}}::bigint,
         {{params.note}},
         COALESCE(
-          (SELECT up.division FROM user_profiles up WHERE up.id = {{params.sales_rep_user_profile_id}}::bigint),
+          -- Only REP payments follow the rep's own division (balance math
+          -- follows the rep). Expense reimbursements also carry a user id,
+          -- but their division must match the operating_expenses pipeline
+          -- they were incurred in — the caller's explicit division — or a
+          -- china-division payee on a US expense would split the balance
+          -- across divisions forever.
+          CASE WHEN {{params.payee_type}} = 'sales_rep' THEN
+            (SELECT up.division FROM user_profiles up WHERE up.id = {{params.sales_rep_user_profile_id}}::bigint)
+          END,
           NULLIF({{params.division}}, ''), 'us')
       )
       RETURNING id
