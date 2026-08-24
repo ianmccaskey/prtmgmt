@@ -718,7 +718,7 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <span className="text-muted-foreground">Incurred (this cycle): <span className="text-foreground tabular-nums">{money(incurred)}</span></span>
           <span className="text-muted-foreground">Reimbursed (this cycle): <span className="text-foreground tabular-nums">{money(reimbursed)}</span></span>
-          <span className="font-medium">Outstanding: <span className={`tabular-nums ${outstanding > 0.004 ? 'text-red-600' : 'text-green-700'}`}>{money(outstanding)}</span></span>
+          <span className="font-medium">Outstanding (incl. carried credits): <span className={`tabular-nums ${outstanding > 0.004 ? 'text-red-600' : 'text-green-700'}`}>{money(outstanding)}</span></span>
         </div>
         {expBalances.filter(b => Math.abs(Number(b.balance_owed_usd)) > 0.004).length > 0 && (
           <div className="flex flex-wrap gap-1.5">

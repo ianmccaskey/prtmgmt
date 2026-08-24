@@ -10,7 +10,11 @@ function listOperatingExpenses() {
         up.display_name AS created_by, oe.created_at,
         -- Entered before the division's last Settle All = settled history:
         -- the cycle can only close with every expense payee at zero, so
-        -- anything pre-stamp is necessarily reimbursed.
+        -- anything pre-stamp is necessarily reimbursed. (Known race, same
+        -- accepted class as executeSettlementAtomic's: an expense committing
+        -- in the same instant as the close could read settled without being
+        -- in the stamp's gate. Both operations are manual and typically the
+        -- same person seconds apart; balances are always recomputed live.)
         (oe.created_at <= COALESCE((SELECT MAX(s.settled_at) FROM settlements s
                                     WHERE s.division = oe.division), '-infinity'::timestamptz)) AS settled
       FROM operating_expenses oe
