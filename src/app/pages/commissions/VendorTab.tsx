@@ -889,11 +889,19 @@ export function VendorTab({ division }: { division: string }) {
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [recordingKey, setRecordingKey] = useState<string | null>(null);
   const [rundownErr, setRundownErr] = useState('');
+  // Synchronous in-flight guard: React state renders too late to stop a
+  // rapid double-click on "Confirm" from inserting the payment twice.
+  const recordingRef = useRef(false);
+  // An armed confirm must not survive a division switch — the generic
+  // 'expense' key would otherwise carry over to the other division's row.
+  useEffect(() => { setConfirmKey(null); setRundownErr(''); }, [division]);
   const recordRundown = async (
     key: string, amount: number,
     payee: { payee_type: string; sales_rep_user_profile_id?: number | null; warehouse_id?: number | null },
   ) => {
     if (confirmKey !== key) { setConfirmKey(key); return; }
+    if (recordingRef.current) return;
+    recordingRef.current = true;
     setRecordingKey(key); setRundownErr('');
     try {
       await doPay({
@@ -909,6 +917,7 @@ export function VendorTab({ division }: { division: string }) {
     } catch (e: unknown) {
       setRundownErr(e instanceof Error ? e.message : 'Failed to record payment');
     } finally {
+      recordingRef.current = false;
       setRecordingKey(null); setConfirmKey(null);
     }
   };
