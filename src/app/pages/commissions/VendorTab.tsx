@@ -50,9 +50,9 @@ type Settlement = {
 type OperatingExpense = {
   id: number; expense_date: string; category: string; description: string;
   amount_usd: number; payee_user_profile_id: number; payee_name: string | null;
-  created_by: string | null; created_at: string;
+  created_by: string | null; created_at: string; settled: boolean;
 };
-type ExpenseReimbursement = { id: number; amount_usd: number; paid_at: string; note: string | null; tx_hash: string | null; paid_by: string | null; payee_name: string | null };
+type ExpenseReimbursement = { id: number; amount_usd: number; paid_at: string; note: string | null; tx_hash: string | null; paid_by: string | null; payee_name: string | null; settled: boolean };
 type ExpenseBalance = {
   user_profile_id: number; display_name: string;
   expenses_total_usd: number; reimbursed_total_usd: number; balance_owed_usd: number;
@@ -591,13 +591,22 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
   const [reimbRaw, , , reloadReimb] = useLoadAction(listExpenseReimbursements, [division], { division });
   const [expBalRaw, , , reloadExpBal] = useLoadAction(listExpenseBalances, [division], { division });
   const [profilesRaw] = useLoadAction(listUserProfiles, [], {});
-  const expenses = asRows<OperatingExpense>(expRaw);
-  const reimbs = asRows<ExpenseReimbursement>(reimbRaw);
+  const allExpenses = asRows<OperatingExpense>(expRaw);
+  const allReimbs = asRows<ExpenseReimbursement>(reimbRaw);
+  // Current cycle only — anything before the last Settle All is settled
+  // history (the cycle can't close otherwise) and collapses below.
+  const expenses = allExpenses.filter(e => !e.settled);
+  const reimbs = allReimbs.filter(r => !r.settled);
+  const settledExpenses = allExpenses.filter(e => e.settled);
+  const settledReimbs = allReimbs.filter(r => r.settled);
+  const settledTotal = settledExpenses.reduce((s, e) => s + Number(e.amount_usd), 0);
+  const [showSettled, setShowSettled] = useState(false);
   const expBalances = asRows<ExpenseBalance>(expBalRaw);
   const profiles = asRows<{ id: number; display_name: string }>(profilesRaw);
   const incurred = expenses.reduce((s, e) => s + Number(e.amount_usd), 0);
   const reimbursed = reimbs.reduce((s, r) => s + Number(r.amount_usd), 0);
-  const outstanding = incurred - reimbursed;
+  const outstanding = allExpenses.reduce((s, e) => s + Number(e.amount_usd), 0)
+    - allReimbs.reduce((s, r) => s + Number(r.amount_usd), 0);
 
   const [doCreate] = useMutateAction(createOperatingExpense);
   const [doDelete] = useMutateAction(deleteOperatingExpense);
@@ -707,8 +716,8 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          <span className="text-muted-foreground">Incurred (lifetime): <span className="text-foreground tabular-nums">{money(incurred)}</span></span>
-          <span className="text-muted-foreground">Reimbursed: <span className="text-foreground tabular-nums">{money(reimbursed)}</span></span>
+          <span className="text-muted-foreground">Incurred (this cycle): <span className="text-foreground tabular-nums">{money(incurred)}</span></span>
+          <span className="text-muted-foreground">Reimbursed (this cycle): <span className="text-foreground tabular-nums">{money(reimbursed)}</span></span>
           <span className="font-medium">Outstanding: <span className={`tabular-nums ${outstanding > 0.004 ? 'text-red-600' : 'text-green-700'}`}>{money(outstanding)}</span></span>
         </div>
         {expBalances.filter(b => Math.abs(Number(b.balance_owed_usd)) > 0.004).length > 0 && (
@@ -759,14 +768,14 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
                 </TableRow>
               ))}
               {expenses.length === 0 && (
-                <TableRow><TableCell colSpan={isAdmin ? 6 : 5} className="text-center text-gray-400 py-6">No expenses recorded.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={isAdmin ? 6 : 5} className="text-center text-gray-400 py-6">No expenses this cycle.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
         )}
         {reimbs.length > 0 && (
           <div className="pt-1">
-            <p className="text-xs font-medium text-muted-foreground mb-1">Reimbursements</p>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Reimbursements (this cycle)</p>
             <div className="space-y-1">
               {reimbs.map(r => (
                 <div key={r.id} className="flex items-center justify-between gap-2 text-sm border-b border-border/40 pb-1 last:border-0">
@@ -780,6 +789,39 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {settledExpenses.length > 0 && (
+          <div className="pt-1 border-t">
+            <button type="button"
+              className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              onClick={() => setShowSettled(v => !v)}>
+              {showSettled ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              Settled in prior cycles — {settledExpenses.length} expense{settledExpenses.length === 1 ? '' : 's'} totaling {money(settledTotal)}, fully reimbursed
+            </button>
+            {showSettled && (
+              <div className="mt-2 space-y-1">
+                {settledExpenses.map(e => (
+                  <div key={e.id} className="flex items-center justify-between gap-2 text-sm border-b border-border/40 pb-1 last:border-0">
+                    <span className="text-muted-foreground min-w-0 truncate">
+                      {new Date(e.expense_date).toLocaleDateString()} · {expenseCategoryLabel(e.category)} · {e.description}
+                      {e.payee_name ? ` · for ${e.payee_name}` : ''}
+                    </span>
+                    <span className="flex items-center gap-2 shrink-0">
+                      <Badge variant="outline" className="text-xs text-green-700 border-green-300">
+                        <Check className="h-3 w-3 mr-0.5" /> Paid
+                      </Badge>
+                      <span className="tabular-nums font-medium">{money(e.amount_usd)}</span>
+                    </span>
+                  </div>
+                ))}
+                {settledReimbs.length > 0 && (
+                  <p className="text-xs text-muted-foreground pt-1">
+                    Covered by {settledReimbs.length} reimbursement{settledReimbs.length === 1 ? '' : 's'} totaling {money(settledReimbs.reduce((s, r) => s + Number(r.amount_usd), 0))} — full detail in Settlement History.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </CardContent>
