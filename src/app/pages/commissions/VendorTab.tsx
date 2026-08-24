@@ -1012,7 +1012,7 @@ export function VendorTab({ division }: { division: string }) {
       }
       setPayoutTarget(null);
     } catch (e: unknown) {
-      setPayoutErr(`${e instanceof Error ? e.message : 'Failed to record payment'}${recorded > 0 ? ` — ${recorded} of ${lines.length} line(s) WERE recorded; remove the recorded ones before retrying.` : ''}`);
+      setPayoutErr(`${e instanceof Error ? e.message : 'Failed to record payment'}${recorded > 0 ? ` — ${recorded} of ${lines.length} line(s) WERE recorded; remove the recorded ones before retrying (lines record top to bottom - the FIRST N recorded).` : ''}`);
     } finally {
       recordingRef.current = false;
       setPayoutSaving(false);
