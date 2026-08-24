@@ -127,7 +127,9 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
         state: wh.state || undefined,
         zip: dbText(wh.postal_code),
         country: toIsoCountry(wh.country),
-        phone: dbText(wh.ship_from_phone) || undefined,
+        // Sender phone deliberately NOT sent: UPS prints it on the label's
+        // return address (USPS ignores it). The number stays in Settings
+        // for internal use only.
         email: wh.ship_from_email || undefined,
       };
       const to: ShippoAddress = {
@@ -392,7 +394,9 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
       state: r.label_return_state || undefined,
       zip: dbText(r.label_return_postal),
       country: toIsoCountry(r.label_return_country),
-      phone: dbText(r.label_return_phone) || undefined,
+      // Sender phone deliberately NOT sent: UPS prints it on the label's
+      // return address (USPS ignores it). The number stays in My Settings
+      // for internal use only.
       // Dedicated shipping email (My Settings) — deliberately NOT the login
       // email. USPS Ground Advantage refuses labels without one.
       email: r.label_return_email || undefined,
