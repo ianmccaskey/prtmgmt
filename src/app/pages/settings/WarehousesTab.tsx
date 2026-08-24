@@ -446,7 +446,7 @@ export function WarehousesTab() {
               />
             </div>
             <div>
-              <Label>Ship-From Phone <span className="text-gray-400 font-normal">(some carriers require one)</span></Label>
+              <Label>Ship-From Phone <span className="text-gray-400 font-normal">(USPS/FedEx require one — never printed on UPS labels)</span></Label>
               <Input value={shippoPhone} onChange={e => setShippoPhone(e.target.value)} placeholder="+1 555 000 0000" />
             </div>
             <div>

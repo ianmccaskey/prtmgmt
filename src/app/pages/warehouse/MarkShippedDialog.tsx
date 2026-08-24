@@ -115,36 +115,36 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
   const parcelOk = ['length', 'width', 'height', 'weight'].every(k => Number(parcel[k as keyof typeof parcel]) > 0);
   const shipToOk = !!(order.ship_address_line1 && order.ship_city && dbText(order.ship_postal_code));
 
+  const buildFrom = (): ShippoAddress => usePersonal && returnAddr ? returnAddr : {
+    name: wh.ship_from_name || wh.name,
+    street1: wh.address_line1 || '',
+    street2: wh.address_line2 || undefined,
+    city: wh.city || '',
+    state: wh.state || undefined,
+    zip: dbText(wh.postal_code),
+    country: toIsoCountry(wh.country),
+    phone: dbText(wh.ship_from_phone) || undefined,
+    email: wh.ship_from_email || undefined,
+  };
+  const buildTo = (): ShippoAddress => ({
+    name: order.ship_to_name || order.customer_name,
+    street1: order.ship_address_line1,
+    street2: order.ship_address_line2 || undefined,
+    city: order.ship_city,
+    state: order.ship_state || undefined,
+    zip: dbText(order.ship_postal_code),
+    country: toIsoCountry(order.ship_country),
+  });
+  const buildParcel = () => ({
+    length: parcel.length, width: parcel.width, height: parcel.height,
+    distance_unit: 'in' as const, weight: parcel.weight, mass_unit: 'lb' as const,
+  });
+
   const quote = async () => {
     if (!wh.shippo_api_key) return;
     setBusy('quote'); setErr(''); setRates([]); setSelRate(''); setMessages([]);
     try {
-      const from: ShippoAddress = usePersonal && returnAddr ? returnAddr : {
-        name: wh.ship_from_name || wh.name,
-        street1: wh.address_line1 || '',
-        street2: wh.address_line2 || undefined,
-        city: wh.city || '',
-        state: wh.state || undefined,
-        zip: dbText(wh.postal_code),
-        country: toIsoCountry(wh.country),
-        // Sender phone deliberately NOT sent: UPS prints it on the label's
-        // return address (USPS ignores it). The number stays in Settings
-        // for internal use only.
-        email: wh.ship_from_email || undefined,
-      };
-      const to: ShippoAddress = {
-        name: order.ship_to_name || order.customer_name,
-        street1: order.ship_address_line1,
-        street2: order.ship_address_line2 || undefined,
-        city: order.ship_city,
-        state: order.ship_state || undefined,
-        zip: dbText(order.ship_postal_code),
-        country: toIsoCountry(order.ship_country),
-      };
-      const res = await getShippoRates(wh.shippo_api_key, from, to, {
-        length: parcel.length, width: parcel.width, height: parcel.height,
-        distance_unit: 'in', weight: parcel.weight, mass_unit: 'lb',
-      });
+      const res = await getShippoRates(wh.shippo_api_key, buildFrom(), buildTo(), buildParcel());
       setRates(res.rates);
       setMessages(res.messages);
       if (res.rates.length > 0) setSelRate(res.rates[0].object_id);
@@ -161,11 +161,28 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
     if (!wh.shippo_api_key || !rate) return;
     setBusy('buy'); setErr('');
     try {
-      const label = await buyShippoLabel(wh.shippo_api_key, rate.object_id);
-      onPurchased(providerToCarrier(rate.provider), {
+      let buyRate = rate;
+      const from = buildFrom();
+      // UPS prints the sender phone on the label's return address, and UPS
+      // is the one major carrier that doesn't require a sender phone
+      // (Shippo docs: USPS requires one at purchase, FedEx mandates it).
+      // So a UPS purchase re-quotes the identical shipment WITHOUT the
+      // phone and buys the matching rate — same carrier, service, and
+      // price; just nothing to print. Any hiccup falls back to the
+      // original rate: a printed phone beats a failed label.
+      if (providerToCarrier(rate.provider) === 'UPS' && from.phone) {
+        try {
+          const res2 = await getShippoRates(wh.shippo_api_key, { ...from, phone: undefined }, buildTo(), buildParcel());
+          const match = res2.rates.find(r2 =>
+            r2.provider === rate.provider && r2.servicelevel.token === rate.servicelevel.token);
+          if (match) buyRate = match;
+        } catch { /* requote failed — buy the original rate */ }
+      }
+      const label = await buyShippoLabel(wh.shippo_api_key, buyRate.object_id);
+      onPurchased(providerToCarrier(buyRate.provider), {
         label_url: label.label_url,
         transaction_id: label.object_id,
-        cost: Number(rate.amount),
+        cost: Number(buyRate.amount),
         tracking_number: label.tracking_number,
       });
     } catch (e: unknown) {
@@ -394,9 +411,10 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
       state: r.label_return_state || undefined,
       zip: dbText(r.label_return_postal),
       country: toIsoCountry(r.label_return_country),
-      // Sender phone deliberately NOT sent: UPS prints it on the label's
-      // return address (USPS ignores it). The number stays in My Settings
-      // for internal use only.
+      // Phone is sent to carriers that require one (USPS at purchase,
+      // FedEx always) — UPS purchases strip it via a phone-less requote in
+      // buy() so it never prints on the label.
+      phone: dbText(r.label_return_phone) || undefined,
       // Dedicated shipping email (My Settings) — deliberately NOT the login
       // email. USPS Ground Advantage refuses labels without one.
       email: r.label_return_email || undefined,

@@ -129,9 +129,10 @@ export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: ()
           <div>
             <p className="text-sm font-medium">Shippo sender / return address</p>
             <p className="text-xs text-muted-foreground">
-              The full From block Shippo prints on labels you buy through Mark Shipped (sender name,
-              address, phone — also the rate-quote origin). Mark Shipped lets you choose per shipment
-              between this and the warehouse&apos;s ship-from address.
+              The From block Shippo prints on labels you buy through Mark Shipped (also the rate-quote
+              origin). Mark Shipped lets you choose per shipment between this and the warehouse&apos;s
+              ship-from address. The phone goes only to carriers that require one (USPS, FedEx) — UPS
+              labels are bought without it so it never prints.
             </p>
           </div>
           {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : (
