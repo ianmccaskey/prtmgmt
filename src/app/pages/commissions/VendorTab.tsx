@@ -15,6 +15,8 @@ import listOperatingExpenses from '@/actions/commissions/listOperatingExpenses';
 import createOperatingExpense from '@/actions/commissions/createOperatingExpense';
 import deleteOperatingExpense from '@/actions/commissions/deleteOperatingExpense';
 import listExpenseReimbursements from '@/actions/commissions/listExpenseReimbursements';
+import listExpenseBalances from '@/actions/commissions/listExpenseBalances';
+import listUserProfiles from '@/actions/settings/listUserProfiles';
 import listWalletCyclePayments from '@/actions/commissions/listWalletCyclePayments';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import upsertAppSetting from '@/actions/settings/upsertAppSetting';
@@ -46,9 +48,14 @@ type Settlement = {
 };
 type OperatingExpense = {
   id: number; expense_date: string; category: string; description: string;
-  amount_usd: number; created_by: string | null; created_at: string;
+  amount_usd: number; payee_user_profile_id: number; payee_name: string | null;
+  created_by: string | null; created_at: string;
 };
-type ExpenseReimbursement = { id: number; amount_usd: number; paid_at: string; note: string | null; paid_by: string | null };
+type ExpenseReimbursement = { id: number; amount_usd: number; paid_at: string; note: string | null; paid_by: string | null; payee_name: string | null };
+type ExpenseBalance = {
+  user_profile_id: number; display_name: string;
+  expenses_total_usd: number; reimbursed_total_usd: number; balance_owed_usd: number;
+};
 
 const EXPENSE_CATEGORIES = [
   { value: 'product_testing', label: 'Product Testing' },
@@ -581,8 +588,12 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
   const { profileId, isAdmin } = useAppUser();
   const [expRaw, expLoading, , reloadExp] = useLoadAction(listOperatingExpenses, [division], { division });
   const [reimbRaw, , , reloadReimb] = useLoadAction(listExpenseReimbursements, [division], { division });
+  const [expBalRaw, , , reloadExpBal] = useLoadAction(listExpenseBalances, [division], { division });
+  const [profilesRaw] = useLoadAction(listUserProfiles, [], {});
   const expenses = asRows<OperatingExpense>(expRaw);
   const reimbs = asRows<ExpenseReimbursement>(reimbRaw);
+  const expBalances = asRows<ExpenseBalance>(expBalRaw);
+  const profiles = asRows<{ id: number; display_name: string }>(profilesRaw);
   const incurred = expenses.reduce((s, e) => s + Number(e.amount_usd), 0);
   const reimbursed = reimbs.reduce((s, r) => s + Number(r.amount_usd), 0);
   const outstanding = incurred - reimbursed;
@@ -596,10 +607,12 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
   const [expCat, setExpCat] = useState('product_testing');
   const [expDesc, setExpDesc] = useState('');
   const [expAmt, setExpAmt] = useState('');
+  const [expPayee, setExpPayee] = useState('');
   const [addErr, setAddErr] = useState('');
   const [addSaving, setAddSaving] = useState(false);
 
   const [reimbOpen, setReimbOpen] = useState(false);
+  const [reimbUser, setReimbUser] = useState('');
   const [reimbAmt, setReimbAmt] = useState('');
   const [reimbNote, setReimbNote] = useState('');
   const [reimbErr, setReimbErr] = useState('');
@@ -607,18 +620,23 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
   const [rowErr, setRowErr] = useState('');
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  const balanceFor = (uid: string) => Number(expBalances.find(b => String(b.user_profile_id) === uid)?.balance_owed_usd ?? 0);
+  const reloadAll = () => { reloadExp(); reloadReimb(); reloadExpBal(); onChanged(); };
+
   const handleAdd = async () => {
     const amt = Number(expAmt);
     if (!amt || amt <= 0) { setAddErr('Enter a valid amount.'); return; }
     if (!expDesc.trim()) { setAddErr('Describe the expense.'); return; }
+    if (!expPayee) { setAddErr('Pick who gets reimbursed.'); return; }
     setAddSaving(true); setAddErr('');
     try {
       await doCreate({
         expense_date: expDate || null, category: expCat, description: expDesc.trim(),
         amount_usd: amt, division, created_by_user_id: profileId,
+        payee_user_profile_id: Number(expPayee),
       });
       setAddOpen(false); setExpDate(''); setExpDesc(''); setExpAmt('');
-      reloadExp(); onChanged();
+      reloadAll();
     } catch (e: unknown) {
       setAddErr(e instanceof Error ? e.message : 'Failed to record expense');
     } finally {
@@ -631,10 +649,10 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
     try {
       const res = await doDelete({ id }) as unknown[];
       if (!res || res.length === 0) {
-        setRowErr('This expense can’t be removed — reimbursements already recorded would exceed the remaining expense total. Adjust with a new entry instead.');
+        setRowErr('This expense can’t be removed — the payee’s recorded reimbursements would exceed their remaining expense total. Adjust with a new entry instead.');
         return;
       }
-      reloadExp(); onChanged();
+      reloadAll();
     } catch (e: unknown) {
       setRowErr(e instanceof Error ? e.message : 'Failed to remove expense');
     } finally {
@@ -645,14 +663,15 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
   const handleReimburse = async () => {
     const amt = Number(reimbAmt);
     if (!amt || amt <= 0) { setReimbErr('Enter a valid amount.'); return; }
+    if (!reimbUser) { setReimbErr('Pick who was reimbursed.'); return; }
     setReimbSaving(true); setReimbErr('');
     try {
       await doReimb({
-        payee_type: 'expense', sales_rep_user_profile_id: null, warehouse_id: null,
+        payee_type: 'expense', sales_rep_user_profile_id: Number(reimbUser), warehouse_id: null,
         amount_usd: amt, paid_by_user_id: profileId, note: reimbNote || null, division,
       });
       setReimbOpen(false); setReimbAmt(''); setReimbNote('');
-      reloadReimb(); onChanged();
+      reloadAll();
     } catch (e: unknown) {
       setReimbErr(e instanceof Error ? e.message : 'Failed to record reimbursement');
     } finally {
@@ -668,12 +687,18 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
         </CardTitle>
         {isAdmin && (
           <div className="flex gap-2 flex-wrap">
-            <Button size="sm" variant="outline" onClick={() => { setAddOpen(true); setAddErr(''); }}>
+            <Button size="sm" variant="outline" onClick={() => { setAddOpen(true); setAddErr(''); setExpPayee(profileId != null ? String(profileId) : ''); }}>
               Add Expense
             </Button>
             <Button size="sm" variant="outline"
-              onClick={() => { setReimbOpen(true); setReimbAmt(outstanding > 0 ? outstanding.toFixed(2) : ''); setReimbNote(''); setReimbErr(''); }}
-              disabled={outstanding <= 0.004}>
+              onClick={() => {
+                const firstOwed = expBalances.find(b => Number(b.balance_owed_usd) > 0.004);
+                const uid = firstOwed ? String(firstOwed.user_profile_id) : (profileId != null ? String(profileId) : '');
+                setReimbOpen(true); setReimbUser(uid);
+                setReimbAmt(firstOwed ? Number(firstOwed.balance_owed_usd).toFixed(2) : '');
+                setReimbNote(''); setReimbErr('');
+              }}
+              disabled={!expBalances.some(b => Number(b.balance_owed_usd) > 0.004)}>
               Record Reimbursement
             </Button>
           </div>
@@ -685,9 +710,20 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
           <span className="text-muted-foreground">Reimbursed: <span className="text-foreground tabular-nums">{money(reimbursed)}</span></span>
           <span className="font-medium">Outstanding: <span className={`tabular-nums ${outstanding > 0.004 ? 'text-red-600' : 'text-green-700'}`}>{money(outstanding)}</span></span>
         </div>
+        {expBalances.filter(b => Math.abs(Number(b.balance_owed_usd)) > 0.004).length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {expBalances.filter(b => Math.abs(Number(b.balance_owed_usd)) > 0.004).map(b => (
+              <Badge key={b.user_profile_id} variant="outline"
+                className={`text-xs ${Number(b.balance_owed_usd) > 0 ? 'text-red-600 border-red-300' : 'text-green-700 border-green-300'}`}>
+                {b.display_name}: {Number(b.balance_owed_usd) > 0 ? money(b.balance_owed_usd) + ' owed' : money(Math.abs(Number(b.balance_owed_usd))) + ' credit'}
+              </Badge>
+            ))}
+          </div>
+        )}
         <p className="text-xs text-muted-foreground">
-          Costs you front (product testing, supplies…) come out of the vendor share and must be reimbursed
-          and recorded before the cycle can close — same rules as rep and warehouse balances.
+          Costs a user fronts (product testing, supplies…) come out of the vendor share and must be
+          reimbursed to that user and recorded before the cycle can close — same rules as rep and
+          warehouse balances.
         </p>
         {rowErr && <p className="text-sm text-red-600">{rowErr}</p>}
         {expLoading ? <Skeleton className="h-16 w-full" /> : (
@@ -697,6 +733,7 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
                 <TableHead>Date</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Description</TableHead>
+                <TableHead>For</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 {isAdmin && <TableHead className="w-10" />}
               </TableRow>
@@ -707,6 +744,7 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
                   <TableCell className="whitespace-nowrap">{new Date(e.expense_date).toLocaleDateString()}</TableCell>
                   <TableCell><Badge variant="outline" className="text-xs">{expenseCategoryLabel(e.category)}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">{e.description}</TableCell>
+                  <TableCell className="whitespace-nowrap">{e.payee_name || '—'}</TableCell>
                   <TableCell className="text-right tabular-nums font-medium">{money(e.amount_usd)}</TableCell>
                   {isAdmin && (
                     <TableCell>
@@ -720,7 +758,7 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
                 </TableRow>
               ))}
               {expenses.length === 0 && (
-                <TableRow><TableCell colSpan={isAdmin ? 5 : 4} className="text-center text-gray-400 py-6">No expenses recorded.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={isAdmin ? 6 : 5} className="text-center text-gray-400 py-6">No expenses recorded.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -732,7 +770,9 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
               {reimbs.map(r => (
                 <div key={r.id} className="flex items-center justify-between gap-2 text-sm border-b border-border/40 pb-1 last:border-0">
                   <span className="text-muted-foreground min-w-0 truncate">
-                    {new Date(r.paid_at).toLocaleDateString()}{r.paid_by ? ` · ${r.paid_by}` : ''}{r.note ? ` · ${r.note}` : ''}
+                    {new Date(r.paid_at).toLocaleDateString()}
+                    {r.payee_name ? ` · to ${r.payee_name}` : ''}
+                    {r.paid_by ? ` · by ${r.paid_by}` : ''}{r.note ? ` · ${r.note}` : ''}
                   </span>
                   <span className="tabular-nums font-medium shrink-0">{money(r.amount_usd)}</span>
                 </div>
@@ -765,6 +805,15 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
               <Input value={expDesc} onChange={e => setExpDesc(e.target.value)} placeholder="e.g. Janoshik test — T60 batch 0726" />
             </div>
             <div>
+              <Label>Reimburse to</Label>
+              <Select value={expPayee} onValueChange={setExpPayee}>
+                <SelectTrigger><SelectValue placeholder="Who fronted this cost?" /></SelectTrigger>
+                <SelectContent>
+                  {profiles.map(u => <SelectItem key={u.id} value={String(u.id)}>{u.display_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>Amount (USD)</Label>
               <Input type="number" min="0" step="0.01" value={expAmt} onChange={e => setExpAmt(e.target.value)} />
             </div>
@@ -782,9 +831,22 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
           <DialogHeader><DialogTitle>Record Expense Reimbursement</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-gray-500">
-              Outstanding: <span className="font-medium text-gray-900">{money(Math.max(0, outstanding))}</span>. Record
-              the reimbursement AFTER the money has actually been paid out — this is the ledger entry, not the transfer.
+              Record the reimbursement AFTER the money has actually been paid out — this is the ledger
+              entry, not the transfer.
             </p>
+            <div>
+              <Label>Reimbursed user</Label>
+              <Select value={reimbUser} onValueChange={v => { setReimbUser(v); const owed = balanceFor(v); setReimbAmt(owed > 0 ? owed.toFixed(2) : ''); }}>
+                <SelectTrigger><SelectValue placeholder="Who was paid back?" /></SelectTrigger>
+                <SelectContent>
+                  {expBalances.map(b => (
+                    <SelectItem key={b.user_profile_id} value={String(b.user_profile_id)}>
+                      {b.display_name} — {money(Math.max(0, Number(b.balance_owed_usd)))} outstanding
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <Label>Amount (USD)</Label>
               <Input type="number" min="0" step="0.01" value={reimbAmt} onChange={e => setReimbAmt(e.target.value)} />
@@ -845,9 +907,14 @@ export function VendorTab({ division }: { division: string }) {
     .filter(r => Math.abs(Number(r.balance_owed_usd)) > 0.004);
   const repOwedTotal = repRows.reduce((s, r) => s + Math.max(0, Number(r.balance_owed_usd)), 0);
   const whOwedTotal = whRows.reduce((s, r) => s + Math.max(0, Number(r.balance_owed_usd)), 0);
-  const expOwed = bal ? Math.max(0, Number(bal.expenses_usd)) : 0;
+  // Per-user expense balances — the gate sums POSITIVE balances only,
+  // mirroring exp_out in executeSettlementAtomic (one user's overpayment
+  // must not offset another's unpaid).
+  const [expBalSettleRaw, , , reloadExpBalSettle] = useLoadAction(listExpenseBalances, [settleOpen ? 1 : 0, division], { division }, { enabled: settleOpen });
+  const expBalRows = asRows<ExpenseBalance>(expBalSettleRaw).filter(b => Math.abs(Number(b.balance_owed_usd)) > 0.004);
+  const expOwedTotal = expBalRows.reduce((s, b) => s + Math.max(0, Number(b.balance_owed_usd)), 0);
   // Vendor pays LAST — everything above it must read zero first.
-  const preVendorClear = repOwedTotal <= 0.004 && whOwedTotal <= 0.004 && expOwed <= 0.004;
+  const preVendorClear = repOwedTotal <= 0.004 && whOwedTotal <= 0.004 && expOwedTotal <= 0.004;
 
   // Vendor payout wallets (app settings) — shown wherever a vendor payment
   // is about to be recorded, editable from the card header.
@@ -913,7 +980,7 @@ export function VendorTab({ division }: { division: string }) {
         note: 'Recorded from Close Cycle rundown',
         division,
       });
-      reloadBal(); reloadRepBal(); if (division === 'us') reloadWhBal();
+      reloadBal(); reloadRepBal(); reloadExpBalSettle(); if (division === 'us') reloadWhBal();
     } catch (e: unknown) {
       setRundownErr(e instanceof Error ? e.message : 'Failed to record payment');
     } finally {
@@ -1103,7 +1170,7 @@ export function VendorTab({ division }: { division: string }) {
                                   {p.payee_type === 'sales_rep' ? 'Rep' : p.payee_type === 'warehouse' ? 'Warehouse' : p.payee_type === 'expense' ? 'Expense' : 'Vendor'}
                                 </Badge>
                                 <span className="truncate">
-                                  {p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : p.payee_type === 'expense' ? 'Expense reimbursement' : 'Vendor'}
+                                  {p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : p.payee_type === 'expense' ? (p.sales_rep_name ? `Expenses — ${p.sales_rep_name}` : 'Expense reimbursement') : 'Vendor'}
                                   {showDate && <span className="text-xs text-muted-foreground ml-1.5">{new Date(p.paid_at).toLocaleDateString()}{p.note ? ` · ${p.note}` : ''}</span>}
                                 </span>
                               </span>
@@ -1250,9 +1317,10 @@ export function VendorTab({ division }: { division: string }) {
                   )}
                   <div className="space-y-1">
                     <p className="text-xs font-semibold text-muted-foreground">3 · Operating Expenses</p>
-                    {expOwed > 0.004
-                      ? payeeRow('expense', 'Expense reimbursement (you)', expOwed, { payee_type: 'expense' })
-                      : <p className="text-xs text-green-700">Nothing outstanding.</p>}
+                    {expBalRows.length === 0
+                      ? <p className="text-xs text-green-700">Nothing outstanding.</p>
+                      : expBalRows.map(b => payeeRow(`exp-${b.user_profile_id}`, b.display_name, Number(b.balance_owed_usd),
+                          { payee_type: 'expense', sales_rep_user_profile_id: Number(b.user_profile_id) }))}
                   </div>
                   <div className="space-y-1 border-t pt-2">
                     <p className="text-xs font-semibold text-muted-foreground">4 · Vendor — paid last</p>
@@ -1301,7 +1369,7 @@ export function VendorTab({ division }: { division: string }) {
               );
             })()}
             {rundownErr && <p className="text-sm text-red-600">{rundownErr}</p>}
-            {(repOwedTotal > 0.004 || whOwedTotal > 0.004 || (bal != null && (Number(bal.expenses_usd) > 0.004 || Number(bal.balance_owed_usd) > 0.004))) ? (
+            {(repOwedTotal > 0.004 || whOwedTotal > 0.004 || expOwedTotal > 0.004 || (bal != null && Number(bal.balance_owed_usd) > 0.004)) ? (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
                 Balances are still outstanding — work the rundown top to bottom. The cycle can only close
                 at zero.
@@ -1321,7 +1389,7 @@ export function VendorTab({ division }: { division: string }) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setSettleOpen(false)} disabled={settling}>Cancel</Button>
             <Button onClick={handleSettle}
-              disabled={settling || repOwedTotal > 0.004 || whOwedTotal > 0.004 || bal == null || Number(bal.expenses_usd) > 0.004 || Number(bal.balance_owed_usd) > 0.004}>
+              disabled={settling || repOwedTotal > 0.004 || whOwedTotal > 0.004 || expOwedTotal > 0.004 || bal == null || Number(bal.balance_owed_usd) > 0.004}>
               {settling ? 'Closing…' : 'Close Cycle'}
             </Button>
           </DialogFooter>

@@ -73,16 +73,21 @@ function executeSettlementAtomic() {
         WHERE (SELECT d FROM div) = 'us'
       ),
       exp_out AS (
-        -- Operator-fronted costs awaiting reimbursement (mirrors
-        -- getVendorBalance exp, including the ROUNDs — the gate here and
-        -- the UI figure must agree to the cent). Over-reimbursed does not
-        -- block closing.
-        SELECT GREATEST(0,
-          COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM operating_expenses
-                    WHERE division = (SELECT d FROM div)), 0)
-          - COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM commission_payments
-                      WHERE payee_type = 'expense' AND division = (SELECT d FROM div)), 0)
-        ) AS owed
+        -- Per-user expense balances awaiting reimbursement (mirrors
+        -- listExpenseBalances, including the ROUNDs). Positive balances
+        -- only: one user's overpayment must not offset another's unpaid.
+        SELECT COALESCE(SUM(GREATEST(0, COALESCE(e.earned, 0) - COALESCE(pp.paid, 0))), 0) AS owed
+        FROM user_profiles up
+        LEFT JOIN (
+          SELECT payee_user_profile_id AS uid, ROUND(SUM(amount_usd), 2) AS earned
+          FROM operating_expenses WHERE division = (SELECT d FROM div)
+          GROUP BY payee_user_profile_id) e ON e.uid = up.id
+        LEFT JOIN (
+          SELECT sales_rep_user_profile_id AS uid, ROUND(SUM(amount_usd), 2) AS paid
+          FROM commission_payments
+          WHERE payee_type = 'expense' AND division = (SELECT d FROM div)
+          GROUP BY sales_rep_user_profile_id) pp ON pp.uid = up.id
+        WHERE e.uid IS NOT NULL OR pp.uid IS NOT NULL
       ),
       vendor_out AS (
         -- Lifetime vendor balance (cash remaining), mirroring
@@ -121,11 +126,18 @@ function executeSettlementAtomic() {
                         FROM commission_payments WHERE payee_type = 'warehouse'
                         GROUP BY warehouse_id) p ON p.wid = w2.id
                       WHERE (SELECT d FROM div) = 'us'), 0)
-          - GREATEST(
-              COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM operating_expenses
-                        WHERE division = (SELECT d FROM div)), 0),
-              COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM commission_payments
-                        WHERE payee_type = 'expense' AND division = (SELECT d FROM div)), 0))
+          - COALESCE((SELECT SUM(GREATEST(COALESCE(e.earned, 0), COALESCE(pp.paid, 0)))
+                      FROM user_profiles up3
+                      LEFT JOIN (
+                        SELECT payee_user_profile_id AS uid, ROUND(SUM(amount_usd), 2) AS earned
+                        FROM operating_expenses WHERE division = (SELECT d FROM div)
+                        GROUP BY payee_user_profile_id) e ON e.uid = up3.id
+                      LEFT JOIN (
+                        SELECT sales_rep_user_profile_id AS uid, ROUND(SUM(amount_usd), 2) AS paid
+                        FROM commission_payments
+                        WHERE payee_type = 'expense' AND division = (SELECT d FROM div)
+                        GROUP BY sales_rep_user_profile_id) pp ON pp.uid = up3.id
+                      WHERE e.uid IS NOT NULL OR pp.uid IS NOT NULL), 0)
           - COALESCE((SELECT SUM(amount_usd) FROM commission_payments
                       WHERE payee_type = 'vendor' AND division = (SELECT d FROM div)), 0)
         ) AS owed

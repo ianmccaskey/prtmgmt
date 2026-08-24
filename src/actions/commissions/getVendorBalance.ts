@@ -120,11 +120,18 @@ function getVendorBalance() {
                         FROM commission_payments WHERE payee_type = 'warehouse'
                         GROUP BY warehouse_id) p ON p.wid = w2.id
                       WHERE div.d = 'us'), 0)
-          - GREATEST(
-              COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM operating_expenses
-                        WHERE division = div.d), 0),
-              COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM commission_payments
-                        WHERE payee_type = 'expense' AND division = div.d), 0))
+          - COALESCE((SELECT SUM(GREATEST(COALESCE(e.earned, 0), COALESCE(pp.paid, 0)))
+                      FROM user_profiles up3
+                      LEFT JOIN (
+                        SELECT payee_user_profile_id AS uid, ROUND(SUM(amount_usd), 2) AS earned
+                        FROM operating_expenses WHERE division = div.d
+                        GROUP BY payee_user_profile_id) e ON e.uid = up3.id
+                      LEFT JOIN (
+                        SELECT sales_rep_user_profile_id AS uid, ROUND(SUM(amount_usd), 2) AS paid
+                        FROM commission_payments
+                        WHERE payee_type = 'expense' AND division = div.d
+                        GROUP BY sales_rep_user_profile_id) pp ON pp.uid = up3.id
+                      WHERE e.uid IS NOT NULL OR pp.uid IS NOT NULL), 0)
           - COALESCE((SELECT SUM(amount_usd) FROM commission_payments
                       WHERE payee_type = 'vendor' AND division = div.d), 0)
         )::numeric(14,2) AS balance

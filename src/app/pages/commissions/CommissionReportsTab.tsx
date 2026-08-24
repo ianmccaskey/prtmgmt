@@ -145,7 +145,7 @@ export function CommissionReportsTab({ division }: { division: string }) {
                 <TableRow key={p.id}>
                   <TableCell>{new Date(p.paid_at).toLocaleString()}</TableCell>
                   <TableCell><Badge variant="outline">{p.payee_type === 'sales_rep' ? 'Sales Rep' : p.payee_type === 'warehouse' ? 'Warehouse' : p.payee_type === 'expense' ? 'Expense' : 'Vendor'}</Badge></TableCell>
-                  <TableCell className="font-medium">{p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : p.payee_type === 'expense' ? 'Expense reimbursement' : 'Vendor'}</TableCell>
+                  <TableCell className="font-medium">{p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : p.payee_type === 'expense' ? (p.sales_rep_name ? `Expenses — ${p.sales_rep_name}` : 'Expense reimbursement') : 'Vendor'}</TableCell>
                   <TableCell className="text-right">{money(p.amount_usd)}</TableCell>
                   <TableCell className="text-gray-500">{p.note || '—'}</TableCell>
                 </TableRow>
