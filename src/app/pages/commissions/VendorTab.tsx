@@ -17,6 +17,7 @@ import deleteOperatingExpense from '@/actions/commissions/deleteOperatingExpense
 import listExpenseReimbursements from '@/actions/commissions/listExpenseReimbursements';
 import listWalletCyclePayments from '@/actions/commissions/listWalletCyclePayments';
 import getAppSetting from '@/actions/settings/getAppSetting';
+import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 import autoRepairPaymentAsset from '@/actions/orders/autoRepairPaymentAsset';
 import { getOnChainBalance, getTokenDeposits, getTxDeposit, OnChainDeposit } from '@/lib/moralis';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,7 +30,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, ChevronRight, ExternalLink, Factory, Receipt, RefreshCw, Stamp, Trash2, Wallet as WalletIcon } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, Factory, Receipt, RefreshCw, Stamp, Trash2, Wallet as WalletIcon } from 'lucide-react';
 
 type VendorBalance = {
   last_settlement_id: number | null; last_settled_at: string | null;
@@ -835,11 +836,82 @@ export function VendorTab({ division }: { division: string }) {
   const [detailRaw, detailLoading] = useLoadAction(listSettlementPayments, [expandedId], { settlement_id: expandedId ?? 0 }, { enabled: expandedId != null });
   const detailRows = asRows<SettlementPayment>(detailRaw);
   // Preview: what the stamp will contain (same source actions as the tabs).
-  const [repBalRaw] = useLoadAction(listRepBalances, [settleOpen ? 1 : 0, division], { division }, { enabled: settleOpen });
+  const [repBalRaw, , , reloadRepBal] = useLoadAction(listRepBalances, [settleOpen ? 1 : 0, division], { division }, { enabled: settleOpen });
   // Warehouses live only in the US pipeline — a China settlement never pays them.
-  const [whBalRaw] = useLoadAction(listWarehouseBalances, [settleOpen ? 1 : 0, division], { warehouse_id: '' }, { enabled: settleOpen && division === 'us' });
-  const repOwedTotal = asRows<{ balance_owed_usd: number }>(repBalRaw).reduce((s, r) => s + Math.max(0, Number(r.balance_owed_usd)), 0);
-  const whOwedTotal = asRows<{ balance_owed_usd: number }>(whBalRaw).reduce((s, r) => s + Math.max(0, Number(r.balance_owed_usd)), 0);
+  const [whBalRaw, , , reloadWhBal] = useLoadAction(listWarehouseBalances, [settleOpen ? 1 : 0, division], { warehouse_id: '' }, { enabled: settleOpen && division === 'us' });
+  const repRows = asRows<{ sales_rep_user_profile_id: number; display_name: string; balance_owed_usd: number }>(repBalRaw)
+    .filter(r => Math.abs(Number(r.balance_owed_usd)) > 0.004);
+  const whRows = asRows<{ warehouse_id: number; warehouse_name: string; balance_owed_usd: number }>(whBalRaw)
+    .filter(r => Math.abs(Number(r.balance_owed_usd)) > 0.004);
+  const repOwedTotal = repRows.reduce((s, r) => s + Math.max(0, Number(r.balance_owed_usd)), 0);
+  const whOwedTotal = whRows.reduce((s, r) => s + Math.max(0, Number(r.balance_owed_usd)), 0);
+  const expOwed = bal ? Math.max(0, Number(bal.expenses_usd)) : 0;
+  // Vendor pays LAST — everything above it must read zero first.
+  const preVendorClear = repOwedTotal <= 0.004 && whOwedTotal <= 0.004 && expOwed <= 0.004;
+
+  // Vendor payout wallets (app settings) — shown wherever a vendor payment
+  // is about to be recorded, editable from the card header.
+  const [vethRaw, , , reloadVeth] = useLoadAction(getAppSetting, [], { key: 'vendor_wallet_ethereum' });
+  const [vsolRaw, , , reloadVsol] = useLoadAction(getAppSetting, [], { key: 'vendor_wallet_solana' });
+  const vendorEth = String(asRows<{ value: string }>(vethRaw)[0]?.value ?? '');
+  const vendorSol = String(asRows<{ value: string }>(vsolRaw)[0]?.value ?? '');
+  const [doUpsertSetting] = useMutateAction(upsertAppSetting);
+  const [walletsOpen, setWalletsOpen] = useState(false);
+  const [ethIn, setEthIn] = useState('');
+  const [solIn, setSolIn] = useState('');
+  const [walletsSaving, setWalletsSaving] = useState(false);
+  const [walletsErr, setWalletsErr] = useState('');
+  const [copied, setCopied] = useState('');
+  const copyAddr = (label: string, addr: string) => {
+    navigator.clipboard?.writeText(addr).then(() => {
+      setCopied(label);
+      setTimeout(() => setCopied(c => (c === label ? '' : c)), 1500);
+    });
+  };
+  const saveWallets = async () => {
+    setWalletsSaving(true); setWalletsErr('');
+    try {
+      await doUpsertSetting({ key: 'vendor_wallet_ethereum', value: ethIn.trim() });
+      await doUpsertSetting({ key: 'vendor_wallet_solana', value: solIn.trim() });
+      setWalletsOpen(false);
+      reloadVeth(); reloadVsol();
+    } catch (e: unknown) {
+      setWalletsErr(e instanceof Error ? e.message : 'Failed to save wallets');
+    } finally {
+      setWalletsSaving(false);
+    }
+  };
+
+  // Rundown inline recording: first click arms the row ("Confirm $X"),
+  // second click records the ledger entry for exactly the outstanding
+  // amount. Recording is the entry, not the transfer — send the crypto
+  // first, same doctrine as everywhere else.
+  const [confirmKey, setConfirmKey] = useState<string | null>(null);
+  const [recordingKey, setRecordingKey] = useState<string | null>(null);
+  const [rundownErr, setRundownErr] = useState('');
+  const recordRundown = async (
+    key: string, amount: number,
+    payee: { payee_type: string; sales_rep_user_profile_id?: number | null; warehouse_id?: number | null },
+  ) => {
+    if (confirmKey !== key) { setConfirmKey(key); return; }
+    setRecordingKey(key); setRundownErr('');
+    try {
+      await doPay({
+        payee_type: payee.payee_type,
+        sales_rep_user_profile_id: payee.sales_rep_user_profile_id ?? null,
+        warehouse_id: payee.warehouse_id ?? null,
+        amount_usd: Number(amount.toFixed(2)),
+        paid_by_user_id: profileId,
+        note: 'Recorded from Close Cycle rundown',
+        division,
+      });
+      reloadBal(); reloadRepBal(); if (division === 'us') reloadWhBal();
+    } catch (e: unknown) {
+      setRundownErr(e instanceof Error ? e.message : 'Failed to record payment');
+    } finally {
+      setRecordingKey(null); setConfirmKey(null);
+    }
+  };
 
   const handleSettle = async () => {
     setSettling(true); setSettleErr('');
@@ -896,10 +968,13 @@ export function VendorTab({ division }: { division: string }) {
           </CardTitle>
           {isAdmin && (
             <div className="flex gap-2 flex-wrap">
+              <Button size="sm" variant="outline" onClick={() => { setWalletsOpen(true); setEthIn(vendorEth); setSolIn(vendorSol); setWalletsErr(''); }}>
+                <WalletIcon className="h-3.5 w-3.5 mr-1" /> Vendor Wallets
+              </Button>
               <Button size="sm" variant="outline" onClick={() => { setPayOpen(true); setAmount(bal ? Math.max(0, Number(bal.balance_owed_usd)).toFixed(2) : ''); setNote(''); setError(''); }}>
                 Record Vendor Payment
               </Button>
-              <Button size="sm" onClick={() => { setSettleOpen(true); setSettleNote(''); setSettleErr(''); }}>
+              <Button size="sm" onClick={() => { setSettleOpen(true); setSettleNote(''); setSettleErr(''); setConfirmKey(null); setRundownErr(''); }}>
                 <Stamp className="h-3.5 w-3.5 mr-1" /> Settle All Now
               </Button>
             </div>
@@ -1120,16 +1195,107 @@ export function VendorTab({ division }: { division: string }) {
               (Rep and Warehouse tabs, and Record Vendor Payment here). (Overpaid — negative — balances
               don&apos;t block closing; they carry forward.)
             </p>
-            <div className="rounded border bg-slate-50 p-3 space-y-1 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Rep commissions outstanding</span><span className={`tabular-nums ${repOwedTotal > 0.004 ? 'text-red-600 font-medium' : ''}`}>{money(repOwedTotal)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Warehouse balances outstanding</span><span className={`tabular-nums ${whOwedTotal > 0.004 ? 'text-red-600 font-medium' : ''}`}>{money(whOwedTotal)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Expense reimbursements outstanding</span><span className={`tabular-nums ${bal && Number(bal.expenses_usd) > 0.004 ? 'text-red-600 font-medium' : ''}`}>{bal ? money(Math.max(0, Number(bal.expenses_usd))) : '—'}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Vendor share outstanding</span><span className={`tabular-nums ${bal && Number(bal.balance_owed_usd) > 0.004 ? 'text-red-600 font-medium' : ''}`}>{bal ? money(Math.max(0, Number(bal.balance_owed_usd))) : '—'}</span></div>
-            </div>
+            {(() => {
+              const rowCls = 'flex items-center justify-between gap-2';
+              const paidBadge = <span className="inline-flex items-center gap-1 text-xs text-green-700"><Check className="h-3 w-3" /> Paid</span>;
+              const recordBtn = (key: string, amt: number, payee: { payee_type: string; sales_rep_user_profile_id?: number | null; warehouse_id?: number | null }) => (
+                <Button size="sm" variant={confirmKey === key ? 'default' : 'outline'} className="h-6 text-xs px-2"
+                  disabled={recordingKey != null}
+                  onClick={() => recordRundown(key, amt, payee)}>
+                  {recordingKey === key ? 'Recording…' : confirmKey === key ? `Confirm ${money(amt)}` : 'Record paid'}
+                </Button>
+              );
+              const payeeRow = (key: string, name: string, owed: number, payee: { payee_type: string; sales_rep_user_profile_id?: number | null; warehouse_id?: number | null }) => (
+                <div key={key} className={rowCls}>
+                  <span className="min-w-0 truncate">{name}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span className={`tabular-nums ${owed > 0.004 ? 'font-medium text-red-600' : 'text-muted-foreground'}`}>
+                      {owed < -0.004 ? `credit ${money(Math.abs(owed))}` : money(Math.max(0, owed))}
+                    </span>
+                    {owed > 0.004 ? recordBtn(key, owed, payee) : owed < -0.004
+                      ? <span className="text-xs text-muted-foreground">carries forward</span> : paidBadge}
+                  </span>
+                </div>
+              );
+              return (
+                <div className="rounded border bg-slate-50 p-3 space-y-3 text-sm max-h-80 overflow-y-auto">
+                  <p className="text-xs text-muted-foreground">
+                    Payout rundown — send the crypto first, then record each. The vendor is paid{' '}
+                    <span className="font-medium">last</span>, from what remains.
+                  </p>
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground">1 · Sales Reps</p>
+                    {repRows.length === 0
+                      ? <p className="text-xs text-green-700">Nothing outstanding.</p>
+                      : repRows.map(r => payeeRow(`rep-${r.sales_rep_user_profile_id}`, r.display_name, Number(r.balance_owed_usd),
+                          { payee_type: 'sales_rep', sales_rep_user_profile_id: Number(r.sales_rep_user_profile_id) }))}
+                  </div>
+                  {division === 'us' && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-muted-foreground">2 · Warehouses</p>
+                      {whRows.length === 0
+                        ? <p className="text-xs text-green-700">Nothing outstanding.</p>
+                        : whRows.map(w => payeeRow(`wh-${w.warehouse_id}`, w.warehouse_name, Number(w.balance_owed_usd),
+                            { payee_type: 'warehouse', warehouse_id: Number(w.warehouse_id) }))}
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground">3 · Operating Expenses</p>
+                    {expOwed > 0.004
+                      ? payeeRow('expense', 'Expense reimbursement (you)', expOwed, { payee_type: 'expense' })
+                      : <p className="text-xs text-green-700">Nothing outstanding.</p>}
+                  </div>
+                  <div className="space-y-1 border-t pt-2">
+                    <p className="text-xs font-semibold text-muted-foreground">4 · Vendor — paid last</p>
+                    <div className={rowCls}>
+                      <span>Vendor share</span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className={`tabular-nums ${bal && Number(bal.balance_owed_usd) > 0.004 ? 'font-medium text-red-600' : 'text-muted-foreground'}`}>
+                          {bal ? money(Math.max(0, Number(bal.balance_owed_usd))) : '—'}
+                        </span>
+                        {bal && Number(bal.balance_owed_usd) > 0.004 ? (
+                          <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                            disabled={!preVendorClear}
+                            title={preVendorClear ? undefined : 'Pay reps, warehouses, and expenses first'}
+                            onClick={() => { setPayOpen(true); setAmount(Math.max(0, Number(bal.balance_owed_usd)).toFixed(2)); setNote(''); setError(''); }}>
+                            Record vendor payment
+                          </Button>
+                        ) : paidBadge}
+                      </span>
+                    </div>
+                    {(vendorEth || vendorSol) ? (
+                      <div className="space-y-0.5 text-xs text-muted-foreground">
+                        {vendorEth && (
+                          <p className="flex items-center gap-1.5">
+                            <span className="shrink-0">ETH</span>
+                            <span className="font-mono break-all">{vendorEth}</span>
+                            <button type="button" className="shrink-0 text-blue-600 hover:text-blue-800" title="Copy" onClick={() => copyAddr('eth', vendorEth)}>
+                              {copied === 'eth' ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                            </button>
+                          </p>
+                        )}
+                        {vendorSol && (
+                          <p className="flex items-center gap-1.5">
+                            <span className="shrink-0">SOL</span>
+                            <span className="font-mono break-all">{vendorSol}</span>
+                            <button type="button" className="shrink-0 text-blue-600 hover:text-blue-800" title="Copy" onClick={() => copyAddr('sol', vendorSol)}>
+                              {copied === 'sol' ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                            </button>
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">No vendor wallet addresses saved — add them via the Vendor Wallets button.</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+            {rundownErr && <p className="text-sm text-red-600">{rundownErr}</p>}
             {(repOwedTotal > 0.004 || whOwedTotal > 0.004 || (bal != null && (Number(bal.expenses_usd) > 0.004 || Number(bal.balance_owed_usd) > 0.004))) ? (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                Balances are still outstanding — send the crypto, record each payment, and come back. The
-                cycle can only close at zero.
+                Balances are still outstanding — work the rundown top to bottom. The cycle can only close
+                at zero.
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">
@@ -1160,6 +1326,29 @@ export function VendorTab({ division }: { division: string }) {
             <p className="text-sm text-gray-500">
               Current balance owed: <span className="font-medium text-gray-900">{bal ? money(bal.balance_owed_usd) : '—'}</span>
             </p>
+            {(vendorEth || vendorSol) && (
+              <div className="rounded border bg-slate-50 p-2 space-y-1 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Vendor payout wallets</p>
+                {vendorEth && (
+                  <p className="flex items-center gap-1.5">
+                    <span className="shrink-0">ETH</span>
+                    <span className="font-mono break-all">{vendorEth}</span>
+                    <button type="button" className="shrink-0 text-blue-600 hover:text-blue-800" title="Copy" onClick={() => copyAddr('pay-eth', vendorEth)}>
+                      {copied === 'pay-eth' ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    </button>
+                  </p>
+                )}
+                {vendorSol && (
+                  <p className="flex items-center gap-1.5">
+                    <span className="shrink-0">SOL</span>
+                    <span className="font-mono break-all">{vendorSol}</span>
+                    <button type="button" className="shrink-0 text-blue-600 hover:text-blue-800" title="Copy" onClick={() => copyAddr('pay-sol', vendorSol)}>
+                      {copied === 'pay-sol' ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    </button>
+                  </p>
+                )}
+              </div>
+            )}
             <div>
               <Label>Payment Amount (USD)</Label>
               <Input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
@@ -1173,6 +1362,31 @@ export function VendorTab({ division }: { division: string }) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setPayOpen(false)}>Cancel</Button>
             <Button onClick={handlePay} disabled={saving}>{saving ? 'Saving…' : 'Record Payment'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={walletsOpen} onOpenChange={v => !v && !walletsSaving && setWalletsOpen(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Vendor Payout Wallets</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500">
+              The vendor&apos;s receiving addresses — shown with a copy button wherever a vendor payment is
+              recorded. Reference only: the app never sends funds.
+            </p>
+            <div>
+              <Label>Ethereum address</Label>
+              <Input value={ethIn} onChange={e => setEthIn(e.target.value)} placeholder="0x…" className="font-mono" />
+            </div>
+            <div>
+              <Label>Solana address</Label>
+              <Input value={solIn} onChange={e => setSolIn(e.target.value)} placeholder="e.g. ER9T…" className="font-mono" />
+            </div>
+            {walletsErr && <p className="text-sm text-red-600">{walletsErr}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWalletsOpen(false)} disabled={walletsSaving}>Cancel</Button>
+            <Button onClick={saveWallets} disabled={walletsSaving}>{walletsSaving ? 'Saving…' : 'Save Wallets'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
