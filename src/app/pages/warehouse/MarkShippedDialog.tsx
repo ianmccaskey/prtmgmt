@@ -80,20 +80,29 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
   const [fromMode, setFromMode] = useState<'personal' | 'warehouse'>(returnAddr ? 'personal' : 'warehouse');
   const [fromModeTouched, setFromModeTouched] = useState(false);
   const [selBox, setSelBox] = useState('custom');
+  const [rates, setRates] = useState<ShippoRate[]>([]);
+  const [messages, setMessages] = useState<string[]>([]);
+  const [selRate, setSelRate] = useState('');
+  // Any parcel change invalidates quoted rates — they were priced for the
+  // old dimensions, and buying against them (or the UPS phone-less requote
+  // repricing with the NEW parcel) could charge a different amount than
+  // the one displayed.
+  const clearQuotes = () => { setRates([]); setSelRate(''); setMessages([]); };
+  const editParcel = (updater: (p: typeof parcel) => typeof parcel) => {
+    setParcel(updater);
+    clearQuotes();
+  };
   const pickBox = (v: string) => {
     setSelBox(v);
     if (v === 'custom') return;
     const t = templates.find(x => String(x.id) === v);
-    if (t) setParcel(p => ({
+    if (t) editParcel(p => ({
       length: String(Number(t.length_in)),
       width: String(Number(t.width_in)),
       height: String(Number(t.height_in)),
       weight: t.default_weight_lb != null ? String(Number(t.default_weight_lb)) : p.weight,
     }));
   };
-  const [rates, setRates] = useState<ShippoRate[]>([]);
-  const [messages, setMessages] = useState<string[]>([]);
-  const [selRate, setSelRate] = useState('');
   const [busy, setBusy] = useState<'quote' | 'buy' | null>(null);
   const [err, setErr] = useState('');
 
@@ -254,7 +263,7 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
             <Input
               type="number" min={0} step="0.1" className="h-7 text-xs"
               value={parcel[k]}
-              onChange={e => setParcel(p => ({ ...p, [k]: e.target.value }))}
+              onChange={e => editParcel(p => ({ ...p, [k]: e.target.value }))}
             />
           </div>
         ))}
