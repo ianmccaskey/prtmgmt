@@ -41,7 +41,7 @@ const STATUS_COLORS: Record<string, string> = {
   partially_shipped: 'bg-orange-100 text-orange-700',
 };
 
-function parseWarehouses(v: string[] | string): string[] {
+export function parseWarehouses(v: string[] | string): string[] {
   if (Array.isArray(v)) return v;
   // Postgres array literal like {A,B}
   return String(v || '').replace(/^\{|\}$/g, '').split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(Boolean);

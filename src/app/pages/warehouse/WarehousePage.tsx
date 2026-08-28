@@ -28,9 +28,10 @@ export function WarehousePage() {
   // Logistics coordinators see every tab (admin-level visibility) but the
   // tabs' mutation controls are gated off for them inside each tab.
   const seesOps = isAdmin || isWarehouse || isLogistics;
-  // Warehouse users are locked to their assigned warehouse (access matrix).
+  // Anyone with an assigned warehouse starts scoped to it — warehouse users
+  // are locked there (access matrix); admins/logistics can switch to All.
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(
-    isWarehouse && assignedWarehouseId ? String(assignedWarehouseId) : ''
+    assignedWarehouseId ? String(assignedWarehouseId) : ''
   );
   const [warehouses] = useLoadAction(listWarehousesAction, [], {});
   const [stats, statsLoading] = useLoadAction(getWarehouseStatsAction, [], { warehouse_id: selectedWarehouseId });

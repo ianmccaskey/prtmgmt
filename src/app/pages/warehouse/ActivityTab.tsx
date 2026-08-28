@@ -26,7 +26,7 @@ type ActivityRow = {
 };
 type InventoryRow = { id: number; product_name: string; sku: string; batch_number: string; batch_id: number; product_id: number; warehouse_id: number; quantity_on_hand: number; quantity_available: number };
 
-const EVENT_TYPES = ['outbound_pick', 'receipt_delivered', 'receipt_discrepancy', 'transfer_out_initiated', 'transfer_in_received', 'transfer_cancelled', 'count_correction', 'writeoff'];
+const EVENT_TYPES = ['outbound_pick', 'receipt_delivered', 'receipt_discrepancy', 'transfer_out_initiated', 'transfer_in_received', 'transfer_cancelled', 'count_correction', 'writeoff', 'reservation_released'];
 
 // Must match the inventory_writeoffs.reason CHECK constraint.
 const WRITEOFF_REASONS = ['damaged', 'expired', 'lost', 'qc_hold', 'customer_replacement', 'other'];

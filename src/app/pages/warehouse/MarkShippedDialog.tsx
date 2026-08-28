@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Skeleton } from '@/components/ui/skeleton';
 import { ExternalLink, Plus, Trash2, Truck } from 'lucide-react';
 import { calcShippingCost, RatePlan } from '@/lib/shippingCost';
-import { QueueOrder, itemRemaining, lineFulfillableAt } from '@/app/pages/warehouse/FulfillmentTab';
+import { QueueOrder, itemRemaining, lineFulfillableAt, parseWarehouses } from '@/app/pages/warehouse/FulfillmentTab';
 import {
   ShippoAddress, ShippoRate, getShippoRates, buyShippoLabel, providerToCarrier, toIsoCountry,
 } from '@/lib/shippo';
@@ -532,6 +532,27 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
     problems.push(`A Shippo label was purchased for ${whName} but nothing ships from it anymore — restore that allocation or discard the label reference below.`);
   }
 
+  // Non-blocking cross-warehouse warning: a line allocated from a warehouse
+  // other than where its reservations live still ships, but the stale
+  // reservations get released automatically (shipAllocationAtomic) — say so
+  // BEFORE confirm, so shipping someone else's line is a choice, not an
+  // accident.
+  const crossWarehouseWarnings: string[] = [];
+  for (const it of visibleItems) {
+    const reservedWhs = parseWarehouses(it.reserved_warehouses);
+    if (reservedWhs.length === 0) continue;
+    const offNames = [...new Set(
+      allocs.filter(a => a.item_id === it.item_id && a.qty > 0 && a.inventory_id != null)
+        .map(a => rowFor(a.inventory_id))
+        .filter((r): r is NonNullable<typeof r> => r != null && !reservedWhs.includes(r.warehouse_name))
+        .map(r => r.warehouse_name),
+    )];
+    if (offNames.length > 0) {
+      crossWarehouseWarnings.push(
+        `${it.product_name} is reserved at ${reservedWhs.join(', ')} but ships from ${offNames.join(', ')} — the reservation at ${reservedWhs.join(', ')} will be released automatically when this ships.`);
+    }
+  }
+
   const missingShipInfo = shipmentGroups.some(g => !carriers[g.warehouse_id] || !(trackings[g.warehouse_id] || '').trim());
   const nothingAllocated = shipmentGroups.length === 0;
   const canConfirm = !saving && !planLoading && !!plan && problems.length === 0 && !nothingAllocated && !missingShipInfo;
@@ -765,6 +786,11 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
                 </Button>
               </div>
             ))}
+            {crossWarehouseWarnings.length > 0 && (
+              <ul className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 space-y-1">
+                {crossWarehouseWarnings.map((w, i) => <li key={i}>⚠ {w}</li>)}
+              </ul>
+            )}
             {problems.length > 0 && (
               <ul className="text-xs text-red-600 bg-red-50 rounded p-3 space-y-1">
                 {problems.map((p, i) => <li key={i}>• {p}</li>)}
