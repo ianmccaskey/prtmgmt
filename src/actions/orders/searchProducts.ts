@@ -5,7 +5,7 @@ export function searchProducts() {
     datasourceName: 'Peptide Ops DB',
     query: `
       SELECT
-        p.id, p.sku, p.name, p.list_price, p.available_warehouse, p.available_china_direct,
+        p.id, p.sku, p.name, p.list_price, p.min_order_quantity, p.available_warehouse, p.available_china_direct,
         COALESCE(SUM(i.quantity_on_hand - i.quantity_reserved), 0) AS available_stock
       FROM products p
       LEFT JOIN inventory i ON i.product_id = p.id

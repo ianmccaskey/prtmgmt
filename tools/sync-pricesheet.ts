@@ -64,7 +64,7 @@ const sql = new SQL(url);
 const derivedGroup = (name: string) => name.replace(/\s+\d+[a-z+]*$/i, '').toUpperCase();
 
 type ProductRow = {
-  id: number; name: string; vials_per_unit: number; list_price: string;
+  id: number; name: string; vials_per_unit: number; list_price: string; min_order_quantity: number;
   promo_badge: boolean; pricelist_status_override: string;
   pricelist_group: string | null; pricelist_spec: string | null;
   pricelist_note: string | null; pricelist_sort: number;
@@ -82,7 +82,7 @@ const OVERRIDE_STATUS: Record<string, string> = {
 
 async function loadRows() {
   const products = await sql`
-    SELECT p.id, p.name, p.vials_per_unit, p.list_price,
+    SELECT p.id, p.name, p.vials_per_unit, p.list_price, p.min_order_quantity,
       p.promo_badge, p.pricelist_status_override, p.pricelist_group,
       p.pricelist_spec, p.pricelist_note, p.pricelist_sort,
       COALESCE((
@@ -187,6 +187,8 @@ async function loadRows() {
       // Total sellable inventory across warehouses — shown under the
       // Available chip (same figure that drives the auto status).
       Number(p.sellable),
+      // Minimum order quantity — badged on the sheet when above 1.
+      Number(p.min_order_quantity) > 1 ? Number(p.min_order_quantity) : 0,
     ] as const;
   });
 }
@@ -215,7 +217,7 @@ ${dataLiteral}
     const fmt = (n) => '$' + (Number.isInteger(n) ? n.toFixed(0) : n.toFixed(2));
     const showOos = this.props.showOutOfStock ?? true;
     const groups = [];
-    data.forEach(([name, sub, content, statusKey, p1, p2, p3, coa, coaUrl, promoFlag, stock]) => {
+    data.forEach(([name, sub, content, statusKey, p1, p2, p3, coa, coaUrl, promoFlag, stock, moq]) => {
       const s = statusStyles[statusKey];
       const oos = statusKey === 'OUT OF STOCK';
       if (!showOos && oos) return;
@@ -227,6 +229,7 @@ ${dataLiteral}
       g.variants.push({
         promo: promoFlag ? (this.props.promoLabel ?? 'Promo') : '',
         stockNote: (statusKey === 'AVAILABLE' && stock > 0) ? stock + ' in stock' : '',
+        moqNote: moq ? 'Minimum ' + moq + ' kits' : '',
         content, coa,
         coaUrl: coaUrl || '',
         borderTop: g.variants.length ? '1px solid #eef2f5' : 'none',

@@ -23,6 +23,7 @@ type Product = {
   factory_id: number; factory_name: string; is_active: boolean; low_stock_threshold: number;
   total_stock: number; total_available: number; batch_count: number; updated_at: string;
   image_file?: string | null;
+  min_order_quantity?: number;
   show_on_pricelist?: boolean; promo_badge?: boolean; pricelist_status_override?: string;
   pricelist_group?: string | null; pricelist_spec?: string | null; pricelist_note?: string | null;
   pricelist_sort?: number;
@@ -59,6 +60,7 @@ export function ProductDetailsTab({ product, factories }: Props) {
     available_warehouse: product.available_warehouse,
     available_china_direct: product.available_china_direct,
     is_active: product.is_active, low_stock_threshold: String(product.low_stock_threshold),
+    min_order_quantity: String(product.min_order_quantity ?? 1),
     list_price: String(Number(product.list_price)),
     standard_cost: String(Number(product.standard_cost ?? 0)),
     factory_id: product.factory_id ? String(product.factory_id) : '',
@@ -90,6 +92,7 @@ export function ProductDetailsTab({ product, factories }: Props) {
       // untouched (a stale prop must never clobber an admin's cost change).
       standard_cost: isAdmin ? (parseFloat(form.standard_cost) || 0) : null,
       low_stock_threshold: parseInt(form.low_stock_threshold),
+      min_order_quantity: Math.max(1, parseInt(form.min_order_quantity) || 1),
       pricelist_sort: parseInt(form.pricelist_sort) || 999,
       factory_id: !factoryLocked && form.factory_id ? Number(form.factory_id) : null,
       image_file: form.image_file || null,
@@ -140,10 +143,15 @@ export function ProductDetailsTab({ product, factories }: Props) {
                 <Label>Description</Label>
                 <Textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2} />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div><Label>Vial Size (mL)</Label><Input type="number" step="0.01" value={form.vial_size_ml} onChange={e => set('vial_size_ml', e.target.value)} /></div>
                 <div><Label>Vials per Kit</Label><Input type="number" value={form.vials_per_unit} onChange={e => set('vials_per_unit', e.target.value)} /></div>
                 <div><Label>Low Stock Threshold</Label><Input type="number" value={form.low_stock_threshold} onChange={e => set('low_stock_threshold', e.target.value)} /></div>
+                <div>
+                  <Label>Min Order Qty (kits)</Label>
+                  <Input type="number" min={1} value={form.min_order_quantity} onChange={e => set('min_order_quantity', e.target.value)} />
+                  <p className="text-xs text-slate-400 mt-0.5">Order entry warns below this (overridable); shown on the price list</p>
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
@@ -253,6 +261,9 @@ export function ProductDetailsTab({ product, factories }: Props) {
               <div><span className="text-slate-500">Vial Size</span><p className="mt-0.5">{product.vial_size_ml} mL</p></div>
               <div><span className="text-slate-500">Vials/Kit</span><p className="mt-0.5">{product.vials_per_unit}</p></div>
               <div><span className="text-slate-500">Low Stock Threshold</span><p className="mt-0.5">{product.low_stock_threshold} kits</p></div>
+              {Number(product.min_order_quantity ?? 1) > 1 && (
+                <div><span className="text-slate-500">Minimum Order</span><p className="mt-0.5">{product.min_order_quantity} kits</p></div>
+              )}
               <div><span className="text-slate-500">Status</span><div className="mt-0.5"><Badge variant={product.is_active ? 'default' : 'secondary'}>{product.is_active ? 'Active' : 'Inactive'}</Badge></div></div>
               <div className="col-span-2"><span className="text-slate-500">Channels</span>
                 <div className="flex gap-2 mt-0.5">

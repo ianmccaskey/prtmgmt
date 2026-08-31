@@ -25,6 +25,7 @@ function updateProduct() {
           available_china_direct = {{params.available_china_direct}},
           is_active = {{params.is_active}},
           low_stock_threshold = {{params.low_stock_threshold}},
+          min_order_quantity = GREATEST(1, COALESCE({{params.min_order_quantity}}::int, min_order_quantity)),
           image_file = CASE WHEN {{params.image_file}} = '__CLEAR__' THEN NULL
                             ELSE COALESCE({{params.image_file}}, image_file) END,
           show_on_pricelist = COALESCE({{params.show_on_pricelist}}::boolean, show_on_pricelist),

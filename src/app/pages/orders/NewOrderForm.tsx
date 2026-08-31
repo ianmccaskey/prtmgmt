@@ -45,7 +45,7 @@ type Customer = {
   ship_city: string; ship_state: string; ship_postal_code: string; ship_country: string;
 };
 type Product = {
-  id: number; sku: string; name: string; list_price: string;
+  id: number; sku: string; name: string; list_price: string; min_order_quantity: number;
   available_warehouse: boolean; available_china_direct: boolean; available_stock: number;
 };
 type LineItem = {
@@ -734,7 +734,15 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     <div><Label className="text-xs">Qty (kits)</Label>
-                      <Input type="number" min={1} value={line.quantity} onChange={e => changeQty(line, Number(e.target.value))} className="h-8" /></div>
+                      <Input type="number" min={1} value={line.quantity} onChange={e => changeQty(line, Number(e.target.value))} className="h-8" />
+                      {Number(line.product!.min_order_quantity ?? 1) > 1 && line.quantity > 0 && line.quantity < Number(line.product!.min_order_quantity) && (
+                        // Soft minimum: warn, never block — reps can override
+                        // the published MOQ deliberately.
+                        <p className="text-xs text-amber-700 mt-1">
+                          Below the {Number(line.product!.min_order_quantity)}-kit minimum for this product — proceeding overrides it.
+                        </p>
+                      )}
+                    </div>
                     <div><Label className="text-xs">Unit Price</Label>
                       <Input type="number" min={0} step={0.01} value={line.unit_price} onChange={e => upLine(line.key, { unit_price: Number(e.target.value), price_mode: 'manual' })} className="h-8" /></div>
                     <div><Label className="text-xs">Source</Label>
