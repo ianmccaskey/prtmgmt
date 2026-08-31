@@ -229,7 +229,7 @@ ${dataLiteral}
       g.variants.push({
         promo: promoFlag ? (this.props.promoLabel ?? 'Promo') : '',
         stockNote: (statusKey === 'AVAILABLE' && stock > 0) ? stock + ' in stock' : '',
-        moqNote: moq ? 'Minimum ' + moq + ' kits' : '',
+        moqNote: moq ? 'MOQ ' + moq : '',
         content, coa,
         coaUrl: coaUrl || '',
         borderTop: g.variants.length ? '1px solid #eef2f5' : 'none',
