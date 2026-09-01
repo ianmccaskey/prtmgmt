@@ -18,7 +18,9 @@ function listRepCommissionOrders() {
         AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
         AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
         AND so.status NOT IN ('cancelled','quote')
-      ORDER BY so.order_date DESC
+      -- order_date is day-granular — id breaks same-day ties so the list
+      -- reads strictly newest-entered first.
+      ORDER BY so.order_date DESC, so.id DESC
     `,
   });
 }
