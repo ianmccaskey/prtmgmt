@@ -47,6 +47,9 @@ import updateOrderPreferredWarehouse from '@/actions/orders/updateOrderPreferred
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 import updatePaymentWallet from '@/actions/orders/updatePaymentWallet';
 import updatePaymentAmount from '@/actions/orders/updatePaymentAmount';
+import createSwapPayment from '@/actions/orders/createSwapPayment';
+import completeSwapPayment from '@/actions/orders/completeSwapPayment';
+import { getBtcToUsdcQuote, openBtcDepositChannel, getBtcSwapStatus, BtcSwapQuote } from '@/lib/chainflip';
 import correctShipmentTracking from '@/actions/orders/correctShipmentTracking';
 import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 
@@ -85,6 +88,14 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   // Add Payment — same crypto entry as New Order, for quotes saved without
   // one (or additional/partial payments later).
   const [addOpen, setAddOpen] = useState(false);
+  // 'direct' = the existing crypto entry; 'btcswap' = Chainflip deposit
+  // channel (customer sends plain BTC, USDC arrives at our wallet).
+  const [addMode, setAddMode] = useState<'direct' | 'btcswap'>('direct');
+  const [swapBtc, setSwapBtc] = useState('');
+  const [swapRefund, setSwapRefund] = useState('');
+  const [swapQuote, setSwapQuote] = useState<BtcSwapQuote | null>(null);
+  const [swapBusy, setSwapBusy] = useState(false);
+  const [checkingSwap, setCheckingSwap] = useState<number | null>(null);
   const [payAsset, setPayAsset] = useState('USDC');
   const [payNetwork, setPayNetwork] = useState('ethereum');
   const [payTx, setPayTx] = useState('');
@@ -114,6 +125,8 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const selectedWallet = walletList.find(w => w.asset === payAsset && w.network === payNetwork);
   const fixWallet = walletList.find(w => w.asset === fixAsset && w.network === fixNetwork);
   const [createPayment] = useMutateAction(createOrderPayment);
+  const [createSwapPay] = useMutateAction(createSwapPayment);
+  const [completeSwapPay] = useMutateAction(completeSwapPayment);
   const [repointPayment] = useMutateAction(updatePaymentWallet);
   const [correctAmount] = useMutateAction(updatePaymentAmount);
   const [writeAudit] = useMutateAction(insertAuditLog);
@@ -156,6 +169,65 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       setAddErr(e instanceof Error ? e.message : 'Failed to record payment');
     } finally {
       setAddSaving(false);
+    }
+  };
+
+  // Chainflip auto-swap: quote → open a deposit channel targeting the
+  // USDC/ethereum receive wallet → record a PENDING payment carrying the
+  // channel. The swaps sync (or Check Swap below) settles it with the real
+  // egress TX + amount when the protocol delivers.
+  const doSwapQuote = async () => {
+    const btc = Number(swapBtc);
+    if (!(btc > 0)) { setAddErr('Enter the BTC amount the customer will send.'); return; }
+    setSwapBusy(true); setAddErr(''); setSwapQuote(null);
+    try {
+      setSwapQuote(await getBtcToUsdcQuote(btc));
+    } catch (e: unknown) {
+      setAddErr(e instanceof Error ? e.message : 'Failed to get swap quote');
+    } finally {
+      setSwapBusy(false);
+    }
+  };
+  const doOpenSwapChannel = async () => {
+    if (division === 'china') { setAddOpen(false); return; }
+    const usdcWallet = walletList.find(w => w.asset === 'USDC' && w.network === 'ethereum');
+    if (!swapQuote) { setAddErr('Get a quote first.'); return; }
+    if (!swapRefund.trim()) { setAddErr('Enter the customer’s BTC refund address — the protocol requires one, and refunds go there if the swap can’t execute.'); return; }
+    if (!usdcWallet) { setAddErr('No active USDC/Ethereum wallet — add one under Settings → Wallets.'); return; }
+    setSwapBusy(true); setAddErr('');
+    try {
+      const ch = await openBtcDepositChannel(swapQuote, usdcWallet.address, swapRefund);
+      await createSwapPay({
+        orderId, walletId: usdcWallet.id,
+        btcAmount: swapQuote.btcAmount, estUsdc: Number(swapQuote.estUsdc.toFixed(2)),
+        channelId: ch.channelId, depositAddress: ch.depositAddress, expiresAt: ch.expiresAt,
+      });
+      await recomputePayment({ orderId });
+      setAddOpen(false); setSwapBtc(''); setSwapRefund(''); setSwapQuote(null); setAddMode('direct');
+      reloadPay();
+      parentReload();
+    } catch (e: unknown) {
+      setAddErr(e instanceof Error ? e.message : 'Failed to open deposit channel');
+    } finally {
+      setSwapBusy(false);
+    }
+  };
+  const doCheckSwap = async (p: Payment) => {
+    setCheckingSwap(Number(p.id));
+    try {
+      const st = await getBtcSwapStatus(String(p.swap_channel_id));
+      if (st.state === 'COMPLETED' && st.egressTx && st.egressUsdc != null) {
+        await completeSwapPay({ paymentId: Number(p.id), egressTx: st.egressTx, egressUsdc: st.egressUsdc, userId: profileId });
+        await recomputePayment({ orderId });
+        reloadPay();
+        parentReload();
+      } else {
+        alert(`Swap state: ${st.state}${st.depositTx ? ` — BTC deposit seen (${st.depositTx.slice(0, 12)}…)` : ' — waiting for the customer’s BTC'}`);
+      }
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to check swap status');
+    } finally {
+      setCheckingSwap(null);
     }
   };
 
@@ -258,9 +330,36 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
               </p>
             );
           })()}
+          {p.swap_channel_id != null && p.verification_status === 'pending' && (
+            <div className="bg-amber-50 border border-amber-200 rounded p-2 space-y-1">
+              <p className="text-xs font-medium text-amber-800">
+                BTC auto-swap · {String(p.swap_state || 'WAITING')}
+                {p.swap_expires_at ? ` · channel expires ${new Date(String(p.swap_expires_at)).toLocaleString()}` : ''}
+              </p>
+              <p className="text-xs text-amber-800">Customer sends plain BTC (no memo) to:</p>
+              <div className="flex items-center gap-2">
+                <code className="text-xs flex-1 break-all">{String(p.swap_deposit_address)}</code>
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" title="Copy deposit address"
+                  onClick={() => navigator.clipboard?.writeText(String(p.swap_deposit_address))}>
+                  <Copy className="h-3 w-3" />
+                </Button>
+              </div>
+              <p className="text-xs text-amber-700">
+                Estimated ${Number(p.amount_usd).toFixed(2)} USDC on delivery — the record verifies itself
+                with the actual amount and TX when the swap completes (checked every 15 min).
+              </p>
+              {!readOnlyRole && (
+                <Button size="sm" variant="outline" className="h-6 text-xs"
+                  onClick={() => doCheckSwap(p)} disabled={checkingSwap === Number(p.id)}>
+                  <RefreshCw className={`h-3 w-3 mr-1 ${checkingSwap === Number(p.id) ? 'animate-spin' : ''}`} />
+                  {checkingSwap === Number(p.id) ? 'Checking…' : 'Check swap now'}
+                </Button>
+              )}
+            </div>
+          )}
           {p.issue_type && <p className="text-xs text-red-600">Issue: {String(p.issue_type)} — {String(p.issue_notes)}</p>}
           {!readOnlyRole && <div className="flex gap-2 pt-1">
-            {p.verification_status !== 'verified' && (
+            {p.verification_status !== 'verified' && p.swap_channel_id == null && (
               <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => doVerify(Number(p.id))} disabled={verifying}>
                 <Check className="h-3 w-3 mr-1" /> Mark Verified
               </Button>
@@ -318,6 +417,48 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       {!readOnlyRole && division !== 'china' && addOpen && (
         <div className="border rounded-md p-3 space-y-3 bg-muted/20">
           <p className="text-sm font-medium">Add Crypto Payment</p>
+          <div className="flex gap-1">
+            <Button size="sm" variant={addMode === 'direct' ? 'default' : 'outline'} className="h-7 text-xs"
+              onClick={() => { setAddMode('direct'); setAddErr(''); }}>Direct crypto</Button>
+            <Button size="sm" variant={addMode === 'btcswap' ? 'default' : 'outline'} className="h-7 text-xs"
+              onClick={() => { setAddMode('btcswap'); setAddErr(''); }}>BTC → USDC auto-swap</Button>
+          </div>
+          {addMode === 'btcswap' ? (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                The customer sends plain BTC — no memo, any wallet or exchange — to a one-time deposit
+                address; Chainflip swaps it and delivers USDC to our Ethereum wallet automatically. The
+                payment verifies itself when the swap completes.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label className="text-xs">BTC amount the customer sends</Label>
+                  <Input type="number" min={0} step="0.0001" placeholder="0.005" value={swapBtc}
+                    onChange={e => { setSwapBtc(e.target.value); setSwapQuote(null); }} className="h-8" /></div>
+                <div><Label className="text-xs">Customer&apos;s BTC refund address</Label>
+                  <Input placeholder="bc1q…" value={swapRefund} onChange={e => setSwapRefund(e.target.value)} className="h-8 font-mono" /></div>
+              </div>
+              {swapQuote && (
+                <div className="bg-muted/40 rounded p-2 text-xs space-y-0.5">
+                  <p>Estimated delivery: <span className="font-medium">${swapQuote.estUsdc.toFixed(2)} USDC</span> for {swapQuote.btcAmount} BTC</p>
+                  <p className="text-muted-foreground">~{swapQuote.estMinutes} min after the BTC confirms · slippage tolerance {swapQuote.slippagePercent}% · the recorded amount updates to the ACTUAL USDC delivered</p>
+                </div>
+              )}
+              {addErr && <p className="text-xs text-red-600">{addErr}</p>}
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAddOpen(false)} disabled={swapBusy}>Cancel</Button>
+                {!swapQuote ? (
+                  <Button size="sm" className="h-7 text-xs" onClick={doSwapQuote} disabled={swapBusy}>
+                    {swapBusy ? 'Quoting…' : 'Get Quote'}
+                  </Button>
+                ) : (
+                  <Button size="sm" className="h-7 text-xs" onClick={doOpenSwapChannel} disabled={swapBusy}>
+                    {swapBusy ? 'Opening…' : 'Open Deposit Channel'}
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : (
+          <>
           <div className="grid grid-cols-2 gap-2">
             <div><Label className="text-xs">Asset</Label>
               <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); }}>
@@ -365,6 +506,8 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
               {addSaving ? 'Saving…' : 'Record Payment'}
             </Button>
           </div>
+          </>
+          )}
         </div>
       )}
 

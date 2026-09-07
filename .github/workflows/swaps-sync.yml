@@ -1,0 +1,29 @@
+# Settles pending Chainflip auto-swap payments (plain-BTC deposit channels
+# delivering USDC to the receive wallet) every 15 minutes — the automation
+# that lets heavy payment influx run without anyone monitoring swaps.
+#
+# Secrets required: DATABASE_URL (shared with tracking-sync).
+name: swaps-sync
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: swaps-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Settle swap payments
+        run: bun tools/sync-swaps.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
