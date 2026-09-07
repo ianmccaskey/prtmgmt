@@ -11,7 +11,7 @@ function listWalletCyclePayments() {
     query: `
       SELECT op.id, op.sales_order_id, op.amount_usd, op.tx_hash, op.direction,
         COALESCE(op.verified_at, op.quoted_at) AS recorded_at,
-        so.order_number, c.full_name AS customer
+        so.order_number, so.status AS order_status, c.full_name AS customer
       FROM order_payments op
       JOIN sales_orders so ON so.id = op.sales_order_id
       JOIN customers c ON c.id = so.customer_id

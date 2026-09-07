@@ -81,7 +81,7 @@ type WalletInflow = {
 type ChainCheck = { amount?: number; supported?: boolean; error?: string };
 type CyclePayment = {
   id: number; sales_order_id: number; amount_usd: number; tx_hash: string | null; direction: string;
-  recorded_at: string; order_number: string; customer: string;
+  recorded_at: string; order_number: string; order_status: string; customer: string;
 };
 
 /** Unmatched on-chain deposits below this are listed as dust, not alarms. */
@@ -409,6 +409,14 @@ function OnChainWalletCheck({ division }: { division: string }) {
                                       </span>
                                     </span>
                                     <span className="flex items-center gap-2 shrink-0">
+                                      {p.order_status === 'cancelled' && (
+                                        // A cancelled order's verified payment still counts here —
+                                        // it needs a decision: refund real money, or mark a
+                                        // duplicate/phantom record failed (see the order's payments).
+                                        <Badge variant="outline" className="text-xs text-red-600 border-red-300" title="Order cancelled — this payment still counts in the expected figure until refunded or marked failed">
+                                          cancelled order — review
+                                        </Badge>
+                                      )}
                                       {rec && (
                                         p.direction === 'refund' ? (
                                           <Badge variant="outline" className="text-xs text-muted-foreground">refund — outgoing, not matched</Badge>
