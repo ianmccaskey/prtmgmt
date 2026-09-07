@@ -95,7 +95,15 @@ export async function getBtcSwapStatus(channelId: string): Promise<BtcSwapStatus
     deposit?: { txRef?: string };
     swapEgress?: { txRef?: string; amount?: string };
   };
-  const cleanTx = (t?: string | null) => t ? t.replace(/^tx:/, '') : null;
+  // txRef arrives with a prefix (docs show forms like "tx:…"); strip
+  // through the last colon and prefer a canonical 0x hash — the stored
+  // value must equal the on-chain deposit hash for the wallet audit to
+  // match. Falls back to the raw value when it doesn't validate.
+  const cleanTx = (t?: string | null) => {
+    if (!t) return null;
+    const stripped = t.slice(t.lastIndexOf(':') + 1);
+    return /^0x[0-9a-fA-F]{64}$/.test(stripped) ? stripped : t;
+  };
   return {
     state: String(s.state ?? 'WAITING'),
     depositTx: cleanTx(s.deposit?.txRef),

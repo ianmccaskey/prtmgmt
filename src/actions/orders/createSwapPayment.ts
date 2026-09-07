@@ -22,7 +22,10 @@ export function createSwapPayment() {
         'ethereum',
         {{params.walletId}}::bigint,
         NOW(),
-        {{params.btcAmount}}::numeric,
+        -- amount_asset means "amount in THIS row's asset" (USDC); the BTC
+        -- side lives in the channel, not here — NULL avoids displays
+        -- printing the BTC figure with a USDC label.
+        NULL,
         {{params.estUsdc}}::numeric,
         'pending',
         'chainflip',

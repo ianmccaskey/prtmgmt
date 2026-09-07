@@ -24,16 +24,23 @@ const sql = new SQL(url);
 
 const SWAP_API = 'https://chainflip-swap.chainflip.io';
 
-type Row = { id: number; sales_order_id: number; swap_channel_id: string; swap_state: string | null };
+type Row = { id: number; sales_order_id: number; swap_channel_id: string; swap_state: string | null; swap_expires_at: string | null };
 
 async function getStatus(channelId: string): Promise<{ state: string; egressTx: string | null; egressUsdc: number | null } | null> {
   const res = await fetch(`${SWAP_API}/v2/swaps/${encodeURIComponent(channelId)}`);
   if (res.status === 404) return null; // nothing witnessed yet
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const s = await res.json() as { state?: string; swapEgress?: { txRef?: string; amount?: string } };
+  // Strip any colon prefix and prefer a canonical 0x hash — tx_hash must
+  // equal the on-chain USDC deposit hash for the wallet audit to match.
+  const cleanTx = (t?: string | null) => {
+    if (!t) return null;
+    const stripped = t.slice(t.lastIndexOf(':') + 1);
+    return /^0x[0-9a-fA-F]{64}$/.test(stripped) ? stripped : t;
+  };
   return {
     state: String(s.state ?? 'WAITING'),
-    egressTx: s.swapEgress?.txRef ? s.swapEgress.txRef.replace(/^tx:/, '') : null,
+    egressTx: cleanTx(s.swapEgress?.txRef),
     egressUsdc: s.swapEgress?.amount != null ? Number(s.swapEgress.amount) / 1e6 : null,
   };
 }
@@ -58,10 +65,11 @@ async function recompute(orderId: number) {
 
 async function main() {
   const rows = await sql`
-    SELECT op.id, op.sales_order_id, op.swap_channel_id, op.swap_state
+    SELECT op.id, op.sales_order_id, op.swap_channel_id, op.swap_state, op.swap_expires_at
     FROM order_payments op
     WHERE op.swap_channel_id IS NOT NULL
       AND op.verification_status = 'pending'
+      AND op.swap_state IS DISTINCT FROM 'EXPIRED'
     ORDER BY op.id
     LIMIT 100
   ` as Row[];
@@ -71,6 +79,20 @@ async function main() {
   for (const r of rows) {
     try {
       const st = await getStatus(r.swap_channel_id);
+      const noDeposit = !st || st.state === 'WAITING';
+      if (noDeposit && r.swap_expires_at && Date.parse(r.swap_expires_at) < Date.now()) {
+        // Channel expired with nothing sent — the customer never paid.
+        // Flag for review instead of sitting pending forever.
+        await sql`
+          UPDATE order_payments SET
+            swap_state = 'EXPIRED',
+            issue_type = COALESCE(issue_type, 'other'),
+            issue_notes = COALESCE(NULLIF(issue_notes, ''),
+              'Auto-swap channel EXPIRED with no BTC received — the customer never sent. Open a new deposit channel if they still intend to pay.')
+          WHERE id = ${r.id} AND verification_status = 'pending'`;
+        failed++;
+        continue;
+      }
       if (!st) continue; // channel open, nothing sent yet
       if (st.state === 'COMPLETED' && st.egressTx && st.egressUsdc != null) {
         const done = await sql`
@@ -80,7 +102,7 @@ async function main() {
             verification_status = 'verified',
             verified_at = NOW(),
             swap_state = 'COMPLETED'
-          WHERE id = ${r.id} AND verification_status = 'pending'
+          WHERE id = ${r.id} AND verification_status = 'pending' AND swap_channel_id IS NOT NULL
           RETURNING id` as { id: number }[];
         if (done.length) { await recompute(r.sales_order_id); completed++; }
       } else if (st.state === 'FAILED') {

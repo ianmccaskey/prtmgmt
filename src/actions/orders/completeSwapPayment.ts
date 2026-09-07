@@ -7,6 +7,12 @@ import { action } from '@uibakery/data';
  * unless the payment is still the pending swap it claims to be —
  * idempotent against the sync and the drawer button racing. Callers chain
  * recomputePaymentStatus after.
+ *
+ * Trust model: like every money action in this browser-only app (Correct
+ * Amount, Fix Wallet, Mark Verified), the values come from staff's
+ * browser — here fetched from Chainflip's status API by the drawer. The
+ * cron sync settles the same rows server-side; the wallet audit catches
+ * any record whose hash doesn't match a real deposit.
  */
 export function completeSwapPayment() {
   return action('completeSwapPayment', 'SQL', {

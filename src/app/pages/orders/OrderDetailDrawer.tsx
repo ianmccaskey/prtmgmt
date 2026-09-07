@@ -199,7 +199,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       const ch = await openBtcDepositChannel(swapQuote, usdcWallet.address, swapRefund);
       await createSwapPay({
         orderId, walletId: usdcWallet.id,
-        btcAmount: swapQuote.btcAmount, estUsdc: Number(swapQuote.estUsdc.toFixed(2)),
+        estUsdc: Number(swapQuote.estUsdc.toFixed(2)),
         channelId: ch.channelId, depositAddress: ch.depositAddress, expiresAt: ch.expiresAt,
       });
       await recomputePayment({ orderId });
