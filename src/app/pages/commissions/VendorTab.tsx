@@ -23,6 +23,7 @@ import getAppSetting from '@/actions/settings/getAppSetting';
 import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 import autoRepairPaymentAsset from '@/actions/orders/autoRepairPaymentAsset';
 import { getOnChainBalance, getTokenDeposits, getTxDeposit, OnChainDeposit } from '@/lib/moralis';
+import { txExplorerUrl, txExplorerUrlAuto } from '@/lib/explorers';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -88,12 +89,6 @@ type CyclePayment = {
 const UNMATCHED_DEPOSIT_FLOOR_USD = 20;
 
 const STABLECOINS = ['USDC', 'USDT'];
-
-/** Block-explorer TX link for the chains the wallet check supports. */
-const txExplorerUrl = (network: string, hash: string) =>
-  network === 'ethereum' ? `https://etherscan.io/tx/${hash}`
-  : network === 'solana' ? `https://solscan.io/tx/${hash}`
-  : null;
 
 /**
  * Match recorded payments against on-chain deposits: by tx hash first, then
@@ -405,7 +400,12 @@ function OnChainWalletCheck({ division }: { division: string }) {
                                       <span className="ml-1.5">{p.customer}</span>
                                       <span className="block text-xs text-muted-foreground">
                                         {new Date(p.recorded_at).toLocaleString()}
-                                        {p.tx_hash ? <> · TX <span className="font-mono break-all">{String(p.tx_hash).slice(0, 14)}…</span></> : ' · no TX recorded'}
+                                        {p.tx_hash ? (() => {
+                                          const url = txExplorerUrl(w.network, String(p.tx_hash));
+                                          return <> · TX {url
+                                            ? <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="font-mono break-all text-blue-600 hover:underline" title={String(p.tx_hash)}>{String(p.tx_hash).slice(0, 14)}…</a>
+                                            : <span className="font-mono break-all">{String(p.tx_hash).slice(0, 14)}…</span>}</>;
+                                        })() : ' · no TX recorded'}
                                       </span>
                                     </span>
                                     <span className="flex items-center gap-2 shrink-0">
@@ -791,7 +791,12 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
                     {new Date(r.paid_at).toLocaleDateString()}
                     {r.payee_name ? ` · to ${r.payee_name}` : ''}
                     {r.paid_by ? ` · by ${r.paid_by}` : ''}{r.note ? ` · ${r.note}` : ''}
-                    {r.tx_hash ? <span className="font-mono" title={r.tx_hash}> · TX {r.tx_hash.slice(0, 10)}…</span> : ''}
+                    {r.tx_hash ? (() => {
+                      const url = txExplorerUrlAuto(r.tx_hash);
+                      return url
+                        ? <span> · <a href={url} target="_blank" rel="noreferrer" className="font-mono text-blue-600 hover:underline" title={r.tx_hash ?? undefined}>TX {r.tx_hash!.slice(0, 10)}…</a></span>
+                        : <span className="font-mono" title={r.tx_hash ?? undefined}> · TX {r.tx_hash!.slice(0, 10)}…</span>;
+                    })() : ''}
                   </span>
                   <span className="tabular-nums font-medium shrink-0">{money(r.amount_usd)}</span>
                 </div>
@@ -1254,7 +1259,12 @@ export function VendorTab({ division }: { division: string }) {
                                 <span className="truncate">
                                   {p.payee_type === 'sales_rep' ? p.sales_rep_name : p.payee_type === 'warehouse' ? p.warehouse_name : p.payee_type === 'expense' ? (p.sales_rep_name ? `Expenses — ${p.sales_rep_name}` : 'Expense reimbursement') : 'Vendor'}
                                   {showDate && <span className="text-xs text-muted-foreground ml-1.5">{new Date(p.paid_at).toLocaleDateString()}{p.note ? ` · ${p.note}` : ''}</span>}
-                                  {p.tx_hash && <span className="text-xs text-muted-foreground font-mono ml-1.5" title={p.tx_hash}>TX {p.tx_hash.slice(0, 10)}…</span>}
+                                  {p.tx_hash && (() => {
+                                    const url = txExplorerUrlAuto(p.tx_hash);
+                                    return url
+                                      ? <a href={url} target="_blank" rel="noreferrer" className="text-xs font-mono ml-1.5 text-blue-600 hover:underline" title={p.tx_hash}>TX {p.tx_hash.slice(0, 10)}…</a>
+                                      : <span className="text-xs text-muted-foreground font-mono ml-1.5" title={p.tx_hash}>TX {p.tx_hash.slice(0, 10)}…</span>;
+                                  })()}
                                 </span>
                               </span>
                               <span className="tabular-nums font-medium shrink-0">{money(p.amount_usd)}</span>
@@ -1333,7 +1343,12 @@ export function VendorTab({ division }: { division: string }) {
                     <TableCell>{p.paid_by || '—'}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {p.note || '—'}
-                      {p.tx_hash && <span className="block font-mono text-xs" title={p.tx_hash}>TX {p.tx_hash.slice(0, 14)}…</span>}
+                      {p.tx_hash && (() => {
+                        const url = txExplorerUrlAuto(p.tx_hash);
+                        return url
+                          ? <a href={url} target="_blank" rel="noreferrer" className="block font-mono text-xs text-blue-600 hover:underline" title={p.tx_hash}>TX {p.tx_hash.slice(0, 14)}…</a>
+                          : <span className="block font-mono text-xs" title={p.tx_hash}>TX {p.tx_hash.slice(0, 14)}…</span>;
+                      })()}
                     </TableCell>
                   </TableRow>
                 ))}

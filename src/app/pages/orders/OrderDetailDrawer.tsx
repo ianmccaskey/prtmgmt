@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { txExplorerUrl } from '@/lib/explorers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -247,7 +248,16 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             </Badge>
           </div>
           <p className="text-muted-foreground">{p.amount_asset != null ? `${Number(p.amount_asset).toFixed(6)} ${String(p.asset)} · ` : ''}${Number(p.amount_usd).toFixed(2)}</p>
-          {p.tx_hash && <p className="text-xs text-muted-foreground break-all">TX: {String(p.tx_hash)}</p>}
+          {p.tx_hash && (() => {
+            const url = txExplorerUrl(String(p.network || ''), String(p.tx_hash));
+            return (
+              <p className="text-xs text-muted-foreground break-all">
+                TX: {url
+                  ? <a href={url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{String(p.tx_hash)}</a>
+                  : String(p.tx_hash)}
+              </p>
+            );
+          })()}
           {p.issue_type && <p className="text-xs text-red-600">Issue: {String(p.issue_type)} — {String(p.issue_notes)}</p>}
           {!readOnlyRole && <div className="flex gap-2 pt-1">
             {p.verification_status !== 'verified' && (
