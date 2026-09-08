@@ -410,6 +410,9 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
               .reduce((s, p) => s + (String((p as { direction?: string }).direction) === 'refund' ? -1 : 1) * Number(p.amount_usd), 0);
             setPayAmount(Math.max(0, orderTotal - paid).toFixed(2));
             setAddErr('');
+            // Fresh swap state every open — a stale quote from a previous
+            // open (or another order) must never open a deposit channel.
+            setAddMode('direct'); setSwapBtc(''); setSwapRefund(''); setSwapQuote(null);
             setAddOpen(true);
           }}
         >

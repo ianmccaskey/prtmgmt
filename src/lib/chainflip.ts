@@ -27,8 +27,11 @@ export type BtcSwapQuote = {
 };
 
 /**
- * Inverse quote: how much BTC must the customer send so the swap DELIVERS
- * at least `targetUsd` USDC after fees? Chainflip quotes are exact-input,
+ * Inverse quote: how much BTC must the customer send so the swap's
+ * estimated delivery covers `targetUsd` USDC after fees? (Bounded nudging
+ * — for tiny amounts near the fixed fees the estimate can land slightly
+ * short; it's always shown to the rep before a channel opens.)
+ * Chainflip quotes are exact-input,
  * so this probes with a reference quote to learn the effective rate, then
  * requotes at the implied BTC amount and nudges up until the estimate
  * covers the target (fees have fixed components, so one or two rounds
