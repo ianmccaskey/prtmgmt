@@ -410,9 +410,12 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
               .reduce((s, p) => s + (String((p as { direction?: string }).direction) === 'refund' ? -1 : 1) * Number(p.amount_usd), 0);
             setPayAmount(Math.max(0, orderTotal - paid).toFixed(2));
             setAddErr('');
-            // Fresh swap state every open — a stale quote from a previous
-            // open (or another order) must never open a deposit channel.
+            // Fresh state every open — a stale quote from a previous open
+            // (or another order) must never open a deposit channel, and a
+            // leftover TX hash/verified toggle must not ride into a new
+            // direct payment.
             setAddMode('direct'); setSwapBtc(''); setSwapRefund(''); setSwapQuote(null);
+            setPayTx(''); setPayVerified(true);
             setAddOpen(true);
           }}
         >
@@ -451,6 +454,11 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 <div className="bg-muted/40 rounded p-2 text-xs space-y-0.5">
                   <p>Customer sends: <span className="font-medium text-sm">{swapQuote.btcAmount.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} BTC</span></p>
                   <p>Estimated delivery: <span className="font-medium">${swapQuote.estUsdc.toFixed(2)} USDC</span></p>
+                  <p>
+                    Fees: <span className="font-medium">≈ ${swapQuote.fees.totalUsd.toFixed(2)}</span>
+                    {' '}({swapQuote.fees.totalBtc.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} BTC)
+                    <span className="text-muted-foreground"> — deposit {swapQuote.fees.ingressBtc.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} BTC · protocol + delivery ${swapQuote.fees.usdFees.toFixed(2)} · rate ≈ ${Math.round(swapQuote.fees.btcUsdRate).toLocaleString()}/BTC</span>
+                  </p>
                   <p className="text-muted-foreground">~{swapQuote.estMinutes} min after the BTC confirms · slippage tolerance {swapQuote.slippagePercent}% · the recorded amount updates to the ACTUAL USDC delivered (BTC price movement can land it slightly over or under)</p>
                 </div>
               )}

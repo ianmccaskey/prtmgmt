@@ -17,6 +17,18 @@ const sdk = new SwapSDK({ network: 'mainnet' });
 /** Mainnet swapping-service REST base (same service the SDK calls). */
 export const CHAINFLIP_SWAP_API = 'https://chainflip-swap.chainflip.io';
 
+export type BtcSwapFees = {
+  /** Deposit-side fee, in BTC. */
+  ingressBtc: number;
+  /** Protocol + delivery fees, in USD (USDC ≈ USD). */
+  usdFees: number;
+  /** Everything combined, in USD and BTC (at the quote's implied rate). */
+  totalUsd: number;
+  totalBtc: number;
+  /** BTC/USD rate implied by this quote. */
+  btcUsdRate: number;
+};
+
 export type BtcSwapQuote = {
   /** Opaque SDK quote — pass back to openBtcDepositChannel unchanged. */
   quote: unknown;
@@ -24,6 +36,7 @@ export type BtcSwapQuote = {
   estUsdc: number;
   slippagePercent: number;
   estMinutes: number;
+  fees: BtcSwapFees;
 };
 
 /**
@@ -61,12 +74,34 @@ export async function getBtcToUsdcQuote(btcAmount: number): Promise<BtcSwapQuote
   });
   const q = quotes.find(x => x.type === 'REGULAR');
   if (!q) throw new Error('Chainflip returned no route for this amount (below the minimum?).');
+  const estUsdc = Number(q.egressAmount) / 1e6;
+
+  // Fee breakdown (verified shape: INGRESS in BTC sats; NETWORK and
+  // EGRESS in USDC 1e6). Summed by denomination so the rep can tell the
+  // customer what the swap costs in both currencies.
+  const included = ((q as { includedFees?: { asset?: string; amount?: string }[] }).includedFees ?? []);
+  let ingressBtc = 0;
+  let usdFees = 0;
+  for (const f of included) {
+    if (f.asset === 'BTC') ingressBtc += Number(f.amount ?? 0) / 1e8;
+    else if (f.asset === 'USDC' || f.asset === 'USDT') usdFees += Number(f.amount ?? 0) / 1e6;
+  }
+  const netBtc = Math.max(btcAmount - ingressBtc, 1e-8);
+  const btcUsdRate = (estUsdc + usdFees) / netBtc;
+  const totalUsd = ingressBtc * btcUsdRate + usdFees;
   return {
     quote: q,
     btcAmount,
-    estUsdc: Number(q.egressAmount) / 1e6,
+    estUsdc,
     slippagePercent: q.recommendedSlippageTolerancePercent,
     estMinutes: Math.ceil(((q as { estimatedDurationSeconds?: number }).estimatedDurationSeconds ?? 900) / 60),
+    fees: {
+      ingressBtc,
+      usdFees,
+      totalUsd,
+      totalBtc: btcUsdRate > 0 ? totalUsd / btcUsdRate : 0,
+      btcUsdRate,
+    },
   };
 }
 
