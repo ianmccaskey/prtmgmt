@@ -48,6 +48,7 @@ import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 import updatePaymentWallet from '@/actions/orders/updatePaymentWallet';
 import updatePaymentAmount from '@/actions/orders/updatePaymentAmount';
 import createSwapPayment from '@/actions/orders/createSwapPayment';
+import getAppSetting from '@/actions/settings/getAppSetting';
 import completeSwapPayment from '@/actions/orders/completeSwapPayment';
 import { getBtcQuoteForUsd, openBtcDepositChannel, getBtcSwapStatus, BtcSwapQuote } from '@/lib/chainflip';
 import correctShipmentTracking from '@/actions/orders/correctShipmentTracking';
@@ -93,6 +94,12 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const [addMode, setAddMode] = useState<'direct' | 'btcswap'>('direct');
   const [swapBtc, setSwapBtc] = useState('');
   const [swapRefund, setSwapRefund] = useState('');
+  // Default refund address (app settings): OUR BTC wallet, so a failed
+  // swap returns the money to us to sort out rather than silently
+  // bouncing back to a customer who believes they paid. Editable per
+  // payment when the customer's own address is preferred.
+  const [refundDefaultRaw] = useLoadAction(getAppSetting, [addOpen ? 1 : 0], { key: 'swap_btc_refund_address' }, { enabled: addOpen });
+  const refundDefault = String(rows<{ value: string }>(refundDefaultRaw)[0]?.value ?? '');
   const [swapQuote, setSwapQuote] = useState<BtcSwapQuote | null>(null);
   const [swapBusy, setSwapBusy] = useState(false);
   const [checkingSwap, setCheckingSwap] = useState<number | null>(null);
@@ -194,7 +201,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
     if (division === 'china') { setAddOpen(false); return; }
     const usdcWallet = walletList.find(w => w.asset === 'USDC' && w.network === 'ethereum');
     if (!swapQuote) { setAddErr('Get a quote first.'); return; }
-    if (!swapRefund.trim()) { setAddErr('Enter the customer’s BTC refund address — the protocol requires one, and refunds go there if the swap can’t execute.'); return; }
+    if (!swapRefund.trim()) { setAddErr('Enter a BTC refund address — the protocol requires one, and refunds go there if the swap can’t execute.'); return; }
     if (!usdcWallet) { setAddErr('No active USDC/Ethereum wallet — add one under Settings → Wallets.'); return; }
     setSwapBusy(true); setAddErr('');
     try {
@@ -432,8 +439,9 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
               onClick={() => {
                 setAddMode('btcswap'); setAddErr('');
                 // Prefill with the outstanding balance (payAmount was seeded
-                // with it when the form opened).
+                // with it when the form opened) and the default refund wallet.
                 if (!swapBtc) setSwapBtc(payAmount);
+                if (!swapRefund && refundDefault) setSwapRefund(refundDefault);
               }}>BTC → USDC auto-swap</Button>
           </div>
           {addMode === 'btcswap' ? (
@@ -447,7 +455,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 <div><Label className="text-xs">Amount owed (USD)</Label>
                   <Input type="number" min={0} step="0.01" value={swapBtc}
                     onChange={e => { setSwapBtc(e.target.value); setSwapQuote(null); }} className="h-8" /></div>
-                <div><Label className="text-xs">Customer&apos;s BTC refund address</Label>
+                <div><Label className="text-xs">BTC refund address <span className="text-muted-foreground font-normal">(ours by default — failed swaps return here)</span></Label>
                   <Input placeholder="bc1q…" value={swapRefund} onChange={e => setSwapRefund(e.target.value)} className="h-8 font-mono" /></div>
               </div>
               {swapQuote && (

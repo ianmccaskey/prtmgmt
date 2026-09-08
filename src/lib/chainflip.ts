@@ -113,8 +113,10 @@ export type BtcDepositChannel = {
 
 /**
  * Opens the deposit channel. refundBtcAddress is REQUIRED by the protocol:
- * if the swap can't execute within tolerance, the BTC is returned there —
- * it must be an address the CUSTOMER controls.
+ * if the swap can't execute within tolerance, the BTC is returned there.
+ * The app defaults it to OUR OWN BTC wallet (app setting
+ * swap_btc_refund_address) so failed swaps come back to us to sort out;
+ * override per payment with the customer's address when preferred.
  */
 export async function openBtcDepositChannel(
   q: BtcSwapQuote, destAddress: string, refundBtcAddress: string,
