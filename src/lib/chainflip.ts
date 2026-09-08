@@ -26,6 +26,28 @@ export type BtcSwapQuote = {
   estMinutes: number;
 };
 
+/**
+ * Inverse quote: how much BTC must the customer send so the swap DELIVERS
+ * at least `targetUsd` USDC after fees? Chainflip quotes are exact-input,
+ * so this probes with a reference quote to learn the effective rate, then
+ * requotes at the implied BTC amount and nudges up until the estimate
+ * covers the target (fees have fixed components, so one or two rounds
+ * converge).
+ */
+export async function getBtcQuoteForUsd(targetUsd: number): Promise<BtcSwapQuote> {
+  if (!(targetUsd > 0)) throw new Error('Enter a valid USD amount.');
+  const probe = await getBtcToUsdcQuote(0.01);
+  let btc = (targetUsd / probe.estUsdc) * 0.01;
+  let q = await getBtcToUsdcQuote(round8(btc));
+  for (let i = 0; i < 3 && q.estUsdc < targetUsd; i++) {
+    btc = btc * (targetUsd / q.estUsdc) * 1.002;
+    q = await getBtcToUsdcQuote(round8(btc));
+  }
+  return q;
+}
+
+const round8 = (n: number) => Math.ceil(n * 1e8) / 1e8;
+
 export async function getBtcToUsdcQuote(btcAmount: number): Promise<BtcSwapQuote> {
   const sats = Math.round(btcAmount * 1e8);
   if (!(sats > 0)) throw new Error('Enter a valid BTC amount.');

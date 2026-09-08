@@ -49,7 +49,7 @@ import updatePaymentWallet from '@/actions/orders/updatePaymentWallet';
 import updatePaymentAmount from '@/actions/orders/updatePaymentAmount';
 import createSwapPayment from '@/actions/orders/createSwapPayment';
 import completeSwapPayment from '@/actions/orders/completeSwapPayment';
-import { getBtcToUsdcQuote, openBtcDepositChannel, getBtcSwapStatus, BtcSwapQuote } from '@/lib/chainflip';
+import { getBtcQuoteForUsd, openBtcDepositChannel, getBtcSwapStatus, BtcSwapQuote } from '@/lib/chainflip';
 import correctShipmentTracking from '@/actions/orders/correctShipmentTracking';
 import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 
@@ -177,11 +177,13 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   // channel. The swaps sync (or Check Swap below) settles it with the real
   // egress TX + amount when the protocol delivers.
   const doSwapQuote = async () => {
-    const btc = Number(swapBtc);
-    if (!(btc > 0)) { setAddErr('Enter the BTC amount the customer will send.'); return; }
+    // Rep thinks in USD owed; the quote works out the BTC the customer
+    // must send so the swap DELIVERS that much USDC after fees.
+    const usd = Number(swapBtc);
+    if (!(usd > 0)) { setAddErr('Enter the USD amount the customer owes.'); return; }
     setSwapBusy(true); setAddErr(''); setSwapQuote(null);
     try {
-      setSwapQuote(await getBtcToUsdcQuote(btc));
+      setSwapQuote(await getBtcQuoteForUsd(usd));
     } catch (e: unknown) {
       setAddErr(e instanceof Error ? e.message : 'Failed to get swap quote');
     } finally {
@@ -421,7 +423,12 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             <Button size="sm" variant={addMode === 'direct' ? 'default' : 'outline'} className="h-7 text-xs"
               onClick={() => { setAddMode('direct'); setAddErr(''); }}>Direct crypto</Button>
             <Button size="sm" variant={addMode === 'btcswap' ? 'default' : 'outline'} className="h-7 text-xs"
-              onClick={() => { setAddMode('btcswap'); setAddErr(''); }}>BTC → USDC auto-swap</Button>
+              onClick={() => {
+                setAddMode('btcswap'); setAddErr('');
+                // Prefill with the outstanding balance (payAmount was seeded
+                // with it when the form opened).
+                if (!swapBtc) setSwapBtc(payAmount);
+              }}>BTC → USDC auto-swap</Button>
           </div>
           {addMode === 'btcswap' ? (
             <div className="space-y-3">
@@ -431,16 +438,17 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 payment verifies itself when the swap completes.
               </p>
               <div className="grid grid-cols-2 gap-2">
-                <div><Label className="text-xs">BTC amount the customer sends</Label>
-                  <Input type="number" min={0} step="0.0001" placeholder="0.005" value={swapBtc}
+                <div><Label className="text-xs">Amount owed (USD)</Label>
+                  <Input type="number" min={0} step="0.01" value={swapBtc}
                     onChange={e => { setSwapBtc(e.target.value); setSwapQuote(null); }} className="h-8" /></div>
                 <div><Label className="text-xs">Customer&apos;s BTC refund address</Label>
                   <Input placeholder="bc1q…" value={swapRefund} onChange={e => setSwapRefund(e.target.value)} className="h-8 font-mono" /></div>
               </div>
               {swapQuote && (
                 <div className="bg-muted/40 rounded p-2 text-xs space-y-0.5">
-                  <p>Estimated delivery: <span className="font-medium">${swapQuote.estUsdc.toFixed(2)} USDC</span> for {swapQuote.btcAmount} BTC</p>
-                  <p className="text-muted-foreground">~{swapQuote.estMinutes} min after the BTC confirms · slippage tolerance {swapQuote.slippagePercent}% · the recorded amount updates to the ACTUAL USDC delivered</p>
+                  <p>Customer sends: <span className="font-medium text-sm">{swapQuote.btcAmount.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} BTC</span></p>
+                  <p>Estimated delivery: <span className="font-medium">${swapQuote.estUsdc.toFixed(2)} USDC</span></p>
+                  <p className="text-muted-foreground">~{swapQuote.estMinutes} min after the BTC confirms · slippage tolerance {swapQuote.slippagePercent}% · the recorded amount updates to the ACTUAL USDC delivered (BTC price movement can land it slightly over or under)</p>
                 </div>
               )}
               {addErr && <p className="text-xs text-red-600">{addErr}</p>}
