@@ -1,0 +1,36 @@
+# Texts warehouses when an order is newly assigned to them, every 5
+# minutes (GitHub's minimum schedule; actual latency is typically 5-15
+# minutes). One SMS per (warehouse, order), deduped in sms_outbox.
+#
+# Secrets required:
+#   DATABASE_URL        — Neon connection string (shared with other syncs)
+#   TWILIO_ACCOUNT_SID  — Twilio account SID
+#   TWILIO_AUTH_TOKEN   — Twilio auth token
+#   TWILIO_FROM         — the Twilio number to send from (+1…)
+name: sms-sync
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: sms-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Send assignment texts
+        run: bun tools/sync-sms.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_FROM: ${{ secrets.TWILIO_FROM }}

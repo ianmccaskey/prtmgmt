@@ -14,7 +14,8 @@ function updateWarehouseShippo() {
           ELSE NULLIF({{params.api_key}}::text, '')
         END,
         ship_from_phone = NULLIF({{params.ship_from_phone}}::text, ''),
-        ship_from_email = NULLIF({{params.ship_from_email}}::text, '')
+        ship_from_email = NULLIF({{params.ship_from_email}}::text, ''),
+        notify_phone = NULLIF({{params.notify_phone}}::text, '')
       WHERE id = {{params.id}}::bigint
       RETURNING id
     `,

@@ -30,7 +30,7 @@ type Warehouse = {
   id: number; name: string; ship_from_name: string | null; ship_from_email: string | null; city: string; state: string; country: string;
   address_line1: string; address_line2: string; postal_code: string;
   notes: string; is_active: boolean;
-  ship_from_phone: string | null; has_shippo_key: boolean;
+  ship_from_phone: string | null; notify_phone: string | null; has_shippo_key: boolean;
 };
 type ParcelTemplate = {
   id: number; warehouse_id: number; name: string;
@@ -70,6 +70,7 @@ export function WarehousesTab() {
   const [shippoFor, setShippoFor] = useState<Warehouse | null>(null);
   const [shippoKey, setShippoKey] = useState('');
   const [shippoPhone, setShippoPhone] = useState('');
+  const [notifyPhone, setNotifyPhone] = useState('');
   const [shippoEmail, setShippoEmail] = useState('');
   const [shippoSaving, setShippoSaving] = useState(false);
   const [shippoError, setShippoError] = useState('');
@@ -209,6 +210,7 @@ export function WarehousesTab() {
     setShippoKey('');
     setShippoPhone(dbText(w.ship_from_phone));
     setShippoEmail(w.ship_from_email || '');
+    setNotifyPhone(dbText(w.notify_phone));
     setShippoTracking(trackingWhId === String(w.id));
     setShippoError('');
   };
@@ -223,6 +225,7 @@ export function WarehousesTab() {
         api_key: removeKey ? '' : (shippoKey.trim() || null),
         ship_from_phone: shippoPhone.trim() || null,
         ship_from_email: shippoEmail.trim() || null,
+        notify_phone: notifyPhone.trim() || null,
       });
       const wasTracking = trackingWhId === String(shippoFor.id);
       const wantsTracking = !removeKey && shippoTracking;
@@ -452,6 +455,10 @@ export function WarehousesTab() {
             <div>
               <Label>Ship-From Email <span className="text-gray-400 font-normal">(USPS Ground Advantage requires one)</span></Label>
               <Input type="email" value={shippoEmail} onChange={e => setShippoEmail(e.target.value)} placeholder="shipping@example.com" />
+            </div>
+            <div>
+              <Label>Order Notification Phone <span className="text-gray-400 font-normal">(texted when an order is assigned here — blank = no texts)</span></Label>
+              <Input value={notifyPhone} onChange={e => setNotifyPhone(e.target.value)} placeholder="+1 555 000 0000" />
             </div>
             <div className="flex items-start gap-2 rounded border bg-slate-50 p-2">
               <Switch checked={shippoTracking} onCheckedChange={setShippoTracking} />
