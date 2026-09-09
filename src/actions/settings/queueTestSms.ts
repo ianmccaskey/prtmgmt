@@ -15,7 +15,7 @@ export function queueTestSms() {
       SELECT w.id, NULL, {{params.phone}},
         'PRT Ops: test message — SMS notifications for ' || w.name || ' are working.',
         'pending'
-      FROM warehouses w WHERE w.id = {{params.warehouse_id}}::bigint
+      FROM warehouses w WHERE w.id = {{params.warehouse_id}}::bigint AND w.is_active
       RETURNING id
     `,
   });

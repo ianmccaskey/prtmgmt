@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
@@ -74,6 +74,9 @@ export function WarehousesTab() {
   const [notifyPhone, setNotifyPhone] = useState('');
   const [doQueueTest] = useMutateAction(queueTestSms);
   const [testState, setTestState] = useState<'idle' | 'sending' | 'queued' | 'error'>('idle');
+  // Which warehouse the dialog currently shows — a slow queueTestSms promise
+  // must not flip testState after the admin switched to another warehouse.
+  const testForRef = useRef<number | null>(null);
   const [shippoEmail, setShippoEmail] = useState('');
   const [shippoSaving, setShippoSaving] = useState(false);
   const [shippoError, setShippoError] = useState('');
@@ -210,6 +213,7 @@ export function WarehousesTab() {
 
   const openShippo = (w: Warehouse) => {
     setShippoFor(w);
+    testForRef.current = w.id;
     setShippoKey('');
     setShippoPhone(dbText(w.ship_from_phone));
     setShippoEmail(w.ship_from_email || '');
@@ -436,7 +440,7 @@ export function WarehousesTab() {
       </Dialog>
 
       {/* Shippo Config Dialog */}
-      <Dialog open={!!shippoFor} onOpenChange={v => !v && setShippoFor(null)}>
+      <Dialog open={!!shippoFor} onOpenChange={v => { if (!v) { setShippoFor(null); testForRef.current = null; } }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Shippo — {shippoFor?.name}</DialogTitle></DialogHeader>
           <div className="space-y-3">
@@ -464,15 +468,20 @@ export function WarehousesTab() {
               <Label>Order Notification Phone <span className="text-gray-400 font-normal">(texted when an order is assigned here — blank = no texts)</span></Label>
               <div className="flex gap-2">
                 <Input value={notifyPhone} onChange={e => { setNotifyPhone(e.target.value); setTestState('idle'); }} placeholder="+1 555 000 0000" />
-                <Button type="button" variant="outline" className="shrink-0" disabled={!notifyPhone.trim() || testState === 'sending'}
+                <Button type="button" variant="outline" className="shrink-0"
+                  disabled={!notifyPhone.trim() || testState === 'sending' || !shippoFor?.is_active}
+                  title={shippoFor?.is_active ? undefined : 'Inactive warehouses are skipped by the SMS sync — activate it first'}
                   onClick={async () => {
                     if (!shippoFor) return;
+                    const wid = shippoFor.id;
                     setTestState('sending');
                     try {
-                      await doQueueTest({ warehouse_id: shippoFor.id, phone: notifyPhone.trim() });
-                      setTestState('queued');
+                      const rows = await doQueueTest({ warehouse_id: wid, phone: notifyPhone.trim() }) as unknown as { id: number }[];
+                      if (testForRef.current !== wid) return;
+                      // No row inserted (warehouse deactivated meanwhile) = not queued.
+                      setTestState(Array.isArray(rows) && rows.length > 0 ? 'queued' : 'error');
                     } catch {
-                      setTestState('error');
+                      if (testForRef.current === wid) setTestState('error');
                     }
                   }}>
                   {testState === 'sending' ? 'Queuing…' : 'Send Test Text'}
@@ -485,7 +494,7 @@ export function WarehousesTab() {
                   the sms-sync run in GitHub Actions and your A2P registration.
                 </p>
               )}
-              {testState === 'error' && <p className="text-xs text-red-600 mt-0.5">Failed to queue the test — try again.</p>}
+              {testState === 'error' && <p className="text-xs text-red-600 mt-0.5">Failed to queue the test — check the warehouse is active and try again.</p>}
             </div>
             <div className="flex items-start gap-2 rounded border bg-slate-50 p-2">
               <Switch checked={shippoTracking} onCheckedChange={setShippoTracking} />
