@@ -65,6 +65,29 @@ type Work = {
 };
 
 async function main() {
+  if (DRY) {
+    // Read-only preview: mutate nothing (no sweeper, no claims, no
+    // re-arms) — a dry run must not arm future real sends.
+    const preview = await sql`
+      SELECT DISTINCT so.order_number, w.name AS warehouse_name,
+        NULLIF(TRIM(COALESCE(w.notify_phone, '')), '') IS NOT NULL AS has_phone
+      FROM inventory_reservations ir
+      JOIN inventory i ON i.id = ir.inventory_id
+      JOIN warehouses w ON w.id = i.warehouse_id AND w.is_active
+      JOIN sales_orders so ON so.id = ir.sales_order_id
+      WHERE ir.sales_order_id IS NOT NULL
+        AND so.status IN ('confirmed', 'partially_shipped')
+        AND NOT EXISTS (SELECT 1 FROM sms_outbox ob
+          WHERE ob.warehouse_id = i.warehouse_id AND ob.sales_order_id = ir.sales_order_id)
+    ` as { order_number: string; warehouse_name: string; has_phone: boolean }[];
+    const backlog = await sql`
+      SELECT COUNT(*)::int AS n FROM sms_outbox
+      WHERE status = 'pending' OR (status = 'failed' AND attempts < 3)` as { n: number }[];
+    for (const p of preview) console.log(`DRY: would notify ${p.warehouse_name} about ${p.order_number}${p.has_phone ? '' : ' (no phone — would record no_phone)'}`);
+    console.log(`DRY: ${preview.length} new pair(s), ${backlog[0]?.n ?? 0} pending/retryable in backlog. Nothing written.`);
+    return;
+  }
+
   // Sweeper: pendings older than 30 min are crash leftovers → retryable.
   await sql`
     UPDATE sms_outbox SET status = 'failed',
@@ -99,46 +122,54 @@ async function main() {
       AND ob.created_at > NOW() - INTERVAL '24 hours'
       AND NULLIF(TRIM(COALESCE(w.notify_phone, '')), '') IS NOT NULL`;
 
-  // Everything ours to send: fresh pendings + failed retries (max 3
-  // attempts, and only where a phone exists so unsendables can't starve
-  // the retry budget).
-  const work = await sql`
-    SELECT ob.id AS outbox_id, ob.warehouse_id, ob.sales_order_id, ob.body,
-      w.name AS warehouse_name, TRIM(w.notify_phone) AS notify_phone,
-      so.order_number,
-      (SELECT COALESCE(SUM(ir.quantity), 0) FROM inventory_reservations ir
-       JOIN inventory i ON i.id = ir.inventory_id
-       WHERE ir.sales_order_id = ob.sales_order_id AND i.warehouse_id = ob.warehouse_id)::int AS kits
-    FROM sms_outbox ob
-    JOIN warehouses w ON w.id = ob.warehouse_id AND w.is_active
-    JOIN sales_orders so ON so.id = ob.sales_order_id
-    WHERE (ob.status = 'pending' OR (ob.status = 'failed' AND ob.attempts < 3))
-      AND NULLIF(TRIM(COALESCE(w.notify_phone, '')), '') IS NOT NULL
-    ORDER BY ob.id
-    LIMIT 60
-  ` as Work[];
+  console.log(`claimed ${claimed.filter(c => c.status === 'pending').length} new, ${claimed.filter(c => c.status === 'no_phone').length} no-phone`);
 
-  console.log(`claimed ${claimed.filter(c => c.status === 'pending').length} new, ${claimed.filter(c => c.status === 'no_phone').length} no-phone; ${work.length} to send`);
-
-  let sent = 0, failed = 0;
-  for (const p of work) {
-    // Stored body (retries keep the original message); else compose.
-    const body = p.body || `PRT Ops: order ${p.order_number} assigned to ${p.warehouse_name} — ${p.kits} kit(s). Check the fulfillment queue.`;
-    if (DRY) { console.log(`DRY: would text ${p.notify_phone}: ${body}`); continue; }
-    try {
-      await sendSms(p.notify_phone, body);
-      await sql`UPDATE sms_outbox SET status = 'sent', attempts = attempts + 1, sent_at = NOW(),
-        to_phone = ${p.notify_phone}, body = ${body}, last_error = NULL
-        WHERE id = ${p.outbox_id}`;
-      sent++;
-    } catch (e) {
-      const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
-      await sql`UPDATE sms_outbox SET status = 'failed', attempts = attempts + 1,
-        to_phone = ${p.notify_phone}, body = ${body}, last_error = ${msg}
-        WHERE id = ${p.outbox_id}`;
-      failed++;
-      console.error(`${p.order_number} → ${p.warehouse_name}: ${msg}`);
-    }
+  // Send loop: each row is OWNED for the duration of its send via
+  // FOR UPDATE SKIP LOCKED inside a per-row transaction — a concurrent
+  // run (cron vs local) skips locked rows instead of double-texting.
+  // A crash mid-transaction rolls the row back to pending; the sweeper
+  // retries it later.
+  let sent = 0, failed = 0, processed = 0;
+  while (processed < 60) {
+    processed++;
+    const done = await sql.begin(async (tx: typeof sql) => {
+      const rows = await tx`
+        SELECT ob.id AS outbox_id, ob.warehouse_id, ob.sales_order_id, ob.body,
+          w.name AS warehouse_name, TRIM(w.notify_phone) AS notify_phone,
+          so.order_number,
+          (SELECT COALESCE(SUM(ir.quantity), 0) FROM inventory_reservations ir
+           JOIN inventory i ON i.id = ir.inventory_id
+           WHERE ir.sales_order_id = ob.sales_order_id AND i.warehouse_id = ob.warehouse_id)::int AS kits
+        FROM sms_outbox ob
+        JOIN warehouses w ON w.id = ob.warehouse_id AND w.is_active
+        JOIN sales_orders so ON so.id = ob.sales_order_id
+        WHERE (ob.status = 'pending' OR (ob.status = 'failed' AND ob.attempts < 3))
+          AND NULLIF(TRIM(COALESCE(w.notify_phone, '')), '') IS NOT NULL
+        ORDER BY ob.id
+        FOR UPDATE OF ob SKIP LOCKED
+        LIMIT 1
+      ` as Work[];
+      const p = rows[0];
+      if (!p) return false;
+      // Stored body (retries keep the original message); else compose.
+      const body = p.body || `PRT Ops: order ${p.order_number} assigned to ${p.warehouse_name} — ${p.kits} kit(s). Check the fulfillment queue.`;
+      try {
+        await sendSms(p.notify_phone, body);
+        await tx`UPDATE sms_outbox SET status = 'sent', attempts = attempts + 1, sent_at = NOW(),
+          to_phone = ${p.notify_phone}, body = ${body}, last_error = NULL
+          WHERE id = ${p.outbox_id}`;
+        sent++;
+      } catch (e) {
+        const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+        await tx`UPDATE sms_outbox SET status = 'failed', attempts = attempts + 1,
+          to_phone = ${p.notify_phone}, body = ${body}, last_error = ${msg}
+          WHERE id = ${p.outbox_id}`;
+        failed++;
+        console.error(`${p.order_number} → ${p.warehouse_name}: ${msg}`);
+      }
+      return true;
+    });
+    if (!done) break;
   }
   console.log(`sent=${sent} failed=${failed}`);
 }
