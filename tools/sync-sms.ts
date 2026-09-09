@@ -59,8 +59,8 @@ async function sendSms(to: string, body: string): Promise<void> {
 }
 
 type Work = {
-  outbox_id: number; warehouse_id: number; sales_order_id: number;
-  warehouse_name: string; notify_phone: string; order_number: string;
+  outbox_id: number; warehouse_id: number; sales_order_id: number | null;
+  warehouse_name: string; notify_phone: string; order_number: string | null;
   kits: number; body: string | null;
 };
 
@@ -133,25 +133,30 @@ async function main() {
   while (processed < 60) {
     processed++;
     const done = await sql.begin(async (tx: typeof sql) => {
+      // LEFT JOIN sales_orders: test texts (queueTestSms) have no order —
+      // they always carry a stored body and their own to_phone. The
+      // effective phone prefers the row's own to_phone (a test uses the
+      // number as typed, even if unsaved) over the warehouse default.
       const rows = await tx`
         SELECT ob.id AS outbox_id, ob.warehouse_id, ob.sales_order_id, ob.body,
-          w.name AS warehouse_name, TRIM(w.notify_phone) AS notify_phone,
+          w.name AS warehouse_name,
+          COALESCE(NULLIF(TRIM(COALESCE(ob.to_phone, '')), ''), TRIM(w.notify_phone)) AS notify_phone,
           so.order_number,
           (SELECT COALESCE(SUM(ir.quantity), 0) FROM inventory_reservations ir
            JOIN inventory i ON i.id = ir.inventory_id
            WHERE ir.sales_order_id = ob.sales_order_id AND i.warehouse_id = ob.warehouse_id)::int AS kits
         FROM sms_outbox ob
         JOIN warehouses w ON w.id = ob.warehouse_id AND w.is_active
-        JOIN sales_orders so ON so.id = ob.sales_order_id
+        LEFT JOIN sales_orders so ON so.id = ob.sales_order_id
         WHERE (ob.status = 'pending' OR (ob.status = 'failed' AND ob.attempts < 3))
-          AND NULLIF(TRIM(COALESCE(w.notify_phone, '')), '') IS NOT NULL
+          AND COALESCE(NULLIF(TRIM(COALESCE(ob.to_phone, '')), ''), NULLIF(TRIM(COALESCE(w.notify_phone, '')), '')) IS NOT NULL
         ORDER BY ob.id
         FOR UPDATE OF ob SKIP LOCKED
         LIMIT 1
       ` as Work[];
       const p = rows[0];
       if (!p) return false;
-      // Stored body (retries keep the original message); else compose.
+      // Stored body (tests and retries keep their original message); else compose.
       const body = p.body || `PRT Ops: order ${p.order_number} assigned to ${p.warehouse_name} — ${p.kits} kit(s). Check the fulfillment queue.`;
       try {
         await sendSms(p.notify_phone, body);

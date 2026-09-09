@@ -16,6 +16,7 @@ import listWarehouses from '@/actions/settings/listWarehouses';
 import createWarehouse from '@/actions/settings/createWarehouse';
 import updateWarehouseActive from '@/actions/settings/updateWarehouseActive';
 import updateWarehouseShippo from '@/actions/settings/updateWarehouseShippo';
+import queueTestSms from '@/actions/settings/queueTestSms';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 import listReceiveAddresses from '@/actions/warehouse/listReceiveAddresses';
@@ -71,6 +72,8 @@ export function WarehousesTab() {
   const [shippoKey, setShippoKey] = useState('');
   const [shippoPhone, setShippoPhone] = useState('');
   const [notifyPhone, setNotifyPhone] = useState('');
+  const [doQueueTest] = useMutateAction(queueTestSms);
+  const [testState, setTestState] = useState<'idle' | 'sending' | 'queued' | 'error'>('idle');
   const [shippoEmail, setShippoEmail] = useState('');
   const [shippoSaving, setShippoSaving] = useState(false);
   const [shippoError, setShippoError] = useState('');
@@ -211,6 +214,7 @@ export function WarehousesTab() {
     setShippoPhone(dbText(w.ship_from_phone));
     setShippoEmail(w.ship_from_email || '');
     setNotifyPhone(dbText(w.notify_phone));
+    setTestState('idle');
     setShippoTracking(trackingWhId === String(w.id));
     setShippoError('');
   };
@@ -458,7 +462,30 @@ export function WarehousesTab() {
             </div>
             <div>
               <Label>Order Notification Phone <span className="text-gray-400 font-normal">(texted when an order is assigned here — blank = no texts)</span></Label>
-              <Input value={notifyPhone} onChange={e => setNotifyPhone(e.target.value)} placeholder="+1 555 000 0000" />
+              <div className="flex gap-2">
+                <Input value={notifyPhone} onChange={e => { setNotifyPhone(e.target.value); setTestState('idle'); }} placeholder="+1 555 000 0000" />
+                <Button type="button" variant="outline" className="shrink-0" disabled={!notifyPhone.trim() || testState === 'sending'}
+                  onClick={async () => {
+                    if (!shippoFor) return;
+                    setTestState('sending');
+                    try {
+                      await doQueueTest({ warehouse_id: shippoFor.id, phone: notifyPhone.trim() });
+                      setTestState('queued');
+                    } catch {
+                      setTestState('error');
+                    }
+                  }}>
+                  {testState === 'sending' ? 'Queuing…' : 'Send Test Text'}
+                </Button>
+              </div>
+              {testState === 'queued' && (
+                <p className="text-xs text-green-700 mt-0.5">
+                  Test queued — it rides the real notification pipeline, so the text arrives on the next
+                  sync run (within ~5 minutes; requires the Twilio secrets in GitHub). No arrival = check
+                  the sms-sync run in GitHub Actions and your A2P registration.
+                </p>
+              )}
+              {testState === 'error' && <p className="text-xs text-red-600 mt-0.5">Failed to queue the test — try again.</p>}
             </div>
             <div className="flex items-start gap-2 rounded border bg-slate-50 p-2">
               <Switch checked={shippoTracking} onCheckedChange={setShippoTracking} />
