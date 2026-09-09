@@ -14,7 +14,7 @@ export function createSwapPayment() {
       INSERT INTO order_payments (
         sales_order_id, direction, asset, network, receive_wallet_id,
         quoted_at, amount_asset, amount_usd, verification_status,
-        swap_provider, swap_channel_id, swap_deposit_address, swap_expires_at, swap_state
+        swap_provider, swap_channel_id, swap_deposit_address, swap_expires_at, swap_state, swap_src_amount
       ) VALUES (
         {{params.orderId}}::bigint,
         'incoming',
@@ -32,7 +32,8 @@ export function createSwapPayment() {
         {{params.channelId}},
         {{params.depositAddress}},
         {{params.expiresAt}}::timestamptz,
-        'WAITING'
+        'WAITING',
+        {{params.srcBtcAmount}}::numeric
       )
       RETURNING id, sales_order_id
     `,

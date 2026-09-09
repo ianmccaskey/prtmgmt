@@ -209,6 +209,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       await createSwapPay({
         orderId, walletId: usdcWallet.id,
         estUsdc: Number(swapQuote.estUsdc.toFixed(2)),
+        srcBtcAmount: swapQuote.btcAmount,
         channelId: ch.channelId, depositAddress: ch.depositAddress, expiresAt: ch.expiresAt,
       });
       await recomputePayment({ orderId });
@@ -345,7 +346,13 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 BTC auto-swap · {String(p.swap_state || 'WAITING')}
                 {p.swap_expires_at ? ` · channel expires ${new Date(String(p.swap_expires_at)).toLocaleString()}` : ''}
               </p>
-              <p className="text-xs text-amber-800">Customer sends plain BTC (no memo) to:</p>
+              <p className="text-xs text-amber-800">
+                Customer sends{' '}
+                {p.swap_src_amount != null
+                  ? <span className="font-semibold">{Number(p.swap_src_amount).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} BTC</span>
+                  : 'plain BTC'}{' '}
+                (plain send, no memo) to:
+              </p>
               <div className="flex items-center gap-2">
                 <code className="text-xs flex-1 break-all">{String(p.swap_deposit_address)}</code>
                 <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" title="Copy deposit address"
