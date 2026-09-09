@@ -50,15 +50,30 @@ export type BtcSwapQuote = {
  * covers the target (fees have fixed components, so one or two rounds
  * converge).
  */
+/**
+ * Price-movement buffer: the swap executes minutes after the quote, and
+ * customers hand-type the BTC figure — real shipments have landed ~0.4%
+ * short from drift + truncated digits. Padding the target 1% and rounding
+ * the ask UP to 5 decimals (easy to copy exactly) makes the delivered
+ * USDC land at-or-above the owed amount in the normal case; the overage
+ * records as a small overpayment on the order.
+ */
+const USD_BUFFER = 1.01;
+
 export async function getBtcQuoteForUsd(targetUsd: number): Promise<BtcSwapQuote> {
   if (!(targetUsd > 0)) throw new Error('Enter a valid USD amount.');
+  const padded = targetUsd * USD_BUFFER;
   const probe = await getBtcToUsdcQuote(0.01);
-  let btc = (targetUsd / probe.estUsdc) * 0.01;
+  let btc = (padded / probe.estUsdc) * 0.01;
   let q = await getBtcToUsdcQuote(round8(btc));
-  for (let i = 0; i < 3 && q.estUsdc < targetUsd; i++) {
-    btc = btc * (targetUsd / q.estUsdc) * 1.002;
+  for (let i = 0; i < 3 && q.estUsdc < padded; i++) {
+    btc = btc * (padded / q.estUsdc) * 1.002;
     q = await getBtcToUsdcQuote(round8(btc));
   }
+  // Final ask: ceil to 5 decimals — a short, copyable figure that can only
+  // round the customer UP, never under.
+  const ask = Math.ceil(q.btcAmount * 1e5) / 1e5;
+  if (ask > q.btcAmount) q = await getBtcToUsdcQuote(ask);
   return q;
 }
 

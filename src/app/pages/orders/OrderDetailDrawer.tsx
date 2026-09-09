@@ -474,7 +474,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                     {' '}({swapQuote.fees.totalBtc.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} BTC)
                     <span className="text-muted-foreground"> — deposit {swapQuote.fees.ingressBtc.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} BTC · protocol + delivery ${swapQuote.fees.usdFees.toFixed(2)} · rate ≈ ${Math.round(swapQuote.fees.btcUsdRate).toLocaleString()}/BTC</span>
                   </p>
-                  <p className="text-muted-foreground">~{swapQuote.estMinutes} min after the BTC confirms · slippage tolerance {swapQuote.slippagePercent}% · the recorded amount updates to the ACTUAL USDC delivered (BTC price movement can land it slightly over or under)</p>
+                  <p className="text-muted-foreground">~{swapQuote.estMinutes} min after the BTC confirms · slippage tolerance {swapQuote.slippagePercent}% · the BTC ask includes a ~1% price-movement buffer, so delivery normally lands at or slightly OVER the owed amount (recorded as the actual USDC delivered)</p>
                 </div>
               )}
               {addErr && <p className="text-xs text-red-600">{addErr}</p>}
