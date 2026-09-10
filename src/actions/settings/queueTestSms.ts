@@ -2,7 +2,7 @@ import { action } from '@uibakery/data';
 
 /**
  * Queues a test text through the real SMS outbox — the browser can't call
- * Twilio (credentials live only in the GitHub Actions sync), so the test
+ * AWS SNS (credentials live only in the GitHub Actions sync), so the test
  * rides the exact production path: the next sync run (≤5 min) sends it.
  * Uses the phone passed in (the field's current value), not the saved one,
  * so the admin can test before saving.

@@ -19,42 +19,67 @@
  *    silent by design (notifications are for FUTURE work once configured).
  *
  * Runs from .github/workflows/sms-sync.yml every 5 minutes (also safe
- * locally). Environment:
- *   DATABASE_URL         Neon connection string (shared with other syncs)
- *   TWILIO_ACCOUNT_SID   Twilio account SID (AC…)
- *   TWILIO_AUTH_TOKEN    Twilio auth token
- *   TWILIO_FROM          the Twilio phone number to send from (+1…)
+ * locally). Delivery is AWS SNS (Twilio suspended the account before it
+ * was ever used). Environment:
+ *   DATABASE_URL           Neon connection string (shared with other syncs)
+ *   AWS_ACCESS_KEY_ID      IAM user with sns:Publish only
+ *   AWS_SECRET_ACCESS_KEY  its secret key
+ *   AWS_REGION             region to publish from (default us-east-1)
+ *   SNS_ORIGINATION_NUMBER optional — a provisioned toll-free/10DLC number
+ *                          to send from; omit while in the SNS sandbox
+ *
+ * SNS gotchas that look like code failures but aren't: new accounts are
+ * in the SMS SANDBOX (only console-verified destination numbers receive
+ * texts — anything else fails with an authorization error), and the
+ * default account-wide SMS spend cap is $1/month.
  *
  * SMS content is deliberately minimal — order number and kit count only,
  * no product names or customer details (carrier content filtering +
  * privacy).
  */
 import { SQL } from 'bun';
+import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 
 const url = process.env.DATABASE_URL;
-const SID = process.env.TWILIO_ACCOUNT_SID;
-const TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const FROM = process.env.TWILIO_FROM;
 if (!url) { console.error('DATABASE_URL is not set (see .env.local).'); process.exit(1); }
-if (!SID || !TOKEN || !FROM) {
-  console.error('Twilio env missing: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM are all required.');
+if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+  console.error('AWS env missing: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required (AWS_REGION optional, default us-east-1).');
   process.exit(1);
 }
+const ORIGINATION = process.env.SNS_ORIGINATION_NUMBER?.trim() || null;
 const DRY = process.argv.includes('--dry-run');
 const sql = new SQL(url);
+const sns = new SNSClient({ region: process.env.AWS_REGION || 'us-east-1' });
+
+/**
+ * SNS requires strict E.164; phones are hand-typed in the settings
+ * dialog. 10 digits → assume US (+1); 11 starting with 1 → +. Anything
+ * else passes through as typed (a real +44… stays intact; garbage fails
+ * at SNS and lands in last_error).
+ */
+function e164(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (!phone.trim().startsWith('+')) {
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  }
+  return phone.trim().startsWith('+') ? `+${digits}` : phone.trim();
+}
 
 async function sendSms(to: string, body: string): Promise<void> {
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${SID}/Messages.json`, {
-    method: 'POST',
-    headers: {
-      Authorization: 'Basic ' + Buffer.from(`${SID}:${TOKEN}`).toString('base64'),
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({ To: to, From: FROM!, Body: body }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => null) as { message?: string; code?: number } | null;
-    throw new Error(`Twilio ${res.status}${err?.code ? ` [${err.code}]` : ''}: ${err?.message ?? 'send failed'}`);
+  try {
+    await sns.send(new PublishCommand({
+      PhoneNumber: e164(to),
+      Message: body,
+      MessageAttributes: {
+        // Transactional = highest delivery reliability (vs Promotional).
+        'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
+        ...(ORIGINATION ? { 'AWS.SNS.SMS.OriginationNumber': { DataType: 'String', StringValue: ORIGINATION } } : {}),
+      },
+    }));
+  } catch (e) {
+    const err = e as { name?: string; message?: string };
+    throw new Error(`SNS ${err.name ?? 'error'}: ${err.message ?? 'send failed'}`);
   }
 }
 

@@ -490,8 +490,8 @@ export function WarehousesTab() {
               {testState === 'queued' && (
                 <p className="text-xs text-green-700 mt-0.5">
                   Test queued — it rides the real notification pipeline, so the text arrives on the next
-                  sync run (within ~5 minutes; requires the Twilio secrets in GitHub). No arrival = check
-                  the sms-sync run in GitHub Actions and your A2P registration.
+                  sync run (within ~5 minutes; requires the AWS SNS secrets in GitHub). No arrival = check
+                  the sms-sync run in GitHub Actions; in the SNS sandbox only verified numbers receive texts.
                 </p>
               )}
               {testState === 'error' && <p className="text-xs text-red-600 mt-0.5">Failed to queue the test — check the warehouse is active and try again.</p>}
