@@ -47,9 +47,10 @@ type ReceiveAddress = {
 const validNtfyTopic = (t: string) => /^[A-Za-z0-9_-]{1,64}$/.test(t);
 
 // The topic doubles as the subscription password — make it unguessable.
+// 12 chars over a 31-symbol alphabet ≈ 59 bits of entropy.
 function generateTopic(warehouseName: string): string {
   const slug = warehouseName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 8) || 'wh';
-  const bytes = new Uint8Array(6);
+  const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
   const rand = Array.from(bytes, b => 'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
   return `prt-${slug}-${rand}`;
