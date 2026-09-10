@@ -1,8 +1,0 @@
-{
-  "name": "prtmgmt-tools",
-  "private": true,
-  "description": "Dependencies for the server-side sync tools in tools/ (the app itself lives in src/ with its own package.json)",
-  "dependencies": {
-    "@aws-sdk/client-sns": "^3.658.0"
-  }
-}

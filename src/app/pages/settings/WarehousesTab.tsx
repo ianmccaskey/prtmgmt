@@ -31,7 +31,7 @@ type Warehouse = {
   id: number; name: string; ship_from_name: string | null; ship_from_email: string | null; city: string; state: string; country: string;
   address_line1: string; address_line2: string; postal_code: string;
   notes: string; is_active: boolean;
-  ship_from_phone: string | null; notify_phone: string | null; has_shippo_key: boolean;
+  ship_from_phone: string | null; notify_topic: string | null; has_shippo_key: boolean;
 };
 type ParcelTemplate = {
   id: number; warehouse_id: number; name: string;
@@ -42,6 +42,18 @@ type ReceiveAddress = {
   address_line1: string; address_line2: string; city: string; state: string;
   postal_code: string; country: string; phone: string | null; is_active: boolean; notes: string;
 };
+
+// ntfy topic rules (also enforced fail-closed in tools/sync-sms.ts).
+const validNtfyTopic = (t: string) => /^[A-Za-z0-9_-]{1,64}$/.test(t);
+
+// The topic doubles as the subscription password — make it unguessable.
+function generateTopic(warehouseName: string): string {
+  const slug = warehouseName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 8) || 'wh';
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  const rand = Array.from(bytes, b => 'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
+  return `prt-${slug}-${rand}`;
+}
 
 export function WarehousesTab() {
   const [showAdd, setShowAdd] = useState(false);
@@ -71,7 +83,7 @@ export function WarehousesTab() {
   const [shippoFor, setShippoFor] = useState<Warehouse | null>(null);
   const [shippoKey, setShippoKey] = useState('');
   const [shippoPhone, setShippoPhone] = useState('');
-  const [notifyPhone, setNotifyPhone] = useState('');
+  const [notifyTopic, setNotifyTopic] = useState('');
   const [doQueueTest] = useMutateAction(queueTestSms);
   const [testState, setTestState] = useState<'idle' | 'sending' | 'queued' | 'error'>('idle');
   // Which warehouse the dialog currently shows — a slow queueTestSms promise
@@ -217,7 +229,7 @@ export function WarehousesTab() {
     setShippoKey('');
     setShippoPhone(dbText(w.ship_from_phone));
     setShippoEmail(w.ship_from_email || '');
-    setNotifyPhone(dbText(w.notify_phone));
+    setNotifyTopic(dbText(w.notify_topic));
     setTestState('idle');
     setShippoTracking(trackingWhId === String(w.id));
     setShippoError('');
@@ -233,7 +245,7 @@ export function WarehousesTab() {
         api_key: removeKey ? '' : (shippoKey.trim() || null),
         ship_from_phone: shippoPhone.trim() || null,
         ship_from_email: shippoEmail.trim() || null,
-        notify_phone: notifyPhone.trim() || null,
+        notify_topic: notifyTopic.trim() || null,
       });
       const wasTracking = trackingWhId === String(shippoFor.id);
       const wantsTracking = !removeKey && shippoTracking;
@@ -465,18 +477,22 @@ export function WarehousesTab() {
               <Input type="email" value={shippoEmail} onChange={e => setShippoEmail(e.target.value)} placeholder="shipping@example.com" />
             </div>
             <div>
-              <Label>Order Notification Phone <span className="text-gray-400 font-normal">(texted when an order is assigned here — blank = no texts)</span></Label>
+              <Label>Order Notification Topic <span className="text-gray-400 font-normal">(ntfy push when an order is assigned here — blank = no notifications)</span></Label>
               <div className="flex gap-2">
-                <Input value={notifyPhone} onChange={e => { setNotifyPhone(e.target.value); setTestState('idle'); }} placeholder="+1 555 000 0000" />
+                <Input value={notifyTopic} onChange={e => { setNotifyTopic(e.target.value); setTestState('idle'); }} placeholder="prt-okc-x7k2p9q4" />
                 <Button type="button" variant="outline" className="shrink-0"
-                  disabled={!notifyPhone.trim() || testState === 'sending' || !shippoFor?.is_active}
-                  title={shippoFor?.is_active ? undefined : 'Inactive warehouses are skipped by the SMS sync — activate it first'}
+                  onClick={() => { setNotifyTopic(generateTopic(shippoFor?.name ?? '')); setTestState('idle'); }}>
+                  Generate
+                </Button>
+                <Button type="button" variant="outline" className="shrink-0"
+                  disabled={!validNtfyTopic(notifyTopic.trim()) || testState === 'sending' || !shippoFor?.is_active}
+                  title={shippoFor?.is_active ? undefined : 'Inactive warehouses are skipped by the notification sync — activate it first'}
                   onClick={async () => {
                     if (!shippoFor) return;
                     const wid = shippoFor.id;
                     setTestState('sending');
                     try {
-                      const rows = await doQueueTest({ warehouse_id: wid, phone: notifyPhone.trim() }) as unknown as { id: number }[];
+                      const rows = await doQueueTest({ warehouse_id: wid, topic: notifyTopic.trim() }) as unknown as { id: number }[];
                       if (testForRef.current !== wid) return;
                       // No row inserted (warehouse deactivated meanwhile) = not queued.
                       setTestState(Array.isArray(rows) && rows.length > 0 ? 'queued' : 'error');
@@ -484,14 +500,22 @@ export function WarehousesTab() {
                       if (testForRef.current === wid) setTestState('error');
                     }
                   }}>
-                  {testState === 'sending' ? 'Queuing…' : 'Send Test Text'}
+                  {testState === 'sending' ? 'Queuing…' : 'Send Test Push'}
                 </Button>
               </div>
+              {notifyTopic.trim() !== '' && !validNtfyTopic(notifyTopic.trim()) && (
+                <p className="text-xs text-red-600 mt-0.5">Topics can only use letters, digits, - and _ (max 64 characters).</p>
+              )}
+              <p className="text-xs text-gray-400 mt-0.5">
+                Staff setup: install the free <span className="font-medium">ntfy</span> app (App Store / Play Store),
+                tap + and subscribe to this exact topic. The topic works like a password — anyone who knows it can
+                read these notifications, so use Generate rather than something guessable.
+              </p>
               {testState === 'queued' && (
                 <p className="text-xs text-green-700 mt-0.5">
-                  Test queued — it rides the real notification pipeline, so the text arrives on the next
-                  sync run (within ~5 minutes; requires the AWS SNS secrets in GitHub). No arrival = check
-                  the sms-sync run in GitHub Actions; in the SNS sandbox only verified numbers receive texts.
+                  Test queued — it rides the real notification pipeline, so the push arrives on the next
+                  sync run (within ~5 minutes). No arrival = check the phone is subscribed to this exact
+                  topic in the ntfy app, then the sms-sync run in GitHub Actions.
                 </p>
               )}
               {testState === 'error' && <p className="text-xs text-red-600 mt-0.5">Failed to queue the test — check the warehouse is active and try again.</p>}
