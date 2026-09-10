@@ -53,17 +53,20 @@ const sns = new SNSClient({ region: process.env.AWS_REGION || 'us-east-1' });
 
 /**
  * SNS requires strict E.164; phones are hand-typed in the settings
- * dialog. 10 digits → assume US (+1); 11 starting with 1 → +. Anything
- * else passes through as typed (a real +44… stays intact; garbage fails
- * at SNS and lands in last_error).
+ * dialog. Only presentation punctuation (spaces, dashes, dots, parens)
+ * is stripped — anything else (letters, 'ext 89', '#', ';') survives,
+ * fails the patterns below, and is passed through as typed so SNS
+ * rejects it into last_error instead of us silently texting a mangled
+ * number. 10 digits → assume US (+1); 1+10 digits → +; '+' + 8-15
+ * digits (a real +44…) → kept as-is.
  */
 function e164(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  if (!phone.trim().startsWith('+')) {
-    if (digits.length === 10) return `+1${digits}`;
-    if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
-  }
-  return phone.trim().startsWith('+') ? `+${digits}` : phone.trim();
+  const raw = phone.trim();
+  const cleaned = raw.replace(/[\s().-]/g, '');
+  if (/^\+\d{8,15}$/.test(cleaned)) return cleaned;
+  if (/^\d{10}$/.test(cleaned)) return `+1${cleaned}`;
+  if (/^1\d{10}$/.test(cleaned)) return `+${cleaned}`;
+  return raw;
 }
 
 async function sendSms(to: string, body: string): Promise<void> {
@@ -74,7 +77,9 @@ async function sendSms(to: string, body: string): Promise<void> {
       MessageAttributes: {
         // Transactional = highest delivery reliability (vs Promotional).
         'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
-        ...(ORIGINATION ? { 'AWS.SNS.SMS.OriginationNumber': { DataType: 'String', StringValue: ORIGINATION } } : {}),
+        // NB: origination number lives under AWS.MM.*, not AWS.SNS.* —
+        // per the SNS SMS publish attribute docs.
+        ...(ORIGINATION ? { 'AWS.MM.SMS.OriginationNumber': { DataType: 'String', StringValue: ORIGINATION } } : {}),
       },
     }));
   } catch (e) {
