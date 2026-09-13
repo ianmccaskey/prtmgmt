@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Search, ExternalLink } from 'lucide-react';
+import { fmtDate } from '@/lib/fmtDate';
 
 type Batch = {
   id: number; batch_number: string; product_id: number; sku: string; product_name: string;
@@ -134,7 +135,7 @@ export function BatchesPage() {
                         <div className="text-xs text-slate-400">{b.sku}</div>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{b.factory_name || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{b.manufacture_date ? new Date(b.manufacture_date).toLocaleDateString() : '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{fmtDate(b.manufacture_date)}</td>
                       <td className="px-4 py-3 text-right">{b.quantity_produced}</td>
                       <td className="px-4 py-3 text-right">{b.qty_remaining}</td>
                       <td className="px-4 py-3">

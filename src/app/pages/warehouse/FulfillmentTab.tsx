@@ -9,6 +9,7 @@ import { MarkShippedDialog } from '@/app/pages/warehouse/MarkShippedDialog';
 import { BoxTemplatesDialog } from '@/app/pages/warehouse/BoxTemplatesDialog';
 import { OrderDetailDrawer } from '@/app/pages/orders/OrderDetailDrawer';
 import { useAppUser } from '@/app/AppContext';
+import { fmtDate } from '@/lib/fmtDate';
 
 export type QueueItem = {
   order_id: number; order_number: string; status: string; order_date: string;
@@ -191,7 +192,7 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
                     </div>
                     <div className="text-sm">
                       <span className="font-medium">{o.customer_name}</span>
-                      <span className="text-xs text-slate-400 ml-1.5">{o.ship_city}, {o.ship_country} · {new Date(o.order_date).toLocaleDateString()}</span>
+                      <span className="text-xs text-slate-400 ml-1.5">{o.ship_city}, {o.ship_country} · {fmtDate(o.order_date)}</span>
                     </div>
                     <div className="space-y-0.5">
                       {o.items.map(it => {
@@ -259,7 +260,7 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
                         <button className="font-mono font-medium text-blue-600 hover:underline" onClick={() => setDetailOrderId(o.order_id)}>
                           {o.order_number}
                         </button>
-                        <div className="text-xs text-slate-400">{new Date(o.order_date).toLocaleDateString()}</div>
+                        <div className="text-xs text-slate-400">{fmtDate(o.order_date)}</div>
                       </td>
                       <td className="px-4 py-2">
                         <div className="font-medium">{o.customer_name}</div>

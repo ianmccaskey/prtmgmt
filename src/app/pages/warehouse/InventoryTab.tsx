@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Search, Hand } from 'lucide-react';
+import { fmtDate } from '@/lib/fmtDate';
 
 type StockHold = {
   id: number; quantity: number; hold_reason: string | null; created_at: string;
@@ -184,7 +185,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
                     </div>
                   </div>
                   {r.next_arrival_date && (
-                    <div className="text-xs text-slate-400">Next arrival {new Date(r.next_arrival_date).toLocaleDateString()}</div>
+                    <div className="text-xs text-slate-400">Next arrival {fmtDate(r.next_arrival_date)}</div>
                   )}
                   {r.quantity_available > 0 && (
                     <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openHold(r)}>
@@ -230,7 +231,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
                       <td className="px-3 py-2 text-right text-orange-600">{r.quantity_reserved}</td>
                       <td className={`px-3 py-2 text-right font-medium ${r.quantity_available === 0 ? 'text-slate-400' : 'text-green-600'}`}>{r.quantity_available}</td>
                       <td className="px-3 py-2 text-right text-purple-600">{r.in_transit_inbound > 0 ? r.in_transit_inbound : '—'}</td>
-                      <td className="px-3 py-2 text-slate-500 text-xs">{r.next_arrival_date ? new Date(r.next_arrival_date).toLocaleDateString() : '—'}</td>
+                      <td className="px-3 py-2 text-slate-500 text-xs">{fmtDate(r.next_arrival_date)}</td>
                       <td className="px-3 py-2 text-right">
                         {r.quantity_available > 0 && (
                           <Button size="sm" variant="ghost" className="h-7 text-xs" title="Reserve stock without an order" onClick={() => openHold(r)}>

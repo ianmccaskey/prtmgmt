@@ -14,6 +14,7 @@ import { Truck } from 'lucide-react';
 import getChinaDirectQueue from '@/actions/orders/getChinaDirectQueue';
 import getChinaDirectStats from '@/actions/orders/getChinaDirectStats';
 import markShippedFromChina from '@/actions/orders/markShippedFromChina';
+import { fmtDate } from '@/lib/fmtDate';
 
 type ChinaOrder = {
   id: number; order_number: string; order_date: string; status: string;
@@ -113,7 +114,7 @@ export function ChinaDirectTab() {
                     <td className="p-3 font-mono text-xs font-medium">{order.order_number}</td>
                     <td className="p-3">{order.customer_name}</td>
                     <td className="p-3 text-sm text-muted-foreground">{order.factory_name || '—'}</td>
-                    <td className="p-3 text-xs text-muted-foreground">{new Date(order.order_date).toLocaleDateString()}</td>
+                    <td className="p-3 text-xs text-muted-foreground">{fmtDate(order.order_date)}</td>
                     <td className="p-3">
                       <span className={`font-medium ${Number(order.days_waiting) > 14 ? 'text-red-600' : Number(order.days_waiting) > 7 ? 'text-amber-600' : 'text-foreground'}`}>
                         {order.days_waiting}

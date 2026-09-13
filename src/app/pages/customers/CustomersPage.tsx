@@ -13,6 +13,7 @@ import { Crown, Ban, Search, Plus, Download } from 'lucide-react';
 import listCustomers from '@/actions/customers/listCustomers';
 import { usePagination, PaginationFooter } from '@/components/Paginated';
 import { NewCustomerDialog } from './NewCustomerDialog';
+import { fmtDate } from '@/lib/fmtDate';
 
 type Customer = {
   id: number; full_name: string; email: string; phone: string;
@@ -131,7 +132,7 @@ export function CustomersPage() {
                 {c.email || c.phone || '—'}
               </div>
               <div className="text-xs text-muted-foreground">
-                {c.total_orders} orders · last {c.last_order_date ? new Date(c.last_order_date).toLocaleDateString() : '—'}
+                {c.total_orders} orders · last {fmtDate(c.last_order_date)}
               </div>
             </div>
           ))
@@ -204,7 +205,7 @@ export function CustomersPage() {
                     <td className="p-3 text-muted-foreground text-xs">{c.phone || '—'}</td>
                     <td className="p-3 text-right">{c.total_orders}</td>
                     <td className="p-3 text-right font-medium">${Number(c.lifetime_value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="p-3 text-muted-foreground text-xs">{c.last_order_date ? new Date(c.last_order_date).toLocaleDateString() : '—'}</td>
+                    <td className="p-3 text-muted-foreground text-xs">{fmtDate(c.last_order_date)}</td>
                   </tr>
                 ))
               )}

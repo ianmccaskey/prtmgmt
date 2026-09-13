@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Plus, ExternalLink } from 'lucide-react';
+import { fmtDate } from '@/lib/fmtDate';
 
 type Batch = {
   id: number; batch_number: string; factory_name: string; manufacture_date: string;
@@ -100,7 +101,7 @@ export function ProductBatchesTab({ productId, productName, hasExistingBatches }
                   <tr key={b.id} className="border-b hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/batches/${b.id}`)}>
                     <td className="px-4 py-2 font-mono font-medium text-blue-600">{b.batch_number}</td>
                     <td className="px-4 py-2 text-slate-600">{b.factory_name || '—'}</td>
-                    <td className="px-4 py-2 text-slate-600">{b.manufacture_date ? new Date(b.manufacture_date).toLocaleDateString() : '—'}</td>
+                    <td className="px-4 py-2 text-slate-600">{fmtDate(b.manufacture_date)}</td>
                     <td className="px-4 py-2 text-right">{b.quantity_produced}</td>
                     <td className="px-4 py-2 text-right">{b.net_content_mg != null ? Number(b.net_content_mg) : '—'}</td>
                     <td className="px-4 py-2 text-right">{b.qty_remaining}</td>

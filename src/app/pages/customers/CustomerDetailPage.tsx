@@ -27,6 +27,7 @@ import deleteCustomerNote from '@/actions/customers/deleteCustomerNote';
 import updateCustomer from '@/actions/customers/updateCustomer';
 import blockCustomer from '@/actions/customers/blockCustomer';
 import unblockCustomer from '@/actions/customers/unblockCustomer';
+import { fmtDate } from '@/lib/fmtDate';
 
 type CustomerDetail = Record<string, string | number | boolean | null>;
 type Order = Record<string, string | number | boolean | null>;
@@ -240,7 +241,7 @@ export function CustomerDetailPage() {
           </div>
           <p className="text-sm text-muted-foreground">
             {Number(customer.total_orders)} orders · ${Number(customer.lifetime_value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lifetime value
-            {customer.last_order_date ? ` · Last order: ${new Date(String(customer.last_order_date)).toLocaleDateString()}` : ''}
+            {customer.last_order_date ? ` · Last order: ${fmtDate(customer.last_order_date)}` : ''}
           </p>
         </div>
         <div className="flex gap-2">
@@ -426,7 +427,7 @@ export function CustomerDetailPage() {
                         onClick={() => { setSelectedOrderId(Number(o.id)); setOrderDrawerOpen(true); }}
                       >
                         <td className="p-3 font-mono text-xs font-medium">{String(o.order_number)}</td>
-                        <td className="p-3 text-xs text-muted-foreground">{new Date(String(o.order_date)).toLocaleDateString()}</td>
+                        <td className="p-3 text-xs text-muted-foreground">{fmtDate(o.order_date)}</td>
                         <td className="p-3"><StatusBadge status={String(o.status)} /></td>
                         <td className="p-3"><PaymentBadge status={String(o.payment_status)} /></td>
                         <td className="p-3"><ChannelBadge channel={String(o.order_channel)} /></td>

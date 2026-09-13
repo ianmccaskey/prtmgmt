@@ -35,6 +35,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, Factory, Receipt, RefreshCw, Stamp, Trash2, Wallet as WalletIcon } from 'lucide-react';
+import { fmtDate } from '@/lib/fmtDate';
 
 type VendorBalance = {
   last_settlement_id: number | null; last_settled_at: string | null;
@@ -759,7 +760,7 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
             <TableBody>
               {expenses.map(e => (
                 <TableRow key={e.id}>
-                  <TableCell className="whitespace-nowrap">{new Date(e.expense_date).toLocaleDateString()}</TableCell>
+                  <TableCell className="whitespace-nowrap">{fmtDate(e.expense_date)}</TableCell>
                   <TableCell><Badge variant="outline" className="text-xs">{expenseCategoryLabel(e.category)}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">{e.description}</TableCell>
                   <TableCell className="whitespace-nowrap">{e.payee_name || '—'}</TableCell>
@@ -817,7 +818,7 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
                 {settledExpenses.map(e => (
                   <div key={e.id} className="flex items-center justify-between gap-2 text-sm border-b border-border/40 pb-1 last:border-0">
                     <span className="text-muted-foreground min-w-0 truncate">
-                      {new Date(e.expense_date).toLocaleDateString()} · {expenseCategoryLabel(e.category)} · {e.description}
+                      {fmtDate(e.expense_date)} · {expenseCategoryLabel(e.category)} · {e.description}
                       {e.payee_name ? ` · for ${e.payee_name}` : ''}
                     </span>
                     <span className="flex items-center gap-2 shrink-0">

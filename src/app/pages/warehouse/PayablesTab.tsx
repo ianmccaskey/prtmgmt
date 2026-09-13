@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { dbText } from '@/lib/dbText';
 import { DollarSign, ChevronDown, ChevronRight, HandCoins } from 'lucide-react';
+import { fmtDate } from '@/lib/fmtDate';
 
 type Balance = {
   warehouse_id: number; warehouse_name: string;
@@ -94,7 +95,7 @@ export function PayablesTab({ warehouseId }: { warehouseId: string }) {
                             {shipmentRows.map(o => (
                               <tr key={o.shipment_id} className="border-t hover:bg-white">
                                 <td className="px-6 py-2 font-mono text-blue-600">{o.order_number || `#${o.shipment_id}`}</td>
-                                <td className="px-4 py-2 text-slate-500">{o.shipped_date ? new Date(o.shipped_date).toLocaleDateString() : '—'}</td>
+                                <td className="px-4 py-2 text-slate-500">{fmtDate(o.shipped_date)}</td>
                                 <td className="px-4 py-2 text-slate-500">{o.carrier || '—'}{o.tracking_number ? ` · ${dbText(o.tracking_number)}` : ''}</td>
                                 <td className="px-4 py-2 text-right">{o.total_kits}</td>
                                 <td className="px-4 py-2 text-right font-medium">${Number(o.internal_shipping_cost_usd).toFixed(2)}</td>

@@ -16,6 +16,7 @@ import { exportCSV } from '@/app/pages/reports/dateRangeUtils';
 import listWarehouseBalances from '@/actions/commissions/listWarehouseBalances';
 import listWarehouseCommissionShipments from '@/actions/commissions/listWarehouseCommissionShipments';
 import recordCommissionPayment from '@/actions/commissions/recordCommissionPayment';
+import { fmtDate } from '@/lib/fmtDate';
 
 type WarehouseBalance = {
   warehouse_id: number; warehouse_name: string;
@@ -169,7 +170,7 @@ export function WarehouseCommissionsTab() {
               {shipmentList.map(s => (
                 <TableRow key={s.shipment_id}>
                   <TableCell className="font-medium">{s.order_number}</TableCell>
-                  <TableCell>{s.shipped_date ? new Date(s.shipped_date).toLocaleDateString() : '—'}</TableCell>
+                  <TableCell>{fmtDate(s.shipped_date)}</TableCell>
                   <TableCell><Badge variant="outline">{s.carrier || '—'}</Badge></TableCell>
                   <TableCell className="text-right">{s.total_kits}</TableCell>
                   <TableCell className="text-right font-medium">{money(s.internal_shipping_cost_usd)}</TableCell>

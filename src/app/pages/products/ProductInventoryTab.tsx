@@ -5,6 +5,7 @@ import getProductInventoryAction from '@/actions/products/getProductInventory';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { fmtDate } from '@/lib/fmtDate';
 
 type InventoryRow = {
   id: number; quantity_on_hand: number; quantity_reserved: number; quantity_available: number;
@@ -57,7 +58,7 @@ export function ProductInventoryTab({ productId }: { productId: number }) {
               {rows.map(r => (
                 <tr key={r.id} className={`border-b hover:bg-slate-50 ${r.quantity_available === 0 ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-2 font-mono">{r.batch_number}</td>
-                  <td className="px-4 py-2 text-slate-600">{r.manufacture_date ? new Date(r.manufacture_date).toLocaleDateString() : '—'}</td>
+                  <td className="px-4 py-2 text-slate-600">{fmtDate(r.manufacture_date)}</td>
                   <td className="px-4 py-2"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${QC_STATUS_COLORS[r.qc_status] || 'bg-slate-100 text-slate-600'}`}>{r.qc_status}</span></td>
                   <td className="px-4 py-2 text-slate-600">{r.warehouse_name}</td>
                   <td className="px-4 py-2 text-right font-medium">{r.quantity_on_hand}</td>

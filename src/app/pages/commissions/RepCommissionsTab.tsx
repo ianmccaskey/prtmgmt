@@ -19,6 +19,7 @@ import recordCommissionPayment from '@/actions/commissions/recordCommissionPayme
 import listRepWalletReceipts from '@/actions/commissions/listRepWalletReceipts';
 import { NETWORK_LABELS } from '@/lib/cryptoAssets';
 import { Wallet as WalletIcon } from 'lucide-react';
+import { fmtDate } from '@/lib/fmtDate';
 
 type RepBalance = {
   sales_rep_user_profile_id: number; display_name: string;
@@ -271,7 +272,7 @@ export function RepCommissionsTab({ division }: { division: string }) {
               {orderList.map(o => (
                 <TableRow key={o.sales_order_id}>
                   <TableCell className="font-medium">{o.order_number}</TableCell>
-                  <TableCell>{new Date(o.order_date).toLocaleDateString()}</TableCell>
+                  <TableCell>{fmtDate(o.order_date)}</TableCell>
                   <TableCell>{o.customer_name}</TableCell>
                   <TableCell><Badge variant="outline">{o.status}</Badge></TableCell>
                   <TableCell className="text-right">{money(o.total_usd)}</TableCell>

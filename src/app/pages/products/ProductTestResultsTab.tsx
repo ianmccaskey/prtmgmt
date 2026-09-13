@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { ExternalLink } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { fmtDate } from '@/lib/fmtDate';
 
 type TestResult = {
   id: number; batch_id: number; test_type: string; test_date: string; lab_name: string;
@@ -95,7 +96,7 @@ export function ProductTestResultsTab({ productId }: { productId: number }) {
                   <tr key={r.id} className="border-b hover:bg-slate-50">
                     <td className="px-4 py-2 font-mono text-sm">{r.batch_number}</td>
                     <td className="px-4 py-2"><Badge variant="outline" className="text-xs">{TEST_TYPE_LABEL[r.test_type] || r.test_type}</Badge></td>
-                    <td className="px-4 py-2 text-slate-600">{r.test_date ? new Date(r.test_date).toLocaleDateString() : '—'}</td>
+                    <td className="px-4 py-2 text-slate-600">{fmtDate(r.test_date)}</td>
                     <td className="px-4 py-2 text-slate-600">{r.lab_name || '—'}</td>
                     <td className="px-4 py-2 text-right font-medium">{r.result_value != null ? `${r.result_value} ${r.result_units || ''}` : (r.notes || '—')}</td>
                     <td className="px-4 py-2 text-right text-slate-500">{r.spec_min != null ? `${r.spec_min}` : ''}–{r.spec_max != null ? `${r.spec_max}` : ''} {r.result_units}</td>

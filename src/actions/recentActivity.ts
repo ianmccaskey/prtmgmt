@@ -4,6 +4,10 @@ export function getRecentActivity() {
   return action('getRecentActivity', 'SQL', {
     datasourceName: 'Peptide Ops DB',
     query: `
+      -- Date-only columns are shifted to NOON UTC (not midnight) before the
+      -- timestamptz cast: midnight UTC renders as the previous day in any
+      -- US timezone once the client converts to local time. Noon stays on
+      -- the same calendar day from UTC-11 to UTC+11.
       SELECT * FROM (
         SELECT
           'order' AS record_type,
@@ -12,7 +16,7 @@ export function getRecentActivity() {
           c.full_name AS customer_name,
           so.status,
           so.total_usd AS amount_usd,
-          so.order_date::timestamptz AS event_at
+          (so.order_date + interval '12 hours')::timestamptz AS event_at
         FROM sales_orders so
         JOIN customers c ON c.id = so.customer_id
         UNION ALL
@@ -23,7 +27,7 @@ export function getRecentActivity() {
           c.full_name AS customer_name,
           sout.status,
           sout.internal_shipping_cost_usd AS amount_usd,
-          sout.shipped_date::timestamptz AS event_at
+          (sout.shipped_date + interval '12 hours')::timestamptz AS event_at
         FROM shipments_outbound sout
         JOIN sales_orders so ON so.id = sout.sales_order_id
         JOIN customers c ON c.id = so.customer_id
@@ -36,7 +40,7 @@ export function getRecentActivity() {
           f.name AS customer_name,
           si.status,
           si.declared_value AS amount_usd,
-          COALESCE(si.arrival_date::timestamptz, NOW()) AS event_at
+          COALESCE((si.arrival_date + interval '12 hours')::timestamptz, NOW()) AS event_at
         FROM shipments_inbound si
         JOIN factories f ON f.id = si.factory_id
       ) combined

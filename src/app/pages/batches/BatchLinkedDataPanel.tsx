@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ExternalLink } from 'lucide-react';
+import { fmtDate } from '@/lib/fmtDate';
 
 export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
   const navigate = useNavigate();
@@ -56,7 +57,7 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
                     <td className="px-4 py-2 text-right">{s.quantity_shipped}</td>
                     <td className="px-4 py-2 text-right">{s.quantity_received ?? '—'}</td>
                     <td className="px-4 py-2"><Badge variant="outline" className="text-xs">{s.status}</Badge></td>
-                    <td className="px-4 py-2 text-slate-600">{s.arrival_date ? new Date(s.arrival_date).toLocaleDateString() : '—'}</td>
+                    <td className="px-4 py-2 text-slate-600">{fmtDate(s.arrival_date)}</td>
                   </tr>
                 ))}
                 {shipRows.length === 0 && <tr><td colSpan={7} className="text-center py-4 text-slate-400">No inbound shipments</td></tr>}
@@ -86,7 +87,7 @@ export function BatchLinkedDataPanel({ batchId }: { batchId: number }) {
                   <tr key={o.order_id} className="border-b hover:bg-slate-50 cursor-pointer" onClick={() => navigate('/orders')}>
                     <td className="px-4 py-2 font-mono text-blue-600">{o.order_number}</td>
                     <td className="px-4 py-2 text-slate-700">{o.customer_name}</td>
-                    <td className="px-4 py-2 text-slate-600">{o.order_date ? new Date(o.order_date).toLocaleDateString() : '—'}</td>
+                    <td className="px-4 py-2 text-slate-600">{fmtDate(o.order_date)}</td>
                     <td className="px-4 py-2 text-right">{o.qty_allocated}</td>
                     <td className="px-4 py-2"><Badge variant="outline" className="text-xs">{o.status}</Badge></td>
                   </tr>

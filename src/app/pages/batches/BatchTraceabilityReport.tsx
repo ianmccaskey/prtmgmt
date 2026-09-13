@@ -1,5 +1,6 @@
 import React from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { fmtDate } from '@/lib/fmtDate';
 import { useLoadAction } from '@uibakery/data';
 import listBatchTestsAction from '@/actions/batches/listBatchTests';
 import getBatchInventoryAction from '@/actions/batches/getBatchInventory';
@@ -67,7 +68,8 @@ export function BatchTraceabilityReport({ batch, onClose }: { batch: Batch; onCl
   const inboundRows = asRows<Row>(inbound);
   const transferRows = asRows<Row>(transfers);
 
-  const fmtDate = (v: string | number | boolean | null) => (v ? new Date(String(v)).toLocaleDateString() : '—');
+  // Timestamps (created_at, initiated_at) — local-time conversion is correct.
+  const fmtStamp = (v: string | number | boolean | null) => (v ? new Date(String(v)).toLocaleDateString() : '—');
 
   return (
     <Dialog open onOpenChange={v => !v && onClose()}>
@@ -149,7 +151,7 @@ export function BatchTraceabilityReport({ batch, onClose }: { batch: Batch; onCl
             <SimpleTable
               headers={['Date', 'Warehouse', 'Qty', 'Reason', 'Notes']}
               rows={woRows.map(r => [
-                fmtDate(r.created_at), String(r.warehouse_name || '—'),
+                fmtStamp(r.created_at), String(r.warehouse_name || '—'),
                 Number(r.quantity || 0), String(r.reason || '—'), String(r.notes || '—'),
               ])}
             />
@@ -159,7 +161,7 @@ export function BatchTraceabilityReport({ batch, onClose }: { batch: Batch; onCl
             <SimpleTable
               headers={['Initiated', 'From', 'To', 'Qty', 'Status']}
               rows={transferRows.map(r => [
-                fmtDate(r.initiated_at), String(r.source_warehouse_name || '—'),
+                fmtStamp(r.initiated_at), String(r.source_warehouse_name || '—'),
                 String(r.destination_warehouse_name || '—'), Number(r.quantity || 0), String(r.status || '—'),
               ])}
             />

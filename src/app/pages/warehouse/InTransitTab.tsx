@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Package } from 'lucide-react';
 import { ReceiveShipmentDialog } from '@/app/pages/logistics/ReceiveShipmentDialog';
+import { fmtDate } from '@/lib/fmtDate';
 
 type InTransitRow = {
   id: number; shipment_id: number; product_id: number; batch_id: number;
@@ -67,7 +68,7 @@ export function InTransitTab({ warehouseId }: Props) {
                     <td className="px-4 py-2 font-mono text-blue-600">{r.reference_number}</td>
                     <td className="px-4 py-2 text-right">{r.quantity_shipped}</td>
                     <td className="px-4 py-2 text-right text-green-600">{r.quantity_received ?? '—'}</td>
-                    <td className="px-4 py-2 text-slate-600 text-xs">{r.expected_arrival_date ? new Date(r.expected_arrival_date).toLocaleDateString() : r.arrival_date ? new Date(r.arrival_date).toLocaleDateString() : '—'}</td>
+                    <td className="px-4 py-2 text-slate-600 text-xs">{r.expected_arrival_date ? fmtDate(r.expected_arrival_date) : fmtDate(r.arrival_date)}</td>
                     <td className="px-4 py-2"><Badge variant="outline" className="text-xs">{r.shipment_status}</Badge></td>
                     {canReceive && (
                       <td className="px-4 py-2 text-right">

@@ -17,6 +17,7 @@ import getRefundStats from '@/actions/orders/getRefundStats';
 import markRefundSent from '@/actions/orders/markRefundSent';
 import markRefundVerified from '@/actions/orders/markRefundVerified';
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
+import { fmtDate } from '@/lib/fmtDate';
 
 type RefundTask = {
   id: number; order_number: string; customer_name: string;
@@ -201,7 +202,7 @@ export function RefundsTab() {
                     <td className="p-3 max-w-[180px] truncate text-muted-foreground" title={task.reason}>{task.reason}</td>
                     <td className="p-3 text-muted-foreground">{task.assignee_name || '—'}</td>
                     <td className={`p-3 text-xs ${dueDateClass(task)}`}>
-                      {task.due_date ? new Date(task.due_date).toLocaleDateString() : '—'}
+                      {fmtDate(task.due_date)}
                       {task.status === 'owed' && Number(task.days_overdue) > 0 && <span className="ml-1">({task.days_overdue}d overdue)</span>}
                     </td>
                     <td className="p-3">

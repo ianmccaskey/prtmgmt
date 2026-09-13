@@ -15,6 +15,7 @@ import { BatchLinkedDataPanel } from '@/app/pages/batches/BatchLinkedDataPanel';
 import { BatchWriteOffPanel } from '@/app/pages/batches/BatchWriteOffPanel';
 import { BatchTraceabilityReport } from '@/app/pages/batches/BatchTraceabilityReport';
 import { useAppUser } from '@/app/AppContext';
+import { fmtDate } from '@/lib/fmtDate';
 
 type Batch = {
   id: number; batch_number: string; product_id: number; product_name: string; sku: string;
@@ -79,7 +80,7 @@ export function BatchDetailPage() {
       {/* Quick metadata strip (cost is admin-only) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Manufacture Date', val: b.manufacture_date ? new Date(b.manufacture_date).toLocaleDateString() : '—' },
+          { label: 'Manufacture Date', val: fmtDate(b.manufacture_date) },
           { label: 'Overall Purity', val: b.overall_purity_pct != null ? `${b.overall_purity_pct}%` : '—' },
           ...((isAdmin || isLogistics) ? [{ label: 'Effective Cost', val: `$${effectiveCost.toFixed(2)} ${b.cost_override != null ? '(override)' : '(standard)'}` }] : []),
           { label: 'Notes', val: b.notes || '—' },

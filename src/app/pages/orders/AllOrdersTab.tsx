@@ -16,6 +16,7 @@ import { useMutateAction } from '@uibakery/data';
 import { usePagination, PaginationFooter } from '@/components/Paginated';
 import { NewOrderForm } from './NewOrderForm';
 import { OrderDetailDrawer } from './OrderDetailDrawer';
+import { fmtDate } from '@/lib/fmtDate';
 
 /** Inline transitions allowed straight from the table row (rest go through flows/drawer). */
 const INLINE_NEXT: Record<string, string[]> = {
@@ -160,7 +161,7 @@ export function AllOrdersTab() {
                       </div>
                       {order.customer_handle && <p className="text-xs text-muted-foreground">{order.customer_handle}</p>}
                     </td>
-                    <td className="p-3 text-muted-foreground text-xs whitespace-nowrap hidden md:table-cell">{new Date(order.order_date).toLocaleDateString()}</td>
+                    <td className="p-3 text-muted-foreground text-xs whitespace-nowrap hidden md:table-cell">{fmtDate(order.order_date)}</td>
                     <td className="p-3" onClick={e => e.stopPropagation()}>
                       {!readOnlyOrders && INLINE_NEXT[order.status] ? (
                         <Select value={order.status} onValueChange={v => v !== order.status && inlineStatusChange(order, v)}>
