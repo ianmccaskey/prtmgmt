@@ -15,7 +15,7 @@
 export function fmtDate(v: unknown): string {
   if (v == null || v === '') return '—';
   const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return new Date(String(v)).toLocaleDateString();
+  if (!m) return new Date(typeof v === 'number' ? v : String(v)).toLocaleDateString();
   return `${Number(m[2])}/${Number(m[3])}/${m[1]}`;
 }
 
