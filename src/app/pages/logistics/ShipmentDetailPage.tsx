@@ -154,8 +154,19 @@ export function ShipmentDetailPage() {
   const batchList = asRows<PickBatch>(allBatches);
   const pickWarehouseList = asRows<PickWarehouse>(pickWarehouses);
   const addressList = asRows<PickAddress>(receiveAddresses);
-  // Lines are editable until received; a delivered shipment is history.
-  const canEditLines = !!detail && detail.status !== 'delivered';
+  // Per-row edit/remove is gated by the ROW being un-received (matching
+  // the SQL guards) — parent status doesn't matter, so a shipment flipped
+  // to delivered with un-received lines can still be corrected. Only
+  // ADDING a line is blocked on delivered shipments: a new line there
+  // would be invisible to the receive flows (they filter delivered) and
+  // strand immediately.
+  const canAddLines = !!detail && detail.status !== 'delivered';
+  const showActionsCol = itemList.some(i => i.quantity_received == null);
+  // Set when an edit/remove hit a line that was received mid-flight (the
+  // guarded SQL refused with 0 rows) — the reload shows the truth, this
+  // explains it.
+  const [staleNotice, setStaleNotice] = useState('');
+  const editQtyValid = Number(editQty) > 0 && Number.isInteger(Number(editQty));
 
   const startEdit = (item: ShipmentItem) => {
     setEditingId(item.id);
@@ -169,7 +180,8 @@ export function ShipmentDetailPage() {
     if (!Number.isInteger(qty) || qty <= 0) return;
     setSavingLine(true);
     try {
-      await doUpdateItem({ id: editingId, quantity_shipped: qty, expected_arrival_date: editDate || '' });
+      const rows = await doUpdateItem({ id: editingId, quantity_shipped: qty, expected_arrival_date: editDate || '' }) as unknown as { id: number }[];
+      setStaleNotice(Array.isArray(rows) && rows.length > 0 ? '' : 'That line was received while you were editing — no changes applied.');
       setEditingId(null);
       reloadItems();
     } finally {
@@ -181,7 +193,8 @@ export function ShipmentDetailPage() {
     if (!removeFor) return;
     setSavingLine(true);
     try {
-      await doDeleteItem({ id: removeFor.id });
+      const rows = await doDeleteItem({ id: removeFor.id }) as unknown as { id: number }[];
+      setStaleNotice(Array.isArray(rows) && rows.length > 0 ? '' : 'That line was received while you were editing — it was not removed.');
       setRemoveFor(null);
       reloadItems();
     } finally {
@@ -319,12 +332,13 @@ export function ShipmentDetailPage() {
             <CardTitle className="text-sm flex items-center gap-2">
               <Package className="h-4 w-4" /> Line Items
             </CardTitle>
-            {canEditLines && (
+            {canAddLines && (
               <Button variant="outline" size="sm" onClick={() => { setNewLine(emptyNewLine); setLineError(''); setShowAddLine(true); }} className="flex items-center gap-1">
                 <Plus className="h-3 w-3" /> Add Line
               </Button>
             )}
           </div>
+          {staleNotice && <p className="text-xs text-amber-700 mt-1">{staleNotice}</p>}
         </CardHeader>
         <CardContent>
           <Table>
@@ -339,7 +353,7 @@ export function ShipmentDetailPage() {
                 <TableHead>Discrepancy Notes</TableHead>
                 <TableHead>Expected Arrival</TableHead>
                 <TableHead>Received At</TableHead>
-                {canEditLines && <TableHead className="w-20"></TableHead>}
+                {showActionsCol && <TableHead className="w-20"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -396,13 +410,13 @@ export function ShipmentDetailPage() {
                   <TableCell className="text-xs text-gray-500">
                     {item.received_at ? new Date(item.received_at).toLocaleDateString() : '—'}
                   </TableCell>
-                  {canEditLines && (
+                  {showActionsCol && (
                     <TableCell>
                       {item.quantity_received == null ? (
                         editingId === item.id ? (
                           <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" disabled={savingLine || !(Number(editQty) > 0)}
-                              onClick={saveEdit} title="Save">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" disabled={savingLine || !editQtyValid}
+                              onClick={saveEdit} title={editQtyValid ? 'Save' : 'Quantity must be a positive whole number'}>
                               <Check className="h-4 w-4 text-green-600" />
                             </Button>
                             <Button variant="ghost" size="icon" className="h-7 w-7" disabled={savingLine}
