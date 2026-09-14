@@ -94,6 +94,7 @@ export function ShipmentDetailPage() {
   const [docUrl, setDocUrl] = useState('');
   const [savingDoc, setSavingDoc] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
+  const [statusNotice, setStatusNotice] = useState('');
 
   // Line editing (pre-receipt only — received rows are inventory history)
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -140,8 +141,13 @@ export function ShipmentDetailPage() {
 
   const handleStatusChange = async (newStatus: string) => {
     setStatusChanging(true);
+    setStatusNotice('');
     try {
-      await updateStatus({ id: Number(id), status: newStatus });
+      const rows = await updateStatus({ id: Number(id), status: newStatus }) as unknown as { id: number }[];
+      if (newStatus === 'delivered' && (!Array.isArray(rows) || rows.length === 0)) {
+        // The action refuses a manual 'delivered' while lines are un-received.
+        setStatusNotice('Not marked delivered — this shipment still has un-received lines. Receive them under Warehouse → In-Transit (or the Receive Shipment button); the status flips to Delivered automatically when the last line is received.');
+      }
       reloadShipment();
     } finally {
       setStatusChanging(false);
@@ -283,6 +289,7 @@ export function ShipmentDetailPage() {
           </Select>
         </div>
       </div>
+      {statusNotice && <p className="text-xs text-amber-700 -mt-3">{statusNotice}</p>}
 
       {/* Metadata */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
