@@ -9,6 +9,8 @@ import listProductCategories from '@/actions/settings/listProductCategories';
 import createStockHold from '@/actions/warehouse/createStockHold';
 import releaseStockHold from '@/actions/warehouse/releaseStockHold';
 import listStockHolds from '@/actions/warehouse/listStockHolds';
+import archiveInventoryRow from '@/actions/warehouse/archiveInventoryRow';
+import unarchiveInventoryRow from '@/actions/warehouse/unarchiveInventoryRow';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -18,7 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Hand } from 'lucide-react';
+import { Search, Hand, Archive, ArchiveRestore } from 'lucide-react';
 import { fmtDate } from '@/lib/fmtDate';
 
 type StockHold = {
@@ -31,6 +33,7 @@ type InventoryRow = {
   batch_number: string; qc_status: string; manufacture_date: string;
   warehouse_name: string; quantity_on_hand: number; quantity_reserved: number; quantity_available: number;
   in_transit_inbound: number; next_arrival_date: string; product_total_available: number;
+  archived_at: string | null;
 };
 
 const QC_COLORS: Record<string, string> = {
@@ -52,7 +55,28 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
   const [inventory, loading, , reloadInv] = useLoadAction(listInventoryAction, [warehouseId, search, category, qcStatus, productId, batchId], {
     warehouse_id: warehouseId, search, category, qc_status: qcStatus, product_id: productId, batch_id: batchId,
   });
-  const rows: InventoryRow[] = asRows(inventory);
+  const allRows: InventoryRow[] = asRows(inventory);
+
+  // Exhausted-batch archive: batches are finite — a 0/0 row with nothing
+  // inbound will never refill, so it can be tucked away. Archived rows
+  // stay one toggle away (count always visible) and restore in one
+  // click; the DB auto-restores any archived row that regains stock.
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedCount = allRows.filter(r => r.archived_at).length;
+  const rows = showArchived ? allRows : allRows.filter(r => !r.archived_at);
+  const [doArchive] = useMutateAction(archiveInventoryRow);
+  const [doUnarchive] = useMutateAction(unarchiveInventoryRow);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const isArchivable = (r: InventoryRow) =>
+    !r.archived_at && Number(r.quantity_on_hand) === 0 && Number(r.quantity_reserved) === 0 && Number(r.in_transit_inbound) === 0;
+  const archiveRow = async (r: InventoryRow) => {
+    setArchiveBusy(true);
+    try { await doArchive({ id: r.id }); reloadInv(); } finally { setArchiveBusy(false); }
+  };
+  const unarchiveRow = async (r: InventoryRow) => {
+    setArchiveBusy(true);
+    try { await doUnarchive({ id: r.id }); reloadInv(); } finally { setArchiveBusy(false); }
+  };
 
   // Manual stock holds: reserve without a sales order. Availability math
   // everywhere already subtracts reserved, so a hold protects stock from
@@ -145,6 +169,13 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
           <Button size="sm" variant="outline" className="h-8" onClick={() => setHoldsOpen(true)}>
             <Hand className="h-3.5 w-3.5 mr-1" /> Holds{holds.length > 0 ? ` (${holds.length})` : ''}
           </Button>
+          {(archivedCount > 0 || showArchived) && (
+            <Button size="sm" variant={showArchived ? 'secondary' : 'outline'} className="h-8"
+              title="Exhausted batch rows tucked out of the list — click to show them"
+              onClick={() => setShowArchived(v => !v)}>
+              <Archive className="h-3.5 w-3.5 mr-1" /> Archived ({archivedCount})
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="p-0">
@@ -152,9 +183,9 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
           {/* Mobile: stacked cards */}
           <div className="sm:hidden divide-y">
             {rows.map(r => {
-              const isLowStock = Number(r.product_total_available) <= Number(r.low_stock_threshold);
+              const isLowStock = !r.archived_at && Number(r.product_total_available) <= Number(r.low_stock_threshold);
               return (
-                <div key={r.id} className={`p-3 space-y-2 ${isLowStock ? 'bg-red-50/40' : ''}`}>
+                <div key={r.id} className={`p-3 space-y-2 ${r.archived_at ? 'opacity-50' : isLowStock ? 'bg-red-50/40' : ''}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="font-medium text-slate-800 text-sm">{r.product_name}</div>
@@ -164,6 +195,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
                   </div>
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     {r.warehouse_name}
+                    {r.archived_at && <Badge variant="outline" className="text-xs text-slate-500">Archived</Badge>}
                     {isLowStock && <Badge className="text-xs bg-red-100 text-red-700">Low Stock</Badge>}
                   </div>
                   <div className="grid grid-cols-4 gap-1 text-center">
@@ -192,6 +224,16 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
                       <Hand className="h-3 w-3 mr-1" /> Hold Stock
                     </Button>
                   )}
+                  {isArchivable(r) && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs text-slate-500" disabled={archiveBusy} onClick={() => archiveRow(r)}>
+                      <Archive className="h-3 w-3 mr-1" /> Archive
+                    </Button>
+                  )}
+                  {r.archived_at && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs text-slate-500" disabled={archiveBusy} onClick={() => unarchiveRow(r)}>
+                      <ArchiveRestore className="h-3 w-3 mr-1" /> Restore
+                    </Button>
+                  )}
                 </div>
               );
             })}
@@ -216,12 +258,13 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
               </thead>
               <tbody>
                 {rows.map(r => {
-                  const isLowStock = Number(r.product_total_available) <= Number(r.low_stock_threshold);
+                  const isLowStock = !r.archived_at && Number(r.product_total_available) <= Number(r.low_stock_threshold);
                   return (
-                    <tr key={r.id} className={`border-b hover:bg-slate-50 ${isLowStock ? 'bg-red-50/40' : ''}`}>
+                    <tr key={r.id} className={`border-b hover:bg-slate-50 ${r.archived_at ? 'opacity-50' : isLowStock ? 'bg-red-50/40' : ''}`}>
                       <td className="px-3 py-2">
                         <div className="font-medium text-slate-800">{r.product_name}</div>
                         <div className="text-xs text-slate-400">{r.sku}</div>
+                        {r.archived_at && <Badge variant="outline" className="text-xs mt-0.5 text-slate-500">Archived</Badge>}
                         {isLowStock && <Badge className="text-xs bg-red-100 text-red-700 mt-0.5">Low Stock</Badge>}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">{r.batch_number}</td>
@@ -236,6 +279,19 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
                         {r.quantity_available > 0 && (
                           <Button size="sm" variant="ghost" className="h-7 text-xs" title="Reserve stock without an order" onClick={() => openHold(r)}>
                             <Hand className="h-3 w-3 mr-1" /> Hold
+                          </Button>
+                        )}
+                        {isArchivable(r) && (
+                          <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500" disabled={archiveBusy}
+                            title="Batch exhausted, nothing inbound — tuck this row out of the list (restorable any time)"
+                            onClick={() => archiveRow(r)}>
+                            <Archive className="h-3 w-3 mr-1" /> Archive
+                          </Button>
+                        )}
+                        {r.archived_at && (
+                          <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500" disabled={archiveBusy}
+                            title="Put this row back in the inventory list" onClick={() => unarchiveRow(r)}>
+                            <ArchiveRestore className="h-3 w-3 mr-1" /> Restore
                           </Button>
                         )}
                       </td>

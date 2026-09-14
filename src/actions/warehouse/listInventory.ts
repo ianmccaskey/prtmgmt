@@ -8,6 +8,7 @@ function listInventory() {
         i.id, i.product_id, i.batch_id, i.warehouse_id,
         i.quantity_on_hand, i.quantity_reserved,
         i.quantity_on_hand - i.quantity_reserved AS quantity_available,
+        i.archived_at,
         p.sku, p.name AS product_name, p.category, p.list_price, p.low_stock_threshold,
         pb.batch_number, pb.qc_status, pb.manufacture_date,
         w.name AS warehouse_name,
