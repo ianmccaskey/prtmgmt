@@ -18,7 +18,7 @@ type Batch = { id: number; product_id: number; batch_number: string; qty_remaini
 type InventoryRow = { id: number; warehouse_name: string; warehouse_id: number; quantity_on_hand: number; quantity_reserved: number; quantity_available: number };
 
 // Must match the inventory_writeoffs.reason CHECK constraint.
-const WRITEOFF_REASONS = ['damaged', 'expired', 'lost', 'qc_hold', 'customer_replacement', 'other'];
+const WRITEOFF_REASONS = ['damaged', 'expired', 'lost', 'qc_hold', 'customer_replacement', 'test_kit', 'other'];
 
 export function BatchWriteOffPanel({ batch, onRefresh }: { batch: Batch; onRefresh: () => void }) {
   const { profileId, isWarehouse, assignedWarehouseId } = useAppUser();

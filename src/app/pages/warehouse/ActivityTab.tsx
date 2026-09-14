@@ -29,7 +29,7 @@ type InventoryRow = { id: number; product_name: string; sku: string; batch_numbe
 const EVENT_TYPES = ['outbound_pick', 'receipt_delivered', 'receipt_discrepancy', 'transfer_out_initiated', 'transfer_in_received', 'transfer_cancelled', 'count_correction', 'writeoff', 'reservation_released'];
 
 // Must match the inventory_writeoffs.reason CHECK constraint.
-const WRITEOFF_REASONS = ['damaged', 'expired', 'lost', 'qc_hold', 'customer_replacement', 'other'];
+const WRITEOFF_REASONS = ['damaged', 'expired', 'lost', 'qc_hold', 'customer_replacement', 'test_kit', 'other'];
 
 type Props = { warehouseId: string; warehouseList: { id: number; name: string }[] };
 
