@@ -67,11 +67,18 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
   const [doArchive] = useMutateAction(archiveInventoryRow);
   const [doUnarchive] = useMutateAction(unarchiveInventoryRow);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveNotice, setArchiveNotice] = useState('');
   const isArchivable = (r: InventoryRow) =>
     !r.archived_at && Number(r.quantity_on_hand) === 0 && Number(r.quantity_reserved) === 0 && Number(r.in_transit_inbound) === 0;
   const archiveRow = async (r: InventoryRow) => {
     setArchiveBusy(true);
-    try { await doArchive({ id: r.id }); reloadInv(); } finally { setArchiveBusy(false); }
+    try {
+      const res = await doArchive({ id: r.id }) as unknown as { id: number }[];
+      // Guarded SQL refuses when stock/reservations/inbound appeared mid-click.
+      setArchiveNotice(Array.isArray(res) && res.length > 0 ? ''
+        : `${r.product_name} (${r.batch_number}) was not archived — it has stock, reservations, or an inbound shipment again.`);
+      reloadInv();
+    } finally { setArchiveBusy(false); }
   };
   const unarchiveRow = async (r: InventoryRow) => {
     setArchiveBusy(true);
@@ -177,6 +184,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
             </Button>
           )}
         </div>
+        {archiveNotice && <p className="text-xs text-amber-700 mt-1">{archiveNotice}</p>}
       </CardHeader>
       <CardContent className="p-0">
         {loading ? <div className="p-4 space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div> : (<>
