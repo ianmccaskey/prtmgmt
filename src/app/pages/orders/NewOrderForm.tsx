@@ -20,6 +20,8 @@ import { Ban, Check, Copy, Crown, ChevronsUpDown, Plus, Search, Trash2 } from 'l
 import searchCustomers from '@/actions/orders/searchCustomers';
 import searchProducts from '@/actions/orders/searchProducts';
 import getReceiveWallets from '@/actions/orders/getReceiveWallets';
+import getAppSetting from '@/actions/settings/getAppSetting';
+import { getTxDeposit } from '@/lib/moralis';
 import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
 import getFreeOrderReasons from '@/actions/orders/getFreeOrderReasons';
 import listSalesReps from '@/actions/orders/listSalesReps';
@@ -317,6 +319,15 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // order can be confirmed in the same pass (no quote round-trip).
   const [payVerified, setPayVerified] = useState(true);
   const [copiedWallet, setCopiedWallet] = useState(false);
+  // On-chain TX check before the order exists: does the hash move ≥ the
+  // order total of the selected asset into the selected receive wallet?
+  // Advisory — the result never blocks saving; a full match auto-checks
+  // the "payment received" toggle.
+  const [chainCheck, setChainCheck] = useState<{ state: 'idle' | 'checking' | 'ok' | 'over' | 'short' | 'notfound' | 'error'; msg: string }>({ state: 'idle', msg: '' });
+  const [moralisRaw] = useLoadAction(getAppSetting, [], { key: 'moralis_api_key' });
+  const moralisKey = String(rows<{ value: string }>(moralisRaw)[0]?.value ?? '');
+  const [heliusRaw] = useLoadAction(getAppSetting, [], { key: 'helius_api_key' });
+  const heliusKey = String(rows<{ value: string }>(heliusRaw)[0]?.value ?? '');
   const [newCustOpen, setNewCustOpen] = useState(false);
   const [newCustName, setNewCustName] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
@@ -416,6 +427,40 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
 
   const subtotal = lines.reduce((s, l) => s + (l.product ? l.quantity * l.unit_price : 0), 0);
   const total = Math.max(0, subtotal - Number(discount) + Number(shipping));
+
+  const verifyOnChain = async () => {
+    if (!selectedWallet || !payTx.trim()) return;
+    if (payNetwork !== 'ethereum' && payNetwork !== 'solana') {
+      setChainCheck({ state: 'error', msg: `${NETWORK_LABELS[payNetwork] || payNetwork} can't be checked here — BTC payments verify through the swap flow in the order drawer.` });
+      return;
+    }
+    if (!moralisKey && payNetwork === 'ethereum') {
+      setChainCheck({ state: 'error', msg: 'No Moralis API key configured — add one under Settings → Wallets to enable on-chain checks.' });
+      return;
+    }
+    setChainCheck({ state: 'checking', msg: '' });
+    try {
+      const hit = await getTxDeposit(moralisKey, payAsset, payNetwork, selectedWallet.address, payTx.trim(), heliusKey || null);
+      if (!hit) {
+        setChainCheck({ state: 'notfound', msg: `TX not found on ${NETWORK_LABELS[payNetwork] || payNetwork}, or it doesn't move ${payAsset} into ${selectedWallet.label}. Check the hash, asset, and network.` });
+        return;
+      }
+      const when = hit.at ? ` on ${new Date(hit.at).toLocaleString()}` : '';
+      // Half-cent tolerance so float representation never fails an exact payment.
+      if (hit.amount + 0.005 >= total) {
+        setChainCheck({
+          state: hit.amount > total + 0.005 ? 'over' : 'ok',
+          msg: `Verified: ${hit.amount.toFixed(2)} ${payAsset} arrived in ${selectedWallet.label}${when}` +
+            (hit.amount > total + 0.005 ? ` — $${(hit.amount - total).toFixed(2)} more than the $${total.toFixed(2)} order total.` : ` — covers the $${total.toFixed(2)} order total.`),
+        });
+        setPayVerified(true);
+      } else {
+        setChainCheck({ state: 'short', msg: `On-chain deposit is ${hit.amount.toFixed(2)} ${payAsset}${when} — $${(total - hit.amount).toFixed(2)} SHORT of the $${total.toFixed(2)} order total.` });
+      }
+    } catch (e: unknown) {
+      setChainCheck({ state: 'error', msg: e instanceof Error ? e.message : 'On-chain check failed — try again.' });
+    }
+  };
 
   // Fulfillment-warehouse coverage: demand per product (warehouse lines
   // only) vs each warehouse's sellable stock. Suggested = the warehouse
@@ -604,6 +649,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     setPartial(false); setLines([mkLine()]); setDiscount('0'); setShipping('0'); setNotes('');
     setOverrideNote(''); setShip({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
     setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx('');
+    setChainCheck({ state: 'idle', msg: '' });
     setAddPay(false); setPayVerified(true); setErrors([]); setSalesRepId(''); setFulfillWarehouse('');
   };
 
@@ -952,13 +998,13 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <div><Label className="text-xs">Asset</Label>
-                    <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); }}>
+                    <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); setChainCheck({ state: 'idle', msg: '' }); }}>
                       <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                       <SelectContent>{ASSETS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                   <div><Label className="text-xs">Network</Label>
-                    <Select value={payNetwork} onValueChange={setPayNetwork}>
+                    <Select value={payNetwork} onValueChange={v => { setPayNetwork(v); setChainCheck({ state: 'idle', msg: '' }); }}>
                       <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                       <SelectContent>{(NETWORKS[payAsset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
                     </Select>
@@ -980,7 +1026,26 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                   </p>
                 )}
                 <div><Label className="text-xs">TX Hash (optional)</Label>
-                  <Input placeholder="0x…" value={payTx} onChange={e => setPayTx(e.target.value)} className="h-8" /></div>
+                  <div className="flex gap-2">
+                    <Input placeholder="0x…" value={payTx} onChange={e => { setPayTx(e.target.value); setChainCheck({ state: 'idle', msg: '' }); }} className="h-8" />
+                    <Button type="button" variant="outline" size="sm" className="h-8 shrink-0"
+                      disabled={!payTx.trim() || !selectedWallet || chainCheck.state === 'checking' || total === 0}
+                      title="Look the TX up on chain: does it move at least the order total of this asset into the receive wallet?"
+                      onClick={verifyOnChain}>
+                      {chainCheck.state === 'checking' ? 'Checking…' : 'Verify on Chain'}
+                    </Button>
+                  </div>
+                  {chainCheck.msg && (
+                    <p className={`text-xs mt-1 ${
+                      chainCheck.state === 'ok' ? 'text-green-700'
+                      : chainCheck.state === 'over' ? 'text-green-700'
+                      : chainCheck.state === 'short' ? 'text-red-600'
+                      : chainCheck.state === 'notfound' ? 'text-red-600'
+                      : 'text-amber-700'}`}>
+                      {chainCheck.msg}
+                    </p>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   <Switch checked={payVerified} onCheckedChange={setPayVerified} />
                   <Label className="text-xs">
