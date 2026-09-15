@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { rows, firstRow } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
@@ -324,6 +324,10 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // Advisory — the result never blocks saving; a full match auto-checks
   // the "payment received" toggle.
   const [chainCheck, setChainCheck] = useState<{ state: 'idle' | 'checking' | 'ok' | 'over' | 'short' | 'notfound' | 'error'; msg: string }>({ state: 'idle', msg: '' });
+  // True when payVerified was switched on BY a successful chain check —
+  // lets a later total change revoke that auto-verification without
+  // clobbering a toggle the admin set deliberately.
+  const autoVerifiedRef = useRef(false);
   const [moralisRaw] = useLoadAction(getAppSetting, [], { key: 'moralis_api_key' });
   const moralisKey = String(rows<{ value: string }>(moralisRaw)[0]?.value ?? '');
   const [heliusRaw] = useLoadAction(getAppSetting, [], { key: 'helius_api_key' });
@@ -428,8 +432,24 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const subtotal = lines.reduce((s, l) => s + (l.product ? l.quantity * l.unit_price : 0), 0);
   const total = Math.max(0, subtotal - Number(discount) + Number(shipping));
 
+  // A verified check is a proof about ONE amount — if the order total
+  // changes afterwards, the green banner would vouch for the wrong
+  // number. Reset the check and revoke any auto-set verification.
+  useEffect(() => {
+    setChainCheck(prev => (prev.state === 'idle' ? prev : { state: 'idle', msg: '' }));
+    if (autoVerifiedRef.current) {
+      setPayVerified(false);
+      autoVerifiedRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [total]);
+
   const verifyOnChain = async () => {
     if (!selectedWallet || !payTx.trim()) return;
+    if (payAsset !== 'USDC' && payAsset !== 'USDT') {
+      setChainCheck({ state: 'error', msg: `Only USDC and USDT can be checked here — verify a ${payAsset} payment manually on the explorer.` });
+      return;
+    }
     if (payNetwork !== 'ethereum' && payNetwork !== 'solana') {
       setChainCheck({ state: 'error', msg: `${NETWORK_LABELS[payNetwork] || payNetwork} can't be checked here — BTC payments verify through the swap flow in the order drawer.` });
       return;
@@ -451,9 +471,12 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
         setChainCheck({
           state: hit.amount > total + 0.005 ? 'over' : 'ok',
           msg: `Verified: ${hit.amount.toFixed(2)} ${payAsset} arrived in ${selectedWallet.label}${when}` +
-            (hit.amount > total + 0.005 ? ` — $${(hit.amount - total).toFixed(2)} more than the $${total.toFixed(2)} order total.` : ` — covers the $${total.toFixed(2)} order total.`),
+            (hit.amount > total + 0.005
+              ? ` — $${(hit.amount - total).toFixed(2)} more than the $${total.toFixed(2)} order total. The payment records at the order total; correct it to the actual amount from the order drawer if you want the wallet audit to reconcile to the penny.`
+              : ` — covers the $${total.toFixed(2)} order total.`),
         });
         setPayVerified(true);
+        autoVerifiedRef.current = true;
       } else {
         setChainCheck({ state: 'short', msg: `On-chain deposit is ${hit.amount.toFixed(2)} ${payAsset}${when} — $${(total - hit.amount).toFixed(2)} SHORT of the $${total.toFixed(2)} order total.` });
       }
