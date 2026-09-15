@@ -10,7 +10,7 @@
  * chat); anything else keeps 2 decimals. Discount/shipping lines appear
  * only when non-zero.
  */
-const usd = (n: number) => (Math.abs(n % 1) < 0.005 ? `$${Math.round(n)}` : `$${n.toFixed(2)}`);
+const usd = (n: number) => (Math.abs(n - Math.round(n)) < 0.005 ? `$${Math.round(n)}` : `$${n.toFixed(2)}`);
 
 export const PAYMENT_BLURB =
   'We accept USDC or USDT on ethereum and solana networks. Also BTC with a $5 conversion fee. Please let me know what works for you :)';

@@ -995,7 +995,8 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                     <p className="text-sm text-muted-foreground break-all">{String(order.customer_email || '')} · {String(order.customer_phone || '')}</p>
                     <p className="text-sm font-semibold flex items-center gap-1">
                       Total: ${Number(order.total_usd).toFixed(2)}
-                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Copy the line-item breakdown + payment options for the customer"
+                      <Button variant="ghost" size="icon" className="h-6 w-6" disabled={itemsLoading}
+                        title={itemsLoading ? 'Loading line items…' : 'Copy the line-item breakdown + payment options for the customer'}
                         onClick={() => {
                           const text = buildOrderQuoteText(
                             rows<OrderItemRow>(items).map(i => ({ sku: i.product_sku, quantity: Number(i.quantity), lineTotal: Number(i.line_total_usd) })),
