@@ -238,14 +238,14 @@ export function HomePage() {
             value={fmt(stats.unverified_payments)}
             icon={Clock}
             alert={parseInt(stats.unverified_payments) > 0}
-            href="/orders"
+            href="/orders?focus=unverified_payments"
           />}
           {!isWarehouse && <StatCard
             label="Payments w/ Issues"
             value={fmt(stats.payments_with_issues)}
             icon={XCircle}
             alert={parseInt(stats.payments_with_issues) > 0}
-            href="/orders"
+            href="/orders?focus=payment_issues"
           />}
           {!isWarehouse && <StatCard
             label="Refunds Owed"
@@ -267,7 +267,7 @@ export function HomePage() {
             value={fmt(stats.outbound_issues)}
             icon={XCircle}
             alert={parseInt(stats.outbound_issues) > 0}
-            href="/orders"
+            href="/orders?focus=shipment_issues"
           />
           {!isWarehouse && <StatCard
             label="Warehouse Payables"

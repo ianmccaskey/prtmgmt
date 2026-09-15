@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { rows as asRows } from '@/lib/rows';
 import { useLoadAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
@@ -32,6 +33,14 @@ type Order = {
   free_order_reason_label: string; sales_rep_division?: string | null;
 };
 
+// Dashboard drill-down scopes (?focus=…): definitions live in listOrders,
+// mirroring the dashboardStats card counts.
+const FOCUS_LABELS: Record<string, string> = {
+  unverified_payments: 'orders with unverified incoming payments',
+  payment_issues: 'orders with flagged payment issues',
+  shipment_issues: 'orders with flagged shipment issues',
+};
+
 const STATUS_OPTIONS = ['', 'quote', 'confirmed', 'partially_shipped', 'shipped', 'delivered', 'cancelled'];
 const PAYMENT_OPTIONS = ['', 'unpaid', 'partial_paid', 'paid', 'refunded'];
 const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
@@ -62,6 +71,13 @@ export function AllOrdersTab() {
   const [newOrderOpen, setNewOrderOpen] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focus = FOCUS_LABELS[searchParams.get('focus') || ''] ? String(searchParams.get('focus')) : '';
+  const clearFocus = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('focus');
+    setSearchParams(next, { replace: true });
+  };
 
   const params = {
     search: search || null, status: statusFilter || null,
@@ -69,15 +85,24 @@ export function AllOrdersTab() {
     isFreeOrder: null, dateFrom: dateFrom || null, dateTo: dateTo || null,
     division: divisionFilter || null,
     repScope,
+    focus: focus || null,
   };
 
-  const [orders, loading, , reload] = useLoadAction(listOrders, [search, statusFilter, paymentFilter, channelFilter, divisionFilter, dateFrom, dateTo, repScope], params);
+  const [orders, loading, , reload] = useLoadAction(listOrders, [search, statusFilter, paymentFilter, channelFilter, divisionFilter, dateFrom, dateTo, repScope, focus], params);
 
   const pg = usePagination(asRows<Order>(orders));
   const openDetail = (id: number) => { setSelectedOrderId(id); setDrawerOpen(true); };
 
   return (
     <div className="space-y-4">
+      {/* Dashboard drill-down scope (from a stat-card click) */}
+      {focus && (
+        <div className="flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <span>Showing only <span className="font-medium">{FOCUS_LABELS[focus]}</span> — open an order&apos;s Payments/Shipments tab to resolve, then clear this filter.</span>
+          <Button size="sm" variant="outline" className="h-6 text-xs ml-auto shrink-0" onClick={clearFocus}>Show all orders</Button>
+        </div>
+      )}
+
       {/* Filters — single row on desktop, stacked search + 2-col grid on mobile */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
         <div className="relative w-full sm:flex-1 sm:min-w-[200px]">

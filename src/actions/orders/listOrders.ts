@@ -64,6 +64,20 @@ export function listOrders() {
         )
         AND ({{params.dateFrom}} IS NULL OR so.order_date >= {{params.dateFrom}}::date)
         AND ({{params.dateTo}} IS NULL OR so.order_date <= {{params.dateTo}}::date)
+        AND (
+          -- Dashboard drill-downs: scope to the orders behind an alert card.
+          -- Mirrors dashboardStats.ts definitions exactly.
+          COALESCE({{params.focus}}, '') = ''
+          OR ({{params.focus}} = 'unverified_payments' AND EXISTS (
+                SELECT 1 FROM order_payments op WHERE op.sales_order_id = so.id
+                  AND op.verification_status = 'pending' AND op.direction = 'incoming'))
+          OR ({{params.focus}} = 'payment_issues' AND EXISTS (
+                SELECT 1 FROM order_payments op WHERE op.sales_order_id = so.id
+                  AND op.issue_type IS NOT NULL))
+          OR ({{params.focus}} = 'shipment_issues' AND EXISTS (
+                SELECT 1 FROM shipments_outbound sob WHERE sob.sales_order_id = so.id
+                  AND sob.issue_flag IS NOT NULL))
+        )
       ORDER BY so.order_date DESC, so.id DESC
       LIMIT 1000
     `,
