@@ -445,7 +445,6 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   };
   useEffect(() => {
     invalidateChainProof();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [total]);
 
   const verifyOnChain = async () => {
