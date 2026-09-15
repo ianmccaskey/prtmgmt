@@ -31,6 +31,7 @@ import getOrderNotifications from '@/actions/orders/getOrderNotifications';
 import updateOrderNotes from '@/actions/orders/updateOrderNotes';
 import { OrderItemsEditor, OrderItemRow, AllocationRow } from '@/app/pages/orders/OrderItemsEditor';
 import getOrderDetail from '@/actions/orders/getOrderDetail';
+import { buildOrderQuoteText } from '@/lib/orderQuote';
 import getOrderItems from '@/actions/orders/getOrderItems';
 import getOrderPayments from '@/actions/orders/getOrderPayments';
 import getOrderShipments from '@/actions/orders/getOrderShipments';
@@ -916,6 +917,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [doRelease] = useMutateAction(releaseProductReservation);
   const [editingRep, setEditingRep] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  const [copiedQuote, setCopiedQuote] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
   // Local mirror of a just-edited fulfillment warehouse ('' = auto) so a
   // Confirm click can't race the detail reload and reserve at the old one.
@@ -991,7 +993,19 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       {order.is_vip && <Badge className="bg-yellow-100 text-yellow-700 border-yellow-300 text-xs px-1"><Crown className="h-3 w-3 mr-0.5 inline" />VIP</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground break-all">{String(order.customer_email || '')} · {String(order.customer_phone || '')}</p>
-                    <p className="text-sm font-semibold">Total: ${Number(order.total_usd).toFixed(2)}</p>
+                    <p className="text-sm font-semibold flex items-center gap-1">
+                      Total: ${Number(order.total_usd).toFixed(2)}
+                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Copy the line-item breakdown + payment options for the customer"
+                        onClick={() => {
+                          const text = buildOrderQuoteText(
+                            rows<OrderItemRow>(items).map(i => ({ sku: i.product_sku, quantity: Number(i.quantity), lineTotal: Number(i.line_total_usd) })),
+                            Number(order.discount_usd) || 0, Number(order.customer_shipping_charge_usd) || 0, Number(order.total_usd) || 0);
+                          navigator.clipboard.writeText(text);
+                          setCopiedQuote(true); setTimeout(() => setCopiedQuote(false), 2000);
+                        }}>
+                        {copiedQuote ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                      </Button>
+                    </p>
                     <div className="flex items-center gap-2 mt-1 text-sm">
                       <span className="text-muted-foreground">Sales Rep:</span>
                       {editingRep ? (

@@ -23,6 +23,7 @@ import getReceiveWallets from '@/actions/orders/getReceiveWallets';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import { getTxDeposit } from '@/lib/moralis';
 import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
+import { buildOrderQuoteText } from '@/lib/orderQuote';
 import getFreeOrderReasons from '@/actions/orders/getFreeOrderReasons';
 import listSalesReps from '@/actions/orders/listSalesReps';
 import listAllPriceTiers from '@/actions/orders/listAllPriceTiers';
@@ -319,6 +320,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // order can be confirmed in the same pass (no quote round-trip).
   const [payVerified, setPayVerified] = useState(true);
   const [copiedWallet, setCopiedWallet] = useState(false);
+  const [copiedQuote, setCopiedQuote] = useState(false);
   // On-chain TX check before the order exists: does the hash move ≥ the
   // order total of the selected asset into the selected receive wallet?
   // Advisory — the result never blocks saving; a full match auto-checks
@@ -1003,7 +1005,22 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               <Input type="number" min={0} step={0.01} value={shipping} onChange={e => setShipping(e.target.value)} className="h-7 w-28" />
             </div>
             <Separator />
-            <div className="flex justify-between font-semibold"><span>Total</span><span>${total.toFixed(2)}</span></div>
+            <div className="flex justify-between font-semibold items-center">
+              <span className="flex items-center gap-1">
+                Total
+                <Button variant="ghost" size="icon" className="h-6 w-6" title="Copy the line-item breakdown + payment options for the customer"
+                  onClick={() => {
+                    const text = buildOrderQuoteText(
+                      lines.filter(l => l.product).map(l => ({ sku: l.product!.sku, quantity: l.quantity, lineTotal: l.quantity * l.unit_price })),
+                      Number(discount) || 0, Number(shipping) || 0, total);
+                    navigator.clipboard.writeText(text);
+                    setCopiedQuote(true); setTimeout(() => setCopiedQuote(false), 2000);
+                  }}>
+                  {copiedQuote ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                </Button>
+              </span>
+              <span>${total.toFixed(2)}</span>
+            </div>
           </div>
 
           {/* Payment — China-division orders never record one: the customer
