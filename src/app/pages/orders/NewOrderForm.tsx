@@ -21,7 +21,7 @@ import searchCustomers from '@/actions/orders/searchCustomers';
 import searchProducts from '@/actions/orders/searchProducts';
 import getReceiveWallets from '@/actions/orders/getReceiveWallets';
 import getAppSetting from '@/actions/settings/getAppSetting';
-import { getTxDeposit } from '@/lib/moralis';
+import { verifyTxCoversAmount, IDLE_CHECK, type ChainCheck } from '@/lib/chainVerify';
 import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
 import { buildOrderQuoteText } from '@/lib/orderQuote';
 import getFreeOrderReasons from '@/actions/orders/getFreeOrderReasons';
@@ -325,7 +325,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // order total of the selected asset into the selected receive wallet?
   // Advisory — the result never blocks saving; a full match auto-checks
   // the "payment received" toggle.
-  const [chainCheck, setChainCheck] = useState<{ state: 'idle' | 'checking' | 'ok' | 'over' | 'short' | 'notfound' | 'error'; msg: string }>({ state: 'idle', msg: '' });
+  const [chainCheck, setChainCheck] = useState<ChainCheck>(IDLE_CHECK);
   // True when payVerified was switched on BY a successful chain check —
   // lets a later total change revoke that auto-verification without
   // clobbering a toggle the admin set deliberately.
@@ -451,42 +451,20 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
 
   const verifyOnChain = async () => {
     if (!selectedWallet || !payTx.trim()) return;
-    if (payAsset !== 'USDC' && payAsset !== 'USDT') {
-      setChainCheck({ state: 'error', msg: `Only USDC and USDT can be checked here — verify a ${payAsset} payment manually on the explorer.` });
-      return;
-    }
-    if (payNetwork !== 'ethereum' && payNetwork !== 'solana') {
-      setChainCheck({ state: 'error', msg: `${NETWORK_LABELS[payNetwork] || payNetwork} can't be checked here — BTC payments verify through the swap flow in the order drawer.` });
-      return;
-    }
-    if (!moralisKey && payNetwork === 'ethereum') {
-      setChainCheck({ state: 'error', msg: 'No Moralis API key configured — add one under Settings → Wallets to enable on-chain checks.' });
-      return;
-    }
     setChainCheck({ state: 'checking', msg: '' });
-    try {
-      const hit = await getTxDeposit(moralisKey, payAsset, payNetwork, selectedWallet.address, payTx.trim(), heliusKey || null);
-      if (!hit) {
-        setChainCheck({ state: 'notfound', msg: `TX not found on ${NETWORK_LABELS[payNetwork] || payNetwork}, or it doesn't move ${payAsset} into ${selectedWallet.label}. Check the hash, asset, and network.` });
-        return;
-      }
-      const when = hit.at ? ` on ${new Date(hit.at).toLocaleString()}` : '';
-      // Half-cent tolerance so float representation never fails an exact payment.
-      if (hit.amount + 0.005 >= total) {
-        setChainCheck({
-          state: hit.amount > total + 0.005 ? 'over' : 'ok',
-          msg: `Verified: ${hit.amount.toFixed(2)} ${payAsset} arrived in ${selectedWallet.label}${when}` +
-            (hit.amount > total + 0.005
-              ? ` — $${(hit.amount - total).toFixed(2)} more than the $${total.toFixed(2)} order total. The payment records at the order total; correct it to the actual amount from the order drawer if you want the wallet audit to reconcile to the penny.`
-              : ` — covers the $${total.toFixed(2)} order total.`),
-        });
-        setPayVerified(true);
-        autoVerifiedRef.current = true;
-      } else {
-        setChainCheck({ state: 'short', msg: `On-chain deposit is ${hit.amount.toFixed(2)} ${payAsset}${when} — $${(total - hit.amount).toFixed(2)} SHORT of the $${total.toFixed(2)} order total.` });
-      }
-    } catch (e: unknown) {
-      setChainCheck({ state: 'error', msg: e instanceof Error ? e.message : 'On-chain check failed — try again.' });
+    const res = await verifyTxCoversAmount({
+      moralisKey, heliusKey: heliusKey || null,
+      asset: payAsset, network: payNetwork, networkLabel: NETWORK_LABELS[payNetwork] || payNetwork,
+      wallet: selectedWallet, txHash: payTx, requiredUsd: total, requiredLabel: 'order total',
+    });
+    if (res.state === 'over') {
+      setChainCheck({ ...res, msg: `${res.msg} The payment records at the order total; correct it to the actual amount from the order drawer if you want the wallet audit to reconcile to the penny.` });
+    } else {
+      setChainCheck(res);
+    }
+    if (res.state === 'ok' || res.state === 'over') {
+      setPayVerified(true);
+      autoVerifiedRef.current = true;
     }
   };
 

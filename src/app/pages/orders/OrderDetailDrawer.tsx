@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { useAppUser } from '@/app/AppContext';
 import { rows, firstRow } from '@/lib/rows';
@@ -32,6 +32,7 @@ import updateOrderNotes from '@/actions/orders/updateOrderNotes';
 import { OrderItemsEditor, OrderItemRow, AllocationRow } from '@/app/pages/orders/OrderItemsEditor';
 import getOrderDetail from '@/actions/orders/getOrderDetail';
 import { buildOrderQuoteText } from '@/lib/orderQuote';
+import { verifyTxCoversAmount, IDLE_CHECK, type ChainCheck } from '@/lib/chainVerify';
 import getOrderItems from '@/actions/orders/getOrderItems';
 import getOrderPayments from '@/actions/orders/getOrderPayments';
 import getOrderShipments from '@/actions/orders/getOrderShipments';
@@ -112,6 +113,22 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const [copiedWallet, setCopiedWallet] = useState(false);
   const [addSaving, setAddSaving] = useState(false);
   const [addErr, setAddErr] = useState('');
+  // On-chain check of the entered TX hash vs the entered Amount (USD) —
+  // advisory; a passing check auto-sets the verified toggle, and editing
+  // any input the proof depends on revokes exactly that auto-set.
+  const [chainCheck, setChainCheck] = useState<ChainCheck>(IDLE_CHECK);
+  const autoVerifiedRef = useRef(false);
+  const [moralisRaw] = useLoadAction(getAppSetting, [addOpen ? 1 : 0], { key: 'moralis_api_key' }, { enabled: addOpen });
+  const moralisKey = String(rows<{ value: string }>(moralisRaw)[0]?.value ?? '');
+  const [heliusRaw] = useLoadAction(getAppSetting, [addOpen ? 1 : 0], { key: 'helius_api_key' }, { enabled: addOpen });
+  const heliusKey = String(rows<{ value: string }>(heliusRaw)[0]?.value ?? '');
+  const invalidateChainProof = () => {
+    setChainCheck(prev => (prev.state === 'idle' ? prev : IDLE_CHECK));
+    if (autoVerifiedRef.current) {
+      setPayVerified(false);
+      autoVerifiedRef.current = false;
+    }
+  };
   // Fix Wallet — admin correction when a payment was recorded against the
   // wrong asset/network (money actually arrived elsewhere). Repointing keeps
   // wallet reconciliation honest without a database session.
@@ -171,6 +188,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       // Insert is single-statement; the payment-status rollup chains here.
       await recomputePayment({ orderId });
       setAddOpen(false); setPayTx(''); setPayAmount(''); setPayVerified(true);
+      setChainCheck(IDLE_CHECK); autoVerifiedRef.current = false;
       reloadPay();
       parentReload();
     } catch (e: unknown) {
@@ -431,6 +449,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             // direct payment.
             setAddMode('direct'); setSwapBtc(''); setSwapRefund(''); setSwapQuote(null);
             setPayTx(''); setPayVerified(true);
+            setChainCheck(IDLE_CHECK); autoVerifiedRef.current = false;
             setAddOpen(true);
           }}
         >
@@ -496,13 +515,13 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
           <>
           <div className="grid grid-cols-2 gap-2">
             <div><Label className="text-xs">Asset</Label>
-              <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); }}>
+              <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); invalidateChainProof(); }}>
                 <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                 <SelectContent>{ASSETS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div><Label className="text-xs">Network</Label>
-              <Select value={payNetwork} onValueChange={setPayNetwork}>
+              <Select value={payNetwork} onValueChange={v => { setPayNetwork(v); invalidateChainProof(); }}>
                 <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                 <SelectContent>{(NETWORKS[payAsset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
               </Select>
@@ -524,9 +543,41 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             </p>
           )}
           <div><Label className="text-xs">Amount (USD)</Label>
-            <Input type="number" min={0} step="0.01" value={payAmount} onChange={e => setPayAmount(e.target.value)} className="h-8" /></div>
+            <Input type="number" min={0} step="0.01" value={payAmount} onChange={e => { setPayAmount(e.target.value); invalidateChainProof(); }} className="h-8" /></div>
           <div><Label className="text-xs">TX Hash (optional)</Label>
-            <Input placeholder="0x…" value={payTx} onChange={e => setPayTx(e.target.value)} className="h-8" /></div>
+            <div className="flex gap-2">
+              <Input placeholder="0x…" value={payTx} onChange={e => { setPayTx(e.target.value); invalidateChainProof(); }} className="h-8" />
+              <Button type="button" variant="outline" size="sm" className="h-8 shrink-0"
+                disabled={!payTx.trim() || !selectedWallet || chainCheck.state === 'checking' || !(Number(payAmount) > 0)}
+                title="Look the TX up on chain: does it move at least the entered amount of this asset into the receive wallet?"
+                onClick={async () => {
+                  if (!selectedWallet) return;
+                  setChainCheck({ state: 'checking', msg: '' });
+                  const res = await verifyTxCoversAmount({
+                    moralisKey, heliusKey: heliusKey || null,
+                    asset: payAsset, network: payNetwork, networkLabel: NETWORK_LABELS[payNetwork] || payNetwork,
+                    wallet: selectedWallet, txHash: payTx, requiredUsd: Number(payAmount), requiredLabel: 'payment amount',
+                  });
+                  setChainCheck(res.state === 'over'
+                    ? { ...res, msg: `${res.msg} Consider setting Amount to the actual on-chain value so the wallet audit reconciles to the penny.` }
+                    : res);
+                  if (res.state === 'ok' || res.state === 'over') {
+                    setPayVerified(true);
+                    autoVerifiedRef.current = true;
+                  }
+                }}>
+                {chainCheck.state === 'checking' ? 'Checking…' : 'Verify on Chain'}
+              </Button>
+            </div>
+            {chainCheck.msg && (
+              <p className={`text-xs mt-1 ${
+                chainCheck.state === 'ok' || chainCheck.state === 'over' ? 'text-green-700'
+                : chainCheck.state === 'short' || chainCheck.state === 'notfound' ? 'text-red-600'
+                : 'text-amber-700'}`}>
+                {chainCheck.msg}
+              </p>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <Switch checked={payVerified} onCheckedChange={setPayVerified} />
             <Label className="text-xs">
