@@ -152,7 +152,7 @@ export function WarehousesTab() {
     if (dup) { setError('A warehouse with this name already exists.'); return; }
     setSaving(true); setError('');
     try {
-      const fields = { name: name.trim(), ship_from_name: shipFromName.trim() || null, city: city || null, state: state || null, country: country || null, address_line1: address1 || null, address_line2: address2 || null, postal_code: postal || null, notes: notes || null };
+      const fields = { name: name.trim(), ship_from_name: shipFromName.trim() || null, city: city || null, state: state || null, country: country || null, address_line1: address1 || null, address_line2: address2 || null, postal_code: dbText(postal) || null, notes: notes || null };
       if (editWh) await doUpdateWh({ id: editWh.id, ...fields });
       else await doCreate(fields);
       setShowAdd(false);
