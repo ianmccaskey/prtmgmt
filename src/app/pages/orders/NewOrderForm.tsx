@@ -441,7 +441,6 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       setPayVerified(false);
       autoVerifiedRef.current = false;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [total]);
 
   const verifyOnChain = async () => {
