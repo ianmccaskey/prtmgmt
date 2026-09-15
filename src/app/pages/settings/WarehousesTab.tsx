@@ -16,6 +16,7 @@ import listWarehouses from '@/actions/settings/listWarehouses';
 import createWarehouse from '@/actions/settings/createWarehouse';
 import updateWarehouseActive from '@/actions/settings/updateWarehouseActive';
 import updateWarehouseShippo from '@/actions/settings/updateWarehouseShippo';
+import updateWarehouse from '@/actions/settings/updateWarehouse';
 import queueTestSms from '@/actions/settings/queueTestSms';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import upsertAppSetting from '@/actions/settings/upsertAppSetting';
@@ -58,6 +59,8 @@ function generateTopic(warehouseName: string): string {
 
 export function WarehousesTab() {
   const [showAdd, setShowAdd] = useState(false);
+  // Non-null while the Add dialog is editing an existing warehouse.
+  const [editWh, setEditWh] = useState<Warehouse | null>(null);
   const [name, setName] = useState('');
   const [shipFromName, setShipFromName] = useState('');
   const [city, setCity] = useState('');
@@ -98,6 +101,7 @@ export function WarehousesTab() {
   const [warehouses, , , reload] = useLoadAction(listWarehouses, [], {});
   const [addresses, , , reloadAddresses] = useLoadAction(listReceiveAddresses, [], {});
   const [doCreate] = useMutateAction(createWarehouse);
+  const [doUpdateWh] = useMutateAction(updateWarehouse);
   const [doToggle] = useMutateAction(updateWarehouseActive);
   const [doShippo] = useMutateAction(updateWarehouseShippo);
   // Shipping box templates (parcel presets for Shippo quoting)
@@ -122,19 +126,41 @@ export function WarehousesTab() {
   const list = asRows<Warehouse>(warehouses);
   const addrList = asRows<ReceiveAddress>(addresses);
 
+  const clearWhForm = () => {
+    setName(''); setShipFromName(''); setCity(''); setState(''); setCountry('');
+    setAddress1(''); setAddress2(''); setPostal(''); setNotes(''); setError('');
+  };
+
+  const openEditWh = (w: Warehouse) => {
+    setEditWh(w);
+    setName(w.name);
+    setShipFromName(w.ship_from_name || '');
+    setAddress1(w.address_line1 || '');
+    setAddress2(w.address_line2 || '');
+    setCity(w.city || '');
+    setState(w.state || '');
+    setPostal(dbText(w.postal_code));
+    setCountry(w.country || '');
+    setNotes(w.notes || '');
+    setError('');
+    setShowAdd(true);
+  };
+
   const handleAdd = async () => {
     if (!name.trim()) { setError('Name is required.'); return; }
-    const dup = list.find(w => w.name.toLowerCase() === name.trim().toLowerCase());
+    const dup = list.find(w => w.name.toLowerCase() === name.trim().toLowerCase() && w.id !== editWh?.id);
     if (dup) { setError('A warehouse with this name already exists.'); return; }
     setSaving(true); setError('');
     try {
-      await doCreate({ name: name.trim(), ship_from_name: shipFromName.trim() || null, city: city || null, state: state || null, country: country || null, address_line1: address1 || null, address_line2: address2 || null, postal_code: postal || null, notes: notes || null });
+      const fields = { name: name.trim(), ship_from_name: shipFromName.trim() || null, city: city || null, state: state || null, country: country || null, address_line1: address1 || null, address_line2: address2 || null, postal_code: postal || null, notes: notes || null };
+      if (editWh) await doUpdateWh({ id: editWh.id, ...fields });
+      else await doCreate(fields);
       setShowAdd(false);
-      setName(''); setShipFromName(''); setCity(''); setState(''); setCountry('');
-      setAddress1(''); setAddress2(''); setPostal(''); setNotes('');
+      setEditWh(null);
+      clearWhForm();
       reload();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create warehouse');
+      setError(e instanceof Error ? e.message : editWh ? 'Failed to update warehouse' : 'Failed to create warehouse');
     } finally {
       setSaving(false);
     }
@@ -273,7 +299,7 @@ export function WarehousesTab() {
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2"><MapPin className="h-4 w-4" /> Warehouses</CardTitle>
-          <Button size="sm" onClick={() => setShowAdd(true)} className="flex items-center gap-1">
+          <Button size="sm" onClick={() => { setEditWh(null); clearWhForm(); setShowAdd(true); }} className="flex items-center gap-1">
             <Plus className="h-3 w-3" /> Add Warehouse
           </Button>
         </div>
@@ -324,6 +350,9 @@ export function WarehousesTab() {
                             <Home className="h-3 w-3" />
                             <span className="font-medium">Ship-From:</span>
                             <span>{fmtAddr(w, w.ship_from_name) || 'No address set'}</span>
+                            <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-600" title="Edit warehouse name, ship-from address, and notes" onClick={() => openEditWh(w)}>
+                              <Pencil className="h-3 w-3 mr-1" /> Edit
+                            </Button>
                           </div>
                           <div className="flex items-center gap-2 text-xs text-gray-600">
                             <Tag className="h-3 w-3" />
@@ -426,13 +455,17 @@ export function WarehousesTab() {
         </Table>
       </CardContent>
 
-      {/* Add Warehouse Dialog */}
-      <Dialog open={showAdd} onOpenChange={v => !v && setShowAdd(false)}>
+      {/* Add / Edit Warehouse Dialog */}
+      <Dialog open={showAdd} onOpenChange={v => { if (!v) { setShowAdd(false); setEditWh(null); } }}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Add Warehouse</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editWh ? `Edit Warehouse — ${editWh.name}` : 'Add Warehouse'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>Name *</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. West Coast Hub" /></div>
-            <p className="text-xs text-gray-400">This address is the warehouse's SHIP-FROM address. Add receive addresses after creating.</p>
+            <p className="text-xs text-gray-400">
+              This address is the warehouse&apos;s SHIP-FROM address{editWh
+                ? ' — it appears on every future shipping label bought from this warehouse. Already-purchased labels are unaffected.'
+                : '. Add receive addresses after creating.'}
+            </p>
             <div><Label>Ship-From Name Line</Label><Input value={shipFromName} onChange={e => setShipFromName(e.target.value)} placeholder='e.g. "SND Fulfillment" — appears as the first address line' /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Address Line 1</Label><Input value={address1} onChange={e => setAddress1(e.target.value)} /></div>
@@ -446,8 +479,8 @@ export function WarehousesTab() {
             {error && <p className="text-sm text-red-600">{error}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-            <Button onClick={handleAdd} disabled={saving}>{saving ? 'Saving…' : 'Create'}</Button>
+            <Button variant="outline" onClick={() => { setShowAdd(false); setEditWh(null); }}>Cancel</Button>
+            <Button onClick={handleAdd} disabled={saving}>{saving ? 'Saving…' : editWh ? 'Save Changes' : 'Create'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
