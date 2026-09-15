@@ -174,7 +174,7 @@ function ActivityTypeBadge({ type }: { type: string }) {
 }
 
 export function HomePage() {
-  const { role, isWarehouse } = useAppUser();
+  const { role, isWarehouse, isSalesRep } = useAppUser();
   const [statsRaw, statsLoading] = useLoadAction(getDashboardStats, []);
   const [revenueRaw, revenueLoading] = useLoadAction(getRevenueByMonth, [], {}, { enabled: !isWarehouse });
   const [statusRaw] = useLoadAction(getOrderStatusBreakdown, []);
@@ -233,14 +233,18 @@ export function HomePage() {
             alert={parseFloat(stats.unpaid_balance_usd) > 0}
             href="/orders"
           />}
-          {!isWarehouse && <StatCard
+          {/* Alert drill-down cards are hidden from sales reps: the counts
+              are GLOBAL but a rep's order list is scoped to their own
+              orders — the numbers wouldn't match what the click shows.
+              Verification/issue triage is admin+logistics work anyway. */}
+          {!isWarehouse && !isSalesRep && <StatCard
             label="Unverified Payments"
             value={fmt(stats.unverified_payments)}
             icon={Clock}
             alert={parseInt(stats.unverified_payments) > 0}
             href="/orders?focus=unverified_payments"
           />}
-          {!isWarehouse && <StatCard
+          {!isWarehouse && !isSalesRep && <StatCard
             label="Payments w/ Issues"
             value={fmt(stats.payments_with_issues)}
             icon={XCircle}
@@ -262,13 +266,13 @@ export function HomePage() {
             alert={parseInt(stats.overdue_refunds) > 0}
             href="/orders"
           />}
-          <StatCard
+          {!isSalesRep && <StatCard
             label="Shipment Issues"
             value={fmt(stats.outbound_issues)}
             icon={XCircle}
             alert={parseInt(stats.outbound_issues) > 0}
             href="/orders?focus=shipment_issues"
-          />
+          />}
           {!isWarehouse && <StatCard
             label="Warehouse Payables"
             value={fmtUSD(stats.warehouse_payables_usd)}
