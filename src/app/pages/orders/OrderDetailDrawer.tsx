@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { txExplorerUrl } from '@/lib/explorers';
+import { txExplorerUrl, addressExplorerUrl } from '@/lib/explorers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -535,7 +535,15 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             <div className="bg-muted/40 rounded p-2">
               <Label className="text-xs mb-1 block">Receive Address ({selectedWallet.label})</Label>
               <div className="flex items-center gap-2">
-                <code className="text-xs flex-1 break-all">{selectedWallet.address}</code>
+                {addressExplorerUrl(payNetwork, selectedWallet.address) ? (
+                  <a href={addressExplorerUrl(payNetwork, selectedWallet.address)!} target="_blank" rel="noreferrer"
+                    className="text-xs flex-1 break-all font-mono text-blue-600 hover:underline"
+                    title={`Open on ${payNetwork === 'solana' ? 'Solscan' : payNetwork === 'bitcoin' ? 'mempool.space' : 'Etherscan'}`}>
+                    {selectedWallet.address}
+                  </a>
+                ) : (
+                  <code className="text-xs flex-1 break-all">{selectedWallet.address}</code>
+                )}
                 <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={copyWallet} title="Copy address">
                   {copiedWallet ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                 </Button>

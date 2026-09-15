@@ -16,6 +16,20 @@ export function txExplorerUrl(network: string | null | undefined, hash: string |
 }
 
 /**
+ * Explorer URL for a wallet ADDRESS on a known network. Regex-gated so a
+ * malformed value can't smuggle path segments into the link.
+ */
+export function addressExplorerUrl(network: string | null | undefined, address: string | null | undefined): string | null {
+  const a = (address || '').trim();
+  if (!a) return null;
+  const n = String(network || '').toLowerCase();
+  if (n === 'ethereum' && /^0x[0-9a-fA-F]{40}$/.test(a)) return `https://etherscan.io/address/${a}`;
+  if (n === 'solana' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a)) return `https://solscan.io/account/${a}`;
+  if (n === 'bitcoin' && /^[a-zA-Z0-9]{26,90}$/.test(a)) return `https://mempool.space/address/${a}`;
+  return null;
+}
+
+/**
  * Chain inferred from the hash's shape:
  * - 0x + 64 hex → EVM (Etherscan)
  * - long base58 (Solana signatures run ~87–88 chars) → Solscan
