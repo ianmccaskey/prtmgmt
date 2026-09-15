@@ -432,15 +432,20 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const subtotal = lines.reduce((s, l) => s + (l.product ? l.quantity * l.unit_price : 0), 0);
   const total = Math.max(0, subtotal - Number(discount) + Number(shipping));
 
-  // A verified check is a proof about ONE amount — if the order total
-  // changes afterwards, the green banner would vouch for the wrong
-  // number. Reset the check and revoke any auto-set verification.
-  useEffect(() => {
+  // A verified check is a proof about ONE (hash, asset, network, amount)
+  // tuple — edit any part of it and the green banner would vouch for
+  // something it never checked. Reset the check and revoke verification
+  // if (and only if) the check is what set it.
+  const invalidateChainProof = () => {
     setChainCheck(prev => (prev.state === 'idle' ? prev : { state: 'idle', msg: '' }));
     if (autoVerifiedRef.current) {
       setPayVerified(false);
       autoVerifiedRef.current = false;
     }
+  };
+  useEffect(() => {
+    invalidateChainProof();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [total]);
 
   const verifyOnChain = async () => {
@@ -672,6 +677,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     setOverrideNote(''); setShip({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
     setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx('');
     setChainCheck({ state: 'idle', msg: '' });
+    autoVerifiedRef.current = false;
     setAddPay(false); setPayVerified(true); setErrors([]); setSalesRepId(''); setFulfillWarehouse('');
   };
 
@@ -1020,13 +1026,13 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <div><Label className="text-xs">Asset</Label>
-                    <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); setChainCheck({ state: 'idle', msg: '' }); }}>
+                    <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); invalidateChainProof(); }}>
                       <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                       <SelectContent>{ASSETS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                   <div><Label className="text-xs">Network</Label>
-                    <Select value={payNetwork} onValueChange={v => { setPayNetwork(v); setChainCheck({ state: 'idle', msg: '' }); }}>
+                    <Select value={payNetwork} onValueChange={v => { setPayNetwork(v); invalidateChainProof(); }}>
                       <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                       <SelectContent>{(NETWORKS[payAsset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
                     </Select>
@@ -1049,7 +1055,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                 )}
                 <div><Label className="text-xs">TX Hash (optional)</Label>
                   <div className="flex gap-2">
-                    <Input placeholder="0x…" value={payTx} onChange={e => { setPayTx(e.target.value); setChainCheck({ state: 'idle', msg: '' }); }} className="h-8" />
+                    <Input placeholder="0x…" value={payTx} onChange={e => { setPayTx(e.target.value); invalidateChainProof(); }} className="h-8" />
                     <Button type="button" variant="outline" size="sm" className="h-8 shrink-0"
                       disabled={!payTx.trim() || !selectedWallet || chainCheck.state === 'checking' || total === 0}
                       title="Look the TX up on chain: does it move at least the order total of this asset into the receive wallet?"
