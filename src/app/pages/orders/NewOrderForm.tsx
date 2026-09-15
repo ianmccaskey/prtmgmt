@@ -438,7 +438,12 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // tuple — edit any part of it and the green banner would vouch for
   // something it never checked. Reset the check and revoke verification
   // if (and only if) the check is what set it.
+  // Bumped on every proof invalidation AND every new check: an in-flight
+  // lookup whose seq no longer matches is stale and must not apply — a
+  // late response could otherwise resurrect a proof for old inputs.
+  const checkSeqRef = useRef(0);
   const invalidateChainProof = () => {
+    checkSeqRef.current++;
     setChainCheck(prev => (prev.state === 'idle' ? prev : { state: 'idle', msg: '' }));
     if (autoVerifiedRef.current) {
       setPayVerified(false);
@@ -451,12 +456,15 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
 
   const verifyOnChain = async () => {
     if (!selectedWallet || !payTx.trim()) return;
+    const seq = ++checkSeqRef.current;
     setChainCheck({ state: 'checking', msg: '' });
     const res = await verifyTxCoversAmount({
       moralisKey, heliusKey: heliusKey || null,
       asset: payAsset, network: payNetwork, networkLabel: NETWORK_LABELS[payNetwork] || payNetwork,
       wallet: selectedWallet, txHash: payTx, requiredUsd: total, requiredLabel: 'order total',
+      swapFlowLocation: 'in the order drawer',
     });
+    if (checkSeqRef.current !== seq) return; // inputs changed mid-flight — result is stale
     if (res.state === 'over') {
       setChainCheck({ ...res, msg: `${res.msg} The payment records at the order total; correct it to the actual amount from the order drawer if you want the wallet audit to reconcile to the penny.` });
     } else {
@@ -656,7 +664,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     setOverrideNote(''); setShip({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
     setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx('');
     setChainCheck({ state: 'idle', msg: '' });
-    autoVerifiedRef.current = false;
+    autoVerifiedRef.current = false; checkSeqRef.current++;
     setAddPay(false); setPayVerified(true); setErrors([]); setSalesRepId(''); setFulfillWarehouse('');
   };
 

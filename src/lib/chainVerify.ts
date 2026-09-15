@@ -25,13 +25,15 @@ export async function verifyTxCoversAmount(opts: {
   requiredUsd: number;
   /** What the required amount is called in messages, e.g. "order total". */
   requiredLabel: string;
+  /** Where the caller's swap flow lives, e.g. "in the order drawer". */
+  swapFlowLocation: string;
 }): Promise<ChainCheck> {
   const { asset, network, networkLabel, wallet, requiredUsd, requiredLabel } = opts;
   if (asset !== 'USDC' && asset !== 'USDT') {
     return { state: 'error', msg: `Only USDC and USDT can be checked here — verify a ${asset} payment manually on the explorer.` };
   }
   if (network !== 'ethereum' && network !== 'solana') {
-    return { state: 'error', msg: `${networkLabel} can't be checked here — BTC payments verify through the swap flow.` };
+    return { state: 'error', msg: `${networkLabel} can't be checked here — BTC payments verify through the swap flow ${opts.swapFlowLocation}.` };
   }
   if (!opts.moralisKey && network === 'ethereum') {
     return { state: 'error', msg: 'No Moralis API key configured — add one under Settings → Wallets to enable on-chain checks.' };

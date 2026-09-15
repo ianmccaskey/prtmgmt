@@ -118,11 +118,15 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   // any input the proof depends on revokes exactly that auto-set.
   const [chainCheck, setChainCheck] = useState<ChainCheck>(IDLE_CHECK);
   const autoVerifiedRef = useRef(false);
+  // Bumped on every invalidation AND every new check — a late async
+  // result with a stale seq must not resurrect a revoked proof.
+  const checkSeqRef = useRef(0);
   const [moralisRaw] = useLoadAction(getAppSetting, [addOpen ? 1 : 0], { key: 'moralis_api_key' }, { enabled: addOpen });
   const moralisKey = String(rows<{ value: string }>(moralisRaw)[0]?.value ?? '');
   const [heliusRaw] = useLoadAction(getAppSetting, [addOpen ? 1 : 0], { key: 'helius_api_key' }, { enabled: addOpen });
   const heliusKey = String(rows<{ value: string }>(heliusRaw)[0]?.value ?? '');
   const invalidateChainProof = () => {
+    checkSeqRef.current++;
     setChainCheck(prev => (prev.state === 'idle' ? prev : IDLE_CHECK));
     if (autoVerifiedRef.current) {
       setPayVerified(false);
@@ -188,7 +192,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       // Insert is single-statement; the payment-status rollup chains here.
       await recomputePayment({ orderId });
       setAddOpen(false); setPayTx(''); setPayAmount(''); setPayVerified(true);
-      setChainCheck(IDLE_CHECK); autoVerifiedRef.current = false;
+      setChainCheck(IDLE_CHECK); autoVerifiedRef.current = false; checkSeqRef.current++;
       reloadPay();
       parentReload();
     } catch (e: unknown) {
@@ -449,7 +453,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             // direct payment.
             setAddMode('direct'); setSwapBtc(''); setSwapRefund(''); setSwapQuote(null);
             setPayTx(''); setPayVerified(true);
-            setChainCheck(IDLE_CHECK); autoVerifiedRef.current = false;
+            setChainCheck(IDLE_CHECK); autoVerifiedRef.current = false; checkSeqRef.current++;
             setAddOpen(true);
           }}
         >
@@ -552,12 +556,15 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 title="Look the TX up on chain: does it move at least the entered amount of this asset into the receive wallet?"
                 onClick={async () => {
                   if (!selectedWallet) return;
+                  const seq = ++checkSeqRef.current;
                   setChainCheck({ state: 'checking', msg: '' });
                   const res = await verifyTxCoversAmount({
                     moralisKey, heliusKey: heliusKey || null,
                     asset: payAsset, network: payNetwork, networkLabel: NETWORK_LABELS[payNetwork] || payNetwork,
                     wallet: selectedWallet, txHash: payTx, requiredUsd: Number(payAmount), requiredLabel: 'payment amount',
+                    swapFlowLocation: 'via the BTC → USDC auto-swap mode above',
                   });
+                  if (checkSeqRef.current !== seq) return; // inputs changed mid-flight — stale
                   setChainCheck(res.state === 'over'
                     ? { ...res, msg: `${res.msg} Consider setting Amount to the actual on-chain value so the wallet audit reconciles to the penny.` }
                     : res);
