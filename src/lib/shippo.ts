@@ -88,7 +88,77 @@ const NOISE_PATTERNS = [
   /RatedShipmentAlert: Modifier is applied/i,
 ];
 
+/**
+ * Opt-in request logging. Run `localStorage.setItem('prt:shippo-debug', '1')`
+ * in the browser console (remove the key to turn it back off) to have every
+ * Shippo exchange pretty-printed to the console — including the messages the
+ * rate UI hides via NOISE_PATTERNS. Per-browser and survives reloads.
+ *
+ * Names, street lines, phone and email are masked by default: a console log
+ * outlives the debugging session in DevTools history, screen shares and
+ * screenshots, and these are real customer addresses. Masked values keep the
+ * character count so you can still tell 'missing' from 'malformed'. Set
+ * 'prt:shippo-debug-pii' to '1' as well when you genuinely need the literal
+ * address Shippo received. The Authorization header carries the live API key
+ * and is never logged under either flag.
+ */
+const DEBUG_KEY = 'prt:shippo-debug';
+const DEBUG_PII_KEY = 'prt:shippo-debug-pii';
+
+/** Address fields that identify a person rather than a destination. */
+const PII_FIELDS = new Set([
+  'name', 'company', 'street1', 'street2', 'street3', 'phone', 'email',
+  'object_owner', // Shippo echoes the account holder's email on every object
+]);
+
+function flagOn(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Deep-copy a payload with PII_FIELDS masked. Empty/absent values pass through so gaps stay visible. */
+function redact(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redact);
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = PII_FIELDS.has(k) && typeof v === 'string' && v.length > 0
+        ? `‹redacted ${v.length} chars›`
+        : redact(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+function logExchange(path: string, body: unknown, status: number | null, data: unknown, startedAt: number) {
+  if (!flagOn(DEBUG_KEY)) return;
+  // Everything that can throw (redact, stringify) runs before the first console
+  // call, and the whole helper is fail-closed: debug logging must never be the
+  // reason a rate quote or a label purchase fails.
+  try {
+    const pii = flagOn(DEBUG_PII_KEY);
+    const ms = Math.round(performance.now() - startedAt);
+    const label = `[shippo] POST ${path} → ${status ?? 'network error'} (${ms}ms)${pii ? ' [unmasked]' : ''}`;
+    const req = JSON.stringify(pii ? body : redact(body), null, 2);
+    const res = pii ? data : redact(data);
+    console.groupCollapsed(label);
+    try {
+      console.log('request', req);
+      console.log('response', res);
+    } finally {
+      console.groupEnd();
+    }
+  } catch {
+    /* a broken log line is never worth breaking the shipment over */
+  }
+}
+
 async function post(apiKey: string, path: string, body: unknown): Promise<Record<string, unknown>> {
+  const startedAt = performance.now();
   let res: Response;
   try {
     res = await fetch(BASE + path, {
@@ -97,9 +167,11 @@ async function post(apiKey: string, path: string, body: unknown): Promise<Record
       body: JSON.stringify(body),
     });
   } catch {
+    logExchange(path, body, null, null, startedAt);
     throw new Error('Could not reach Shippo — check your network connection.');
   }
   const data = await res.json().catch(() => null);
+  logExchange(path, body, res.status, data, startedAt);
   if (!res.ok) {
     const msgs = [...collectMessages(data), ...collectFieldErrors(data)];
     throw new Error(msgs.length ? msgs.join(' · ') : `Shippo request failed (HTTP ${res.status}).`);
