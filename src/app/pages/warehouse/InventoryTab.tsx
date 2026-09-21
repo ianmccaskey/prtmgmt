@@ -121,8 +121,14 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
       setHoldSaving(false);
     }
   };
-  const releaseHold = async (id: number) => {
-    await doReleaseHold({ hold_id: id });
+  // Per-hold release quantity drafts ('' = release the full hold).
+  const [releaseQtys, setReleaseQtys] = useState<Record<number, string>>({});
+  const releaseHold = async (h: StockHold) => {
+    const draft = (releaseQtys[h.id] || '').trim();
+    const qty = draft === '' ? Number(h.quantity) : Number(draft);
+    if (!Number.isInteger(qty) || qty <= 0 || qty > Number(h.quantity)) return;
+    await doReleaseHold({ hold_id: h.id, quantity: qty });
+    setReleaseQtys(prev => { const next = { ...prev }; delete next[h.id]; return next; });
     reloadInv(); reloadHolds();
   };
 
@@ -365,9 +371,23 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
                     {h.created_by || 'unknown'} · {new Date(h.created_at).toLocaleString()}
                   </p>
                 </div>
-                <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={() => releaseHold(h.id)}>
-                  Release
-                </Button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {Number(h.quantity) > 1 && (
+                    <Input
+                      type="number" min={1} max={Number(h.quantity)} step={1}
+                      value={releaseQtys[h.id] ?? ''}
+                      onChange={e => setReleaseQtys(prev => ({ ...prev, [h.id]: e.target.value }))}
+                      placeholder={String(h.quantity)}
+                      title={`How many of the ${h.quantity} held to release (blank = all)`}
+                      className="h-7 w-16 text-xs"
+                    />
+                  )}
+                  <Button size="sm" variant="outline" className="h-7 text-xs"
+                    disabled={(() => { const d = (releaseQtys[h.id] || '').trim(); if (d === '') return false; const q = Number(d); return !Number.isInteger(q) || q <= 0 || q > Number(h.quantity); })()}
+                    onClick={() => releaseHold(h)}>
+                    {(() => { const d = (releaseQtys[h.id] || '').trim(); const q = Number(d); return d !== '' && Number.isInteger(q) && q > 0 && q < Number(h.quantity) ? `Release ${q}` : 'Release All'; })()}
+                  </Button>
+                </div>
               </div>
             ))}
             {holds.length === 0 && <p className="text-sm text-muted-foreground">No active holds{warehouseId ? ' for this warehouse' : ''}.</p>}
