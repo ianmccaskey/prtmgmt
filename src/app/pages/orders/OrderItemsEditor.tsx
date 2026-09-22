@@ -464,7 +464,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
                   <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Destination warehouse" /></SelectTrigger>
                   <SelectContent>
                     {moveWhAvail
-                      .filter(w => w.product_id === moveFor.product_id && String(w.warehouse_id) !== moveFrom)
+                      .filter(w => w.product_id === moveFor.product_id && String(w.warehouse_id) !== moveFrom && Number(w.available) > 0)
                       .map(w => (
                         <SelectItem key={w.warehouse_id} value={String(w.warehouse_id)}>{w.warehouse_name} — {w.available} available</SelectItem>
                       ))}
