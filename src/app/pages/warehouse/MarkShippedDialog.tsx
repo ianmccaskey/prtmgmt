@@ -382,6 +382,29 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
     const all = asRows<FifoRow>(stockRaw);
     return isWarehouse ? all.filter(r => r.warehouse_id === assignedWarehouseId) : all;
   }, [stockRaw, isWarehouse, assignedWarehouseId]);
+  // UNFILTERED rows — needed to see this order's reservations at OTHER
+  // warehouses, which define each warehouse's share of a split line.
+  const stockAll: FifoRow[] = useMemo(() => asRows<FifoRow>(stockRaw), [stockRaw]);
+  const reservedFor = (productId: number, scoped: boolean) =>
+    stockAll
+      .filter(s => s.product_id === productId && (!scoped || inScopeRow(s.warehouse_id)))
+      .reduce((sum, r) => sum + Number(r.order_reserved), 0);
+  /**
+   * A line's target quantity in THIS view. Normally the full remaining;
+   * but when the order's reservations fully cover the line AND part of
+   * them live outside the current warehouse scope (an intra-line split),
+   * this view's target is only the in-scope reserved share — the rest is
+   * another warehouse's shipment. (If the same product appears on two
+   * lines the product-level reservations are counted for each; rare, and
+   * the per-row shippable caps still bound reality.)
+   */
+  const lineShare = (it: QueueOrder['items'][number]): number => {
+    const rem = itemRemaining(it);
+    if (!scopeWarehouseId) return rem;
+    const total = reservedFor(it.product_id, false);
+    const inScope = reservedFor(it.product_id, true);
+    return total >= rem && inScope < rem ? Math.min(rem, inScope) : rem;
+  };
 
   const plan: RatePlan | null = Array.isArray(planRaw) && planRaw.length > 0 ? (planRaw[0] as RatePlan) : null;
 
@@ -463,19 +486,29 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
       // They can still allocate it manually (preferences are overridable by
       // design), but shipping someone else's line must not happen by default.
       if (isWarehouse && assignedWarehouseId && prefWh != null && Number(prefWh) !== Number(assignedWarehouseId)) continue;
+      // Intra-line split: when this order's reservations fully cover the
+      // line, they SAY where each share ships from — default only from
+      // reserved rows, capped at each row's reservation, targeting this
+      // view's share (the rest belongs to the other warehouse's shipment).
+      const fullyReserved = reservedFor(it.product_id, false) >= remaining;
+      remaining = Math.min(remaining, lineShare(it));
       const score = (r: FifoRow) =>
         (Number(r.order_reserved) > 0 ? 4 : 0) +
         (it.preferred_batch_id != null && r.batch_id === it.preferred_batch_id ? 2 : 0) +
         (prefWh != null && r.warehouse_id === prefWh ? 1 : 0);
       const candidates = stock
         .filter(s => s.product_id === it.product_id && inScopeRow(s.warehouse_id))
+        .filter(s => !fullyReserved || Number(s.order_reserved) > 0)
         .slice()
         .sort((a, b) => score(b) - score(a));
       for (const r of candidates) {
         if (remaining <= 0) break;
-        const usable = rowUsable(r) - (usedByRow[r.inventory_id] || 0);
+        const used = usedByRow[r.inventory_id] || 0;
+        const usable = rowUsable(r) - used;
         if (usable <= 0) continue;
-        const take = Math.min(remaining, usable);
+        const take = Math.min(remaining, usable,
+          fullyReserved ? Math.max(0, Number(r.order_reserved) - used) : usable);
+        if (take <= 0) continue;
         next.push({ key: `${it.item_id}-${r.inventory_id}`, item_id: it.item_id, product_id: it.product_id, inventory_id: r.inventory_id, qty: take });
         usedByRow[r.inventory_id] = (usedByRow[r.inventory_id] || 0) + take;
         remaining -= take;
@@ -501,8 +534,9 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
   for (const it of visibleItems) {
     const lineTotal = allocs.filter(a => a.item_id === it.item_id && a.inventory_id != null).reduce((s, a) => s + a.qty, 0);
     const rem = itemRemaining(it);
+    const share = lineShare(it);
     if (lineTotal > rem) problems.push(`${it.product_name}: allocated ${lineTotal} exceeds the ${rem} remaining.`);
-    if (lineTotal < rem && !order.partial_fulfillment_allowed) problems.push(`${it.product_name}: only ${lineTotal}/${rem} allocated and this order requires complete fulfillment.`);
+    if (lineTotal < share && !order.partial_fulfillment_allowed) problems.push(`${it.product_name}: only ${lineTotal}/${share} allocated${share < rem ? ` (this warehouse's share of ${rem})` : ''} and this order requires complete fulfillment.`);
   }
   for (const [invId, used] of Object.entries(usedPerRow)) {
     const r = rowFor(Number(invId));
@@ -644,6 +678,7 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
                 const lineAllocs = allocs.filter(a => a.item_id === it.item_id);
                 const lineTotal = lineAllocs.reduce((s, a) => s + a.qty, 0);
                 const rem = itemRemaining(it);
+                const share = lineShare(it);
                 const productRows = stock.filter(s => s.product_id === it.product_id && inScopeRow(s.warehouse_id));
                 return (
                   <div key={it.item_id} className="border rounded-lg p-3">
@@ -662,8 +697,10 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
                           </Badge>
                         )}
                       </div>
-                      <Badge variant={lineTotal === rem ? 'secondary' : 'outline'} className={lineTotal < rem ? 'text-amber-600 border-amber-300' : ''}>
-                        {lineTotal}/{rem} kits allocated{lineTotal < rem ? ' — backorder' : ''}
+                      <Badge variant={lineTotal >= share ? 'secondary' : 'outline'} className={lineTotal < share ? 'text-amber-600 border-amber-300' : ''}>
+                        {lineTotal}/{share} kits allocated
+                        {share < rem ? ` (this warehouse's share of ${rem})` : ''}
+                        {lineTotal < share ? ' — backorder' : ''}
                       </Badge>
                     </div>
                     {lineAllocs.map(a => {

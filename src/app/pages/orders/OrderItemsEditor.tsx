@@ -24,6 +24,8 @@ import reserveBatchStock from '@/actions/warehouse/reserveBatchStock';
 import listWarehouseAvailability from '@/actions/orders/listWarehouseAvailability';
 import releaseProductReservation from '@/actions/warehouse/releaseProductReservation';
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
+import listOrderReservations from '@/actions/orders/listOrderReservations';
+import moveLineReservationAtomic from '@/actions/warehouse/moveLineReservationAtomic';
 
 export type OrderItemRow = {
   id: number; sales_order_id: number; product_id: number; quantity: number;
@@ -85,6 +87,66 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
 
   const [shipToOpen, setShipToOpen] = useState(false);
   const [shipForm, setShipForm] = useState({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
+
+  // Split-across-warehouses: move part of a line's reservations elsewhere.
+  type ResRow = { product_id: number; warehouse_id: number; warehouse_name: string; quantity: number };
+  const [resRaw, , , reloadRes] = useLoadAction(listOrderReservations, [orderId], { orderId });
+  const resList = asRows<ResRow>(resRaw);
+  const [doMoveRes] = useMutateAction(moveLineReservationAtomic);
+  const [moveFor, setMoveFor] = useState<OrderItemRow | null>(null);
+  const [moveFrom, setMoveFrom] = useState('');
+  const [moveTo, setMoveTo] = useState('');
+  const [moveQty, setMoveQty] = useState('');
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveErr, setMoveErr] = useState('');
+  const [moveWhAvailRaw] = useLoadAction(listWarehouseAvailability, [moveFor ? 1 : 0], {}, { enabled: !!moveFor });
+  const moveWhAvail = asRows<{ product_id: number; warehouse_id: number; warehouse_name: string; available: number }>(moveWhAvailRaw);
+
+  const openMove = (item: OrderItemRow) => {
+    const held = resList.filter(r => r.product_id === item.product_id);
+    setMoveFor(item);
+    setMoveFrom(held.length === 1 ? String(held[0].warehouse_id) : '');
+    setMoveTo('');
+    setMoveQty('');
+    setMoveErr('');
+  };
+
+  const doMove = async () => {
+    if (!moveFor || !moveFrom || !moveTo) return;
+    const qty = Number(moveQty);
+    const held = Number(resList.find(r => r.product_id === moveFor.product_id && String(r.warehouse_id) === moveFrom)?.quantity || 0);
+    if (!Number.isInteger(qty) || qty <= 0) { setMoveErr('Enter a whole quantity greater than zero.'); return; }
+    if (qty > held) { setMoveErr(`Only ${held} reserved at the source warehouse.`); return; }
+    setMoveBusy(true); setMoveErr('');
+    try {
+      const res = await doMoveRes({
+        order_id: orderId, product_id: moveFor.product_id,
+        from_warehouse_id: Number(moveFrom), to_warehouse_id: Number(moveTo), quantity: qty,
+      }) as unknown as { released: number; reserved: number }[];
+      const r = res?.[0];
+      if (!r || Number(r.released) === 0) {
+        setMoveErr('Move refused — not enough reserved at the source or available at the destination. Refresh and retry.');
+        return;
+      }
+      const fromName = resList.find(x => String(x.warehouse_id) === moveFrom)?.warehouse_name || moveFrom;
+      const toName = moveWhAvail.find(x => String(x.warehouse_id) === moveTo)?.warehouse_name || moveTo;
+      await doAudit({
+        orderId, userId: profileId, changeType: 'other', fieldName: 'reservations',
+        oldValue: null, newValue: null,
+        note: `Moved ${r.released}× ${moveFor.product_sku} reservation ${fromName} → ${toName}` +
+          (Number(r.reserved) < Number(r.released) ? ` (only ${r.reserved} re-reserved — shortfall is a backorder)` : ''),
+      });
+      if (Number(r.reserved) < Number(r.released)) {
+        setMoveErr(`Moved, but only ${r.reserved} of ${r.released} could re-reserve at the destination (stock changed mid-move) — the rest is a backorder there.`);
+      } else {
+        setMoveFor(null);
+      }
+      reloadRes();
+      onChanged();
+    } finally {
+      setMoveBusy(false);
+    }
+  };
 
   const [editTotals, setEditTotals] = useState(false);
   const [discount, setDiscount] = useState('');
@@ -345,6 +407,24 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
                   {a.quantity}× {a.batch_number} @ {a.warehouse_name}{Number(a.quantity_shipped) > 0 ? ` (${a.quantity_shipped} shipped)` : ''}
                 </span>
               ))}
+              {(() => {
+                const held = resList.filter(r => r.product_id === item.product_id);
+                if (item.fulfillment_source !== 'warehouse' || held.length === 0) return null;
+                return (
+                  <>
+                    <span className="text-xs text-muted-foreground">
+                      Reserved: {held.map(r => `${r.quantity} @ ${r.warehouse_name}`).join(' · ')}
+                    </span>
+                    {!isReadOnly && orderStatusConfirmedPlus && !item.is_shipped && (
+                      <Button size="sm" variant="ghost" className="h-5 px-1.5 text-xs text-blue-600"
+                        title="Move part of this line's reserved stock to another warehouse (split shipment)"
+                        onClick={() => openMove(item)}>
+                        <ArrowLeftRight className="h-3 w-3 mr-1" /> Split / Move
+                      </Button>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         );
@@ -356,6 +436,58 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
         </Button>
       )}
       {error && <p className="text-xs text-red-600 bg-red-50 rounded p-2">{error}</p>}
+
+      {/* Split / move reservations across warehouses */}
+      <Dialog open={!!moveFor} onOpenChange={v => !v && setMoveFor(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Split / Move Reservation</DialogTitle></DialogHeader>
+          {moveFor && (
+            <div className="space-y-3 py-1">
+              <p className="text-sm">
+                <span className="font-medium">{moveFor.product_name}</span>
+                <span className="text-muted-foreground"> — move part of this line&apos;s reserved stock to another warehouse. Each warehouse ships its own share.</span>
+              </p>
+              <div>
+                <Label className="text-xs">From (currently reserved)</Label>
+                <Select value={moveFrom} onValueChange={v => { setMoveFrom(v); setMoveErr(''); }}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Source warehouse" /></SelectTrigger>
+                  <SelectContent>
+                    {resList.filter(r => r.product_id === moveFor.product_id).map(r => (
+                      <SelectItem key={r.warehouse_id} value={String(r.warehouse_id)}>{r.warehouse_name} — {r.quantity} reserved</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">To</Label>
+                <Select value={moveTo} onValueChange={v => { setMoveTo(v); setMoveErr(''); }}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Destination warehouse" /></SelectTrigger>
+                  <SelectContent>
+                    {moveWhAvail
+                      .filter(w => w.product_id === moveFor.product_id && String(w.warehouse_id) !== moveFrom)
+                      .map(w => (
+                        <SelectItem key={w.warehouse_id} value={String(w.warehouse_id)}>{w.warehouse_name} — {w.available} available</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Quantity to move</Label>
+                <Input type="number" min={1} step={1} className="h-8 w-28"
+                  max={Number(resList.find(r => r.product_id === moveFor.product_id && String(r.warehouse_id) === moveFrom)?.quantity || 0)}
+                  value={moveQty} onChange={e => { setMoveQty(e.target.value); setMoveErr(''); }} />
+              </div>
+              {moveErr && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">{moveErr}</p>}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoveFor(null)} disabled={moveBusy}>Close</Button>
+            <Button onClick={doMove} disabled={moveBusy || !moveFrom || !moveTo || !(Number(moveQty) > 0)}>
+              {moveBusy ? 'Moving…' : 'Move Reservation'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Separator />
 
