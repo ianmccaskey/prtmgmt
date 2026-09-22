@@ -802,8 +802,11 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
   const [lblSaving, setLblSaving] = useState(false);
   const [lblErr, setLblErr] = useState('');
   const [doUpdateLabel] = useMutateAction(updateShipmentLabel);
+  const validLabelUrl = (u: string) =>
+    u.startsWith('https://') || u.startsWith('http://') || u.startsWith('data:application/pdf') || u.startsWith('data:image/');
   const doLblSubmit = async () => {
     if (!lblUrl.trim()) { setLblErr('Upload a label file or paste its URL.'); return; }
+    if (!validLabelUrl(lblUrl.trim())) { setLblErr('Label must be an https:// URL (or an uploaded PDF/image).'); return; }
     if (!lblReason.trim()) { setLblErr('A reason is required — it goes to the order audit log.'); return; }
     setLblSaving(true); setLblErr('');
     try {
@@ -895,13 +898,19 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
               <Label className="text-xs">New label file</Label>
               <FileUpload accept="application/pdf,image/*" label="Upload label (PDF or image)"
                 onUploaded={url => { setLblUrl(url); setLblErr(''); }} />
-              {lblUrl && <p className="text-xs text-green-700 mt-1">File ready{lblUrl.startsWith('data:') ? ' (stored inline)' : ''}.</p>}
             </div>
-            <div>
-              <Label className="text-xs">…or paste a label URL</Label>
-              <Input className="h-8 text-xs" placeholder="https://…" value={lblUrl.startsWith('data:') ? '' : lblUrl}
-                onChange={e => { setLblUrl(e.target.value); setLblErr(''); }} />
-            </div>
+            {lblUrl.startsWith('data:') ? (
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-green-700">Uploaded file staged (stored inline).</p>
+                <Button size="sm" variant="ghost" className="h-6 text-xs text-red-600" onClick={() => setLblUrl('')}>Discard</Button>
+              </div>
+            ) : (
+              <div>
+                <Label className="text-xs">…or paste a label URL</Label>
+                <Input className="h-8 text-xs" placeholder="https://…" value={lblUrl}
+                  onChange={e => { setLblUrl(e.target.value); setLblErr(''); }} />
+              </div>
+            )}
             <div>
               <Label className="text-xs">Reason * <span className="text-muted-foreground font-normal">(written to the order audit log)</span></Label>
               <Textarea rows={2} value={lblReason} onChange={e => setLblReason(e.target.value)}
