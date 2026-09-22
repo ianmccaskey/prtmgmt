@@ -54,6 +54,8 @@ import getAppSetting from '@/actions/settings/getAppSetting';
 import completeSwapPayment from '@/actions/orders/completeSwapPayment';
 import { getBtcQuoteForUsd, openBtcDepositChannel, getBtcSwapStatus, BtcSwapQuote } from '@/lib/chainflip';
 import correctShipmentTracking from '@/actions/orders/correctShipmentTracking';
+import updateShipmentLabel from '@/actions/orders/updateShipmentLabel';
+import { FileUpload } from '@/components/FileUpload';
 import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 
 interface OrderDetailDrawerProps {
@@ -791,6 +793,31 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
   const [doCorrectTracking] = useMutateAction(correctShipmentTracking);
   const wasDelivered = String(shipment.status) === 'delivered';
 
+  // Replace Label — the stored label PDF is wrong (re-bought elsewhere,
+  // tracking corrected to a different carrier). Purchase history (Shippo
+  // transaction, internal cost) stays; only the document swaps.
+  const [lblOpen, setLblOpen] = useState(false);
+  const [lblUrl, setLblUrl] = useState('');
+  const [lblReason, setLblReason] = useState('');
+  const [lblSaving, setLblSaving] = useState(false);
+  const [lblErr, setLblErr] = useState('');
+  const [doUpdateLabel] = useMutateAction(updateShipmentLabel);
+  const doLblSubmit = async () => {
+    if (!lblUrl.trim()) { setLblErr('Upload a label file or paste its URL.'); return; }
+    if (!lblReason.trim()) { setLblErr('A reason is required — it goes to the order audit log.'); return; }
+    setLblSaving(true); setLblErr('');
+    try {
+      const res = await doUpdateLabel({ shipment_id: shipment.id, label_url: lblUrl.trim(), userId: profileId, note: `Label replaced: ${lblReason.trim()}` }) as unknown[];
+      if (!res || res.length === 0) { setLblErr('Shipment not found — refresh and retry.'); return; }
+      setLblOpen(false);
+      onRefresh();
+    } catch (e: unknown) {
+      setLblErr(e instanceof Error ? e.message : 'Failed to replace label');
+    } finally {
+      setLblSaving(false);
+    }
+  };
+
   const openTrk = () => {
     setTrkCarrier(SHIP_CARRIERS.includes(String(shipment.carrier)) ? String(shipment.carrier) : 'USPS');
     setTrkNumber(dbText(shipment.tracking_number));
@@ -848,7 +875,46 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
             <Pencil className="h-3 w-3 mr-1" /> Correct Tracking
           </Button>
         )}
+        {canCorrectTracking && (
+          <Button size="sm" variant="outline" className="h-7 text-xs mt-1" onClick={() => { setLblUrl(''); setLblReason(''); setLblErr(''); setLblOpen(true); }}>
+            <Pencil className="h-3 w-3 mr-1" /> Replace Label
+          </Button>
+        )}
       </div>
+
+      <Dialog open={lblOpen} onOpenChange={v => !v && setLblOpen(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Replace Label</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Swaps this shipment&apos;s label document — use after correcting tracking to a re-bought
+              label. The original purchase record (Shippo transaction, internal cost) is kept; the
+              change is audit-logged with your reason.
+            </p>
+            <div>
+              <Label className="text-xs">New label file</Label>
+              <FileUpload accept="application/pdf,image/*" label="Upload label (PDF or image)"
+                onUploaded={url => { setLblUrl(url); setLblErr(''); }} />
+              {lblUrl && <p className="text-xs text-green-700 mt-1">File ready{lblUrl.startsWith('data:') ? ' (stored inline)' : ''}.</p>}
+            </div>
+            <div>
+              <Label className="text-xs">…or paste a label URL</Label>
+              <Input className="h-8 text-xs" placeholder="https://…" value={lblUrl.startsWith('data:') ? '' : lblUrl}
+                onChange={e => { setLblUrl(e.target.value); setLblErr(''); }} />
+            </div>
+            <div>
+              <Label className="text-xs">Reason * <span className="text-muted-foreground font-normal">(written to the order audit log)</span></Label>
+              <Textarea rows={2} value={lblReason} onChange={e => setLblReason(e.target.value)}
+                placeholder="e.g. re-bought UPS label after tracking correction — old USPS label void" />
+            </div>
+            {lblErr && <p className="text-xs text-red-600">{lblErr}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLblOpen(false)} disabled={lblSaving}>Cancel</Button>
+            <Button onClick={doLblSubmit} disabled={lblSaving || !lblUrl.trim()}>{lblSaving ? 'Saving…' : 'Replace Label'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={trkOpen} onOpenChange={v => !v && setTrkOpen(false)}>
         <DialogContent className="max-w-sm">
@@ -1191,7 +1257,10 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                           </span>
                           <span className="flex items-center gap-1 shrink-0">
                             {s.label_url != null && (
-                              <a href={String(s.label_url)} target="_blank" rel="noreferrer" className="text-xs text-blue-700 underline">
+                              // data: labels (inline-stored uploads) can't open in a tab —
+                              // browsers block top-frame data: navigation; download instead.
+                              <a href={String(s.label_url)} target="_blank" rel="noreferrer" className="text-xs text-blue-700 underline"
+                                {...(String(s.label_url).startsWith('data:') ? { download: 'label.pdf', target: undefined } : {})}>
                                 Label
                               </a>
                             )}
