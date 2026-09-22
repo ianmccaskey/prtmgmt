@@ -1259,10 +1259,11 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                             {s.label_url != null && (
                               // data: labels (inline-stored uploads) can't open in a tab —
                               // browsers block top-frame data: navigation; download instead.
-                              <a href={String(s.label_url)} target="_blank" rel="noreferrer" className="text-xs text-blue-700 underline"
-                                {...(String(s.label_url).startsWith('data:') ? { download: 'label.pdf', target: undefined } : {})}>
-                                Label
-                              </a>
+                              String(s.label_url).startsWith('data:') ? (
+                                <a href={String(s.label_url)} download="label.pdf" className="text-xs text-blue-700 underline">Label</a>
+                              ) : (
+                                <a href={String(s.label_url)} target="_blank" rel="noreferrer" className="text-xs text-blue-700 underline">Label</a>
+                              )
                             )}
                             {s.tracking_number != null && (
                               <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-700"
