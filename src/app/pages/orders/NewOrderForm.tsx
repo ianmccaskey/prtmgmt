@@ -383,7 +383,8 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const addLine = (p: Product) => {
     const stock = Number(p.available_stock);
     const src: LineItem['fulfillment_source'] = p.available_warehouse && stock >= 1 ? 'warehouse' : 'china_direct';
-    const priced = isFree ? { unit_price: 0, price_mode: 'free' as const } : autoPriced(p, 1);
+    // +1 joins any existing lines of the same product for tier purposes.
+    const priced = isFree ? { unit_price: 0, price_mode: 'free' as const } : autoPriced(p, combinedQty(p.id, lines) + 1);
     setLines(prev => [...prev.filter(l => l.product !== null), { key: Math.random().toString(36).slice(2), product: p, quantity: 1, ...priced, fulfillment_source: src, preferred_batch_id: null, preferred_warehouse_id: null }]);
   };
   const upLine = (key: string, patch: Partial<LineItem>) => setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l));
@@ -404,24 +405,32 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       ? { unit_price: tp, price_mode: 'tier' }
       : { unit_price: Number(product.list_price), price_mode: 'list' };
   };
+  // Tiers price by the product's COMBINED quantity across ALL lines: a
+  // line split across warehouses (25 WI + 15 OK) is one 40-kit purchase
+  // and must hit the 40-kit tier on every line, not price 15 at a worse
+  // tier. Manual/free lines still count toward the combined total (the
+  // customer ordered them), they just never get repriced.
+  const combinedQty = (productId: number, linesArr: LineItem[]): number =>
+    linesArr.reduce((s, x) => s + (x.product?.id === productId ? Number(x.quantity || 0) : 0), 0);
   const changeQty = (l: LineItem, qty: number) => {
     const patch: Partial<LineItem> = { quantity: qty };
     if (l.product && !isFree && (l.price_mode === 'list' || l.price_mode === 'tier')) {
-      Object.assign(patch, autoPriced(l.product, qty));
+      const combined = lines.reduce((s, x) => s + (x.product?.id === l.product!.id ? (x.key === l.key ? qty : Number(x.quantity || 0)) : 0), 0);
+      Object.assign(patch, autoPriced(l.product, combined));
     }
     upLine(l.key, patch);
   };
-  // Tier data can arrive AFTER lines were added (fast user, slow load) —
-  // reprice automatic lines when it lands so a min-quantity-1 tier isn't
-  // silently skipped. Manual/free lines stay untouched; the no-op guard
-  // keeps this from looping.
+  // Reprice automatic lines whenever tier data lands OR any line's
+  // product/quantity mix changes — sibling lines of a split product must
+  // re-tier when another line's quantity moves. No-op guard stops loops.
+  const lineQtySig = lines.map(l => `${l.product?.id ?? ''}:${l.quantity}:${l.price_mode}`).join('|');
   useEffect(() => {
     if (isFree) return;
     setLines(prev => {
       let changed = false;
       const next = prev.map(l => {
         if (!l.product || (l.price_mode !== 'list' && l.price_mode !== 'tier')) return l;
-        const priced = autoPriced(l.product, l.quantity);
+        const priced = autoPriced(l.product, combinedQty(l.product.id, prev));
         if (priced.unit_price === l.unit_price && priced.price_mode === l.price_mode) return l;
         changed = true;
         return { ...l, ...priced };
@@ -429,7 +438,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tiersRaw, isFree]);
+  }, [tiersRaw, isFree, lineQtySig]);
   const rmLine = (key: string) => setLines(prev => prev.filter(l => l.key !== key));
 
   const subtotal = lines.reduce((s, l) => s + (l.product ? l.quantity * l.unit_price : 0), 0);
