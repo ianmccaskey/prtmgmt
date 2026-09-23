@@ -123,9 +123,10 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   // Bumped on every invalidation AND every new check — a late async
   // result with a stale seq must not resurrect a revoked proof.
   const checkSeqRef = useRef(0);
-  const [moralisRaw] = useLoadAction(getAppSetting, [addOpen ? 1 : 0], { key: 'moralis_api_key' }, { enabled: addOpen });
+  const chainKeysNeeded = addOpen || fixOpen != null;
+  const [moralisRaw] = useLoadAction(getAppSetting, [chainKeysNeeded ? 1 : 0], { key: 'moralis_api_key' }, { enabled: chainKeysNeeded });
   const moralisKey = String(rows<{ value: string }>(moralisRaw)[0]?.value ?? '');
-  const [heliusRaw] = useLoadAction(getAppSetting, [addOpen ? 1 : 0], { key: 'helius_api_key' }, { enabled: addOpen });
+  const [heliusRaw] = useLoadAction(getAppSetting, [chainKeysNeeded ? 1 : 0], { key: 'helius_api_key' }, { enabled: chainKeysNeeded });
   const heliusKey = String(rows<{ value: string }>(heliusRaw)[0]?.value ?? '');
   const invalidateChainProof = () => {
     checkSeqRef.current++;
@@ -147,6 +148,14 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const [fixTxOriginal, setFixTxOriginal] = useState('');
   const [fixSaving, setFixSaving] = useState(false);
   const [fixErr, setFixErr] = useState('');
+  // On-chain check of the fix dialog's TX against the payment amount —
+  // informational only (verified status stays whatever it is).
+  const [fixCheck, setFixCheck] = useState<ChainCheck>(IDLE_CHECK);
+  const fixSeqRef = useRef(0);
+  const invalidateFixCheck = () => {
+    fixSeqRef.current++;
+    setFixCheck(prev => (prev.state === 'idle' ? prev : IDLE_CHECK));
+  };
 
   // Wallets are scoped to the order's division (the rep's division): a
   // China order can only record/repoint payments onto China wallets.
@@ -355,7 +364,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             </Badge>
           </div>
           <p className="text-muted-foreground">{p.amount_asset != null ? `${Number(p.amount_asset).toFixed(6)} ${String(p.asset)} · ` : ''}${Number(p.amount_usd).toFixed(2)}</p>
-          {p.tx_hash && (() => {
+          {p.tx_hash ? (() => {
             const url = txExplorerUrl(String(p.network || ''), String(p.tx_hash));
             return (
               <p className="text-xs text-muted-foreground break-all">
@@ -364,7 +373,9 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                   : String(p.tx_hash)}
               </p>
             );
-          })()}
+          })() : p.swap_channel_id == null && (
+            <p className="text-xs text-muted-foreground italic">No TX hash recorded</p>
+          )}
           {p.swap_channel_id != null && p.verification_status === 'pending' && (
             <div className="bg-amber-50 border border-amber-200 rounded p-2 space-y-1">
               <p className="text-xs font-medium text-amber-800">
@@ -416,9 +427,10 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 const tx = dbText(p.tx_hash as string | null) || String(p.tx_hash || '');
                 setFixTx(tx); setFixTxOriginal(tx);
                 setFixErr('');
+                setFixCheck(IDLE_CHECK); fixSeqRef.current++;
                 setFixOpen(Number(p.id));
               }}>
-                <Pencil className="h-3 w-3 mr-1" /> Fix Wallet
+                <Pencil className="h-3 w-3 mr-1" /> {p.tx_hash ? 'Fix Wallet' : 'Add TX Hash'}
               </Button>
             )}
             {isAdmin && (
@@ -643,22 +655,22 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
 
       <Dialog open={fixOpen != null} onOpenChange={v => !v && setFixOpen(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Fix Payment Wallet</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{fixTxOriginal ? 'Fix Payment Wallet' : 'Add TX Hash'}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-xs text-muted-foreground">
-              For payments recorded against the wrong asset, network, wallet, or transaction — the money actually
-              arrived somewhere else, or was swapped and the record must follow it to the swap TX. Amount and
-              verified status stay as they are; the change is audit-logged.
+              {fixTxOriginal
+                ? 'For payments recorded against the wrong asset, network, wallet, or transaction — the money actually arrived somewhere else, or was swapped and the record must follow it to the swap TX. Amount and verified status stay as they are; the change is audit-logged.'
+                : 'Record the on-chain transaction for this payment. Amount and verified status stay as they are; the change is audit-logged.'}
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div><Label className="text-xs">Asset</Label>
-                <Select value={fixAsset} onValueChange={v => { setFixAsset(v); setFixNetwork(NETWORKS[v]?.[0] || ''); }}>
+                <Select value={fixAsset} onValueChange={v => { setFixAsset(v); setFixNetwork(NETWORKS[v]?.[0] || ''); invalidateFixCheck(); }}>
                   <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                   <SelectContent>{ASSETS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div><Label className="text-xs">Network</Label>
-                <Select value={fixNetwork} onValueChange={setFixNetwork}>
+                <Select value={fixNetwork} onValueChange={v => { setFixNetwork(v); invalidateFixCheck(); }}>
                   <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                   <SelectContent>{(NETWORKS[fixAsset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
                 </Select>
@@ -676,8 +688,37 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             )}
             <div>
               <Label className="text-xs">TX Hash <span className="text-muted-foreground font-normal">(the deposit into the wallet above — for swaps, the swap TX; keep the original TX in the reason/notes)</span></Label>
-              <Input value={fixTx} onChange={e => setFixTx(e.target.value)} placeholder="0x… / signature" className="h-8" />
-              {fixTx.trim() !== fixTxOriginal && (
+              <div className="flex gap-2">
+                <Input value={fixTx} onChange={e => { setFixTx(e.target.value); invalidateFixCheck(); }} placeholder="0x… / signature" className="h-8" />
+                <Button type="button" variant="outline" size="sm" className="h-8 shrink-0"
+                  disabled={!fixTx.trim() || !fixWallet || fixCheck.state === 'checking'}
+                  title="Look the TX up on chain: does it move at least this payment's amount into the wallet above?"
+                  onClick={async () => {
+                    if (!fixWallet) return;
+                    const amt = Number(payList.find(x => Number(x.id) === fixOpen)?.amount_usd || 0);
+                    const seq = ++fixSeqRef.current;
+                    setFixCheck({ state: 'checking', msg: '' });
+                    const res = await verifyTxCoversAmount({
+                      moralisKey, heliusKey: heliusKey || null,
+                      asset: fixAsset, network: fixNetwork, networkLabel: NETWORK_LABELS[fixNetwork] || fixNetwork,
+                      wallet: fixWallet, txHash: fixTx, requiredUsd: amt, requiredLabel: 'payment amount',
+                      swapFlowLocation: 'via the BTC → USDC auto-swap mode in Add Payment',
+                    });
+                    if (fixSeqRef.current !== seq) return;
+                    setFixCheck(res);
+                  }}>
+                  {fixCheck.state === 'checking' ? 'Checking…' : 'Verify on Chain'}
+                </Button>
+              </div>
+              {fixCheck.msg && (
+                <p className={`text-xs mt-1 ${
+                  fixCheck.state === 'ok' || fixCheck.state === 'over' ? 'text-green-700'
+                  : fixCheck.state === 'short' || fixCheck.state === 'notfound' ? 'text-red-600'
+                  : 'text-amber-700'}`}>
+                  {fixCheck.msg}
+                </p>
+              )}
+              {fixTx.trim() !== fixTxOriginal && fixTxOriginal !== '' && (
                 <p className="text-xs text-amber-700 mt-0.5">TX hash will change — the old hash goes to the audit log.</p>
               )}
             </div>
