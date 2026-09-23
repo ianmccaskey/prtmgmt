@@ -8,8 +8,12 @@ name: tracking-sync
 
 on:
   schedule:
-    # Every 30 minutes. GitHub may delay scheduled runs by a few minutes.
-    - cron: '*/30 * * * *'
+    # FALLBACK ONLY (every 6h, minute 7 — aligned with the other syncs so
+    # one Neon compute wake serves all). The real cadence comes from
+    # cron-job.org firing workflow_dispatch — GitHub's own scheduler
+    # delays best-effort crons by hours, and each unaligned run woke the
+    # Neon free-tier compute for a separate ~5-minute window.
+    - cron: '7 */6 * * *'
   workflow_dispatch: {}
 
 concurrency:

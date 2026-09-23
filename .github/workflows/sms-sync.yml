@@ -12,7 +12,10 @@ name: sms-sync
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    # FALLBACK ONLY — cron-job.org drives the real cadence (every 15 min,
+    # 6am–11pm CT) via workflow_dispatch; see tracking-sync.yml for the
+    # Neon-compute rationale. Aligned at minute 7 with the other syncs.
+    - cron: '7 */6 * * *'
   workflow_dispatch: {}
 
 concurrency:
