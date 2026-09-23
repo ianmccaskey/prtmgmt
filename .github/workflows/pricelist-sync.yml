@@ -1,5 +1,5 @@
 # Regenerates the public price sheet (PRTLabs/pricesheet) from the app
-# database every 15 minutes, committing ONLY when the generated sheet
+# database hourly via cron-job.org, committing ONLY when the generated sheet
 # differs — effectively sync-on-change, since the app is a browser-only
 # client with no server moment to fire a webhook from.
 #

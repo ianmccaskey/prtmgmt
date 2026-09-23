@@ -8,7 +8,7 @@
  * header but their CORS preflight never allows it — a browser can purchase
  * labels against api.goshippo.com, but tracking requests die at preflight.
  *
- * Invoked by .github/workflows/tracking-sync.yml every 30 minutes (needs the
+ * Invoked by .github/workflows/tracking-sync.yml (cron-job.org, hourly; needs the
  * DATABASE_URL repo secret), or locally:
  *
  *   bun tools/sync-tracking.ts

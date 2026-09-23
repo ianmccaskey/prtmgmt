@@ -8,7 +8,7 @@
  *  - FAILED / refunded → flags the payment for review (issue note)
  *  - otherwise → records the latest state so the drawer shows progress
  *
- * Runs from .github/workflows/swaps-sync.yml every 15 minutes; safe to run
+ * Runs from .github/workflows/swaps-sync.yml (cron-job.org, hourly); safe to run
  * locally too. Setup: DATABASE_URL in the environment (or .env.local).
  * No API key needed — Chainflip's swapping service is public.
  */

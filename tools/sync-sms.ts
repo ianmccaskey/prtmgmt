@@ -28,7 +28,8 @@
  *    assignment, the row re-arms and the push goes out. Older ones stay
  *    silent by design (notifications are for FUTURE work once configured).
  *
- * Runs from .github/workflows/sms-sync.yml every 5 minutes (also safe
+ * Runs from .github/workflows/sms-sync.yml — dispatched by cron-job.org
+ * every 15 minutes, 6am–11pm CT (also safe
  * locally). Environment:
  *   DATABASE_URL   Neon connection string (shared with other syncs)
  *   NTFY_SERVER    optional — self-hosted ntfy base URL

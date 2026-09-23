@@ -1,6 +1,6 @@
 # Pushes an ntfy notification to warehouses when an order is newly
-# assigned to them, every 5 minutes (GitHub's minimum schedule; actual
-# latency is typically 5-15 minutes). One push per (warehouse, order),
+# assigned to them, every 15 minutes 6am–11pm CT via cron-job.org (actual
+# latency is typically 5-20 minutes). One push per (warehouse, order),
 # deduped in sms_outbox. Delivery is ntfy (https://ntfy.sh) — no carrier
 # registration, no credentials; the per-warehouse secret topic is the
 # only key, and it lives in the warehouses table, not here.
