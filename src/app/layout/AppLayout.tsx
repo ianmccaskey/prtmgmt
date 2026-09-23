@@ -52,6 +52,16 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Settings', href: '/settings', icon: Settings, roles: ['admin'] },
 ];
 
+// Bottom tab bar (phones): the 4 destinations each role actually lives
+// in, ordered; everything else stays one tap away behind More (the
+// sheet). Falls back to the first four role-visible items.
+const BOTTOM_TABS_BY_ROLE: Record<string, string[]> = {
+  admin: ['/', '/orders', '/warehouse', '/commissions'],
+  logistics: ['/', '/orders', '/logistics', '/customers'],
+  sales_rep: ['/', '/orders', '/products', '/batches'],
+  warehouse: ['/', '/orders', '/warehouse', '/logistics'],
+};
+
 interface AppLayoutProps {
   children: React.ReactNode;
 }
@@ -111,6 +121,50 @@ function AppSidebar() {
   );
 }
 
+/**
+ * Phone-only bottom tab bar (hidden ≥ md, matching the sidebar's mobile
+ * breakpoint): the role's 4 core destinations always one thumb-tap away,
+ * plus More opening the full nav sheet. Safe-area padded for gesture-bar
+ * phones.
+ */
+function MobileBottomNav() {
+  const location = useLocation();
+  const { role } = useAppUser();
+  const { setOpenMobile } = useSidebar();
+
+  const visible = NAV_ITEMS.filter(i => !i.roles || i.roles.includes(role));
+  const priority = BOTTOM_TABS_BY_ROLE[role] || [];
+  const tabs = [
+    ...priority.map(href => visible.find(i => i.href === href)).filter((i): i is NavItem => !!i),
+    ...visible,
+  ].filter((item, idx, arr) => arr.findIndex(x => x.href === item.href) === idx).slice(0, 4);
+
+  const isActive = (href: string) =>
+    href === '/' ? location.pathname === '/' : location.pathname.startsWith(href);
+  // More is "active" when the current page isn't one of the visible tabs.
+  const moreActive = !tabs.some(t => isActive(t.href));
+
+  return (
+    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border/60 bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
+      <div className="grid grid-cols-5">
+        {tabs.map(item => (
+          <Link key={item.href} to={item.href}
+            className={`flex flex-col items-center justify-center gap-0.5 h-14 text-[10px] font-medium ${isActive(item.href) ? 'text-blue-600' : 'text-muted-foreground'}`}>
+            <item.icon className={`h-5 w-5 ${isActive(item.href) ? 'text-blue-600' : ''}`} />
+            {/* Short labels: "Sales Orders" → "Orders" keeps tabs legible */}
+            {item.href === '/orders' ? 'Orders' : item.label}
+          </Link>
+        ))}
+        <button type="button" onClick={() => setOpenMobile(true)}
+          className={`flex flex-col items-center justify-center gap-0.5 h-14 text-[10px] font-medium ${moreActive ? 'text-blue-600' : 'text-muted-foreground'}`}>
+          <Layers className="h-5 w-5" />
+          More
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 export function AppLayout({ children }: AppLayoutProps) {
   const { profileMissing, displayName, role } = useAppUser();
   const [mySettingsOpen, setMySettingsOpen] = useState(false);
@@ -138,10 +192,11 @@ export function AppLayout({ children }: AppLayoutProps) {
               Add your email under Settings → Users to assign a proper role.
             </div>
           )}
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-y-auto pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
             {children}
           </main>
         </div>
+        <MobileBottomNav />
       </div>
     </SidebarProvider>
   );
