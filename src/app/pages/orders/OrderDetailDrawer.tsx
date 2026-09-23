@@ -123,11 +123,6 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   // Bumped on every invalidation AND every new check — a late async
   // result with a stale seq must not resurrect a revoked proof.
   const checkSeqRef = useRef(0);
-  const chainKeysNeeded = addOpen || fixOpen != null;
-  const [moralisRaw] = useLoadAction(getAppSetting, [chainKeysNeeded ? 1 : 0], { key: 'moralis_api_key' }, { enabled: chainKeysNeeded });
-  const moralisKey = String(rows<{ value: string }>(moralisRaw)[0]?.value ?? '');
-  const [heliusRaw] = useLoadAction(getAppSetting, [chainKeysNeeded ? 1 : 0], { key: 'helius_api_key' }, { enabled: chainKeysNeeded });
-  const heliusKey = String(rows<{ value: string }>(heliusRaw)[0]?.value ?? '');
   const invalidateChainProof = () => {
     checkSeqRef.current++;
     setChainCheck(prev => (prev.state === 'idle' ? prev : IDLE_CHECK));
@@ -156,6 +151,13 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
     fixSeqRef.current++;
     setFixCheck(prev => (prev.state === 'idle' ? prev : IDLE_CHECK));
   };
+  // Chain-verify API keys — needed by both the Add Payment form and the
+  // fix dialog (declared here, AFTER fixOpen exists).
+  const chainKeysNeeded = addOpen || fixOpen != null;
+  const [moralisRaw] = useLoadAction(getAppSetting, [chainKeysNeeded ? 1 : 0], { key: 'moralis_api_key' }, { enabled: chainKeysNeeded });
+  const moralisKey = String(rows<{ value: string }>(moralisRaw)[0]?.value ?? '');
+  const [heliusRaw] = useLoadAction(getAppSetting, [chainKeysNeeded ? 1 : 0], { key: 'helius_api_key' }, { enabled: chainKeysNeeded });
+  const heliusKey = String(rows<{ value: string }>(heliusRaw)[0]?.value ?? '');
 
   // Wallets are scoped to the order's division (the rep's division): a
   // China order can only record/repoint payments onto China wallets.
