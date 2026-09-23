@@ -146,6 +146,9 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   // On-chain check of the fix dialog's TX against the payment amount —
   // informational only (verified status stays whatever it is).
   const [fixCheck, setFixCheck] = useState<ChainCheck>(IDLE_CHECK);
+  // Amount snapshotted at dialog open — a payList refetch mid-dialog must
+  // not turn the informational check into a $0 comparison.
+  const [fixAmount, setFixAmount] = useState(0);
   const fixSeqRef = useRef(0);
   const invalidateFixCheck = () => {
     fixSeqRef.current++;
@@ -430,6 +433,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 setFixTx(tx); setFixTxOriginal(tx);
                 setFixErr('');
                 setFixCheck(IDLE_CHECK); fixSeqRef.current++;
+                setFixAmount(Number(p.amount_usd) || 0);
                 setFixOpen(Number(p.id));
               }}>
                 <Pencil className="h-3 w-3 mr-1" /> {p.tx_hash ? 'Fix Wallet' : 'Add TX Hash'}
@@ -697,7 +701,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                   title="Look the TX up on chain: does it move at least this payment's amount into the wallet above?"
                   onClick={async () => {
                     if (!fixWallet) return;
-                    const amt = Number(payList.find(x => Number(x.id) === fixOpen)?.amount_usd || 0);
+                    const amt = fixAmount;
                     const seq = ++fixSeqRef.current;
                     setFixCheck({ state: 'checking', msg: '' });
                     const res = await verifyTxCoversAmount({
@@ -728,7 +732,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFixOpen(null)} disabled={fixSaving}>Cancel</Button>
-            <Button onClick={doFixWallet} disabled={fixSaving || !fixWallet}>{fixSaving ? 'Saving…' : 'Repoint Payment'}</Button>
+            <Button onClick={doFixWallet} disabled={fixSaving || !fixWallet}>{fixSaving ? 'Saving…' : fixTxOriginal ? 'Repoint Payment' : 'Save TX Hash'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
