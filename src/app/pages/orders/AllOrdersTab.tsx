@@ -12,7 +12,6 @@ import { StatusBadge, PaymentBadge, SourceBadges, FreeBadge, ChannelBadge } from
 import { Plus, Search, Crown } from 'lucide-react';
 import listOrders from '@/actions/orders/listOrders';
 import updateOrderStatus from '@/actions/orders/updateOrderStatus';
-import insertAuditLog from '@/actions/orders/insertAuditLog';
 import { useMutateAction } from '@uibakery/data';
 import { usePagination, PaginationFooter } from '@/components/Paginated';
 import { NewOrderForm } from './NewOrderForm';
