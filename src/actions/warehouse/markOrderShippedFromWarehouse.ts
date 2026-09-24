@@ -33,6 +33,9 @@ function markOrderShippedFromWarehouse() {
         )
         THEN 'shipped' ELSE 'partially_shipped' END
       WHERE id = {{params.order_id}}::bigint
+        -- Never regress a cancelled/delivered order: this is a repair
+        -- pass that can race a concurrent cancel/deliver.
+        AND status IN ('confirmed', 'partially_shipped')
       RETURNING id, status
     `,
   });

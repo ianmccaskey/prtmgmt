@@ -586,7 +586,12 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       orderChannel: channel, isFreeOrder: isFree,
       freeOrderReasonId: isFree && freeReasonId ? Number(freeReasonId) : null,
       freeOrderNote: isFree ? freeNote : null,
-      partialFulfillmentAllowed: partial, status: s,
+      // Always created as a quote; EVERY confirm (including free/$0) goes
+      // through updateOrderStatus so the transition, payment derivation,
+      // and audit row are one atomic statement — a $0 order created
+      // directly as 'confirmed' used to skip all three when the chain
+      // died (ORD-2026-0257 class).
+      partialFulfillmentAllowed: partial, status: s === 'confirmed' ? 'quote' : s,
       subtotalUsd: subtotal, customerShippingChargeUsd: Number(shipping), discountUsd: Number(discount), totalUsd: total,
       notes: notes || null, createdByUserId: profileId,
       salesRepUserProfileId: salesRepId ? Number(salesRepId) : null,
@@ -613,15 +618,19 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     // Derive payment_status (free $0 orders roll straight to 'paid').
     // Chained here because actions are single-statement.
     await doRecomputePayment({ orderId });
-    // Free/$0 orders are created confirmed directly (createOrder allows it);
-    // paid orders confirm through the same server-side gate as the drawer.
-    let confirmed = s === 'confirmed' && (isFree || total === 0);
+    // ALL confirms go through the same atomic server-side gate (which
+    // admits paid/partial, china-division, and $0/free orders); the
+    // audit row and payment derivation ride inside it.
+    let confirmed = false;
     let gateRefused = false;
-    if (s === 'confirmed' && !confirmed) {
-      // Audit + payment derivation ride inside updateOrderStatus (atomic).
+    if (s === 'confirmed') {
       const up = await doStatus({
         orderId, status: 'confirmed', cancellationReason: null, userId: profileId,
-        note: orderDivision === 'china' ? 'Confirmed at creation (China division — payment handled externally)' : 'Confirmed at creation (payment verified)',
+        note: orderDivision === 'china'
+          ? 'Confirmed at creation (China division — payment handled externally)'
+          : (isFree || total === 0)
+            ? 'Confirmed at creation (free/$0 order)'
+            : 'Confirmed at creation (payment verified)',
       }) as unknown[];
       confirmed = !!up && up.length > 0;
       if (!confirmed) gateRefused = true;

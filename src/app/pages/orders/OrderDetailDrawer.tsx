@@ -1045,13 +1045,19 @@ function CancelOrderDialog({ orderId, open, onClose, onDone }: {
 }) {
   const { profileId } = useAppUser();
   const [reason, setReason] = useState('');
+  const [cancelErr, setCancelErr] = useState('');
   const [doUpdate, updating] = useMutateAction(updateOrderStatus);
 
   const submit = async () => {
     // Cancel is fully atomic server-side now: transition + reservation
     // release + payment auto-flags + audit ride one statement, so a
     // browser hiccup can't strand reservations or drop the trail.
-    await doUpdate({ orderId, status: 'cancelled', cancellationReason: reason || null, userId: profileId, note: reason || null }) as unknown[];
+    const res = await doUpdate({ orderId, status: 'cancelled', cancellationReason: reason || null, userId: profileId, note: reason || null }) as unknown[];
+    if (!res || res.length === 0) {
+      // Stale drawer — the order already moved past a cancellable state.
+      setCancelErr('Order can no longer be cancelled (it already moved on) — close and refresh.');
+      return;
+    }
     onDone(); onClose();
   };
 
@@ -1062,6 +1068,7 @@ function CancelOrderDialog({ orderId, open, onClose, onDone }: {
         <div className="py-2 space-y-2">
           <p className="text-sm text-muted-foreground">Optionally provide a cancellation reason:</p>
           <Textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason (optional)…" rows={3} />
+          {cancelErr && <p className="text-xs text-red-600">{cancelErr}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Go Back</Button>
