@@ -1040,14 +1040,12 @@ function ShipmentCard({ shipment, onRefresh }: { shipment: Shipment; onRefresh: 
   );
 }
 
-function CancelOrderDialog({ orderId, orderStatus, open, onClose, onDone }: {
+function CancelOrderDialog({ orderId, open, onClose, onDone }: {
   orderId: number; orderStatus: string; open: boolean; onClose: () => void; onDone: () => void;
 }) {
   const { profileId } = useAppUser();
   const [reason, setReason] = useState('');
   const [doUpdate, updating] = useMutateAction(updateOrderStatus);
-  const [doAudit] = useMutateAction(insertAuditLog);
-  const [doRelease] = useMutateAction(releaseProductReservation);
 
   const submit = async () => {
     // Cancel is fully atomic server-side now: transition + reservation

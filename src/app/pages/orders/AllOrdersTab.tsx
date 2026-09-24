@@ -52,7 +52,6 @@ export function AllOrdersTab() {
   // month after delivery (the data stays; only their view narrows).
   const repScope = isSalesRep && profileId != null ? String(profileId) : null;
   const [doUpdateStatus] = useMutateAction(updateOrderStatus);
-  const [doAudit] = useMutateAction(insertAuditLog);
 
   const inlineStatusChange = async (order: { id: number; status: string }, next: string) => {
     // The audit row rides inside updateOrderStatus (atomic hardening).
