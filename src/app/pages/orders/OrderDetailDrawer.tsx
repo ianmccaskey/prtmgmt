@@ -1050,15 +1050,10 @@ function CancelOrderDialog({ orderId, orderStatus, open, onClose, onDone }: {
   const [doRelease] = useMutateAction(releaseProductReservation);
 
   const submit = async () => {
-    const res = await doUpdate({ orderId, status: 'cancelled', cancellationReason: reason || null }) as unknown[];
-    // Transition guard returned zero rows → stale drawer (order already moved
-    // on); don't release reservations or write a false cancel audit.
-    if (res && res.length > 0) {
-      // Cancellation releases everything still in this order's reservation
-      // ledger — exactly the rows it reserved, nobody else's.
-      await doRelease({ order_id: orderId, product_id: null });
-      await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: orderStatus, newValue: 'cancelled', note: reason || null });
-    }
+    // Cancel is fully atomic server-side now: transition + reservation
+    // release + payment auto-flags + audit ride one statement, so a
+    // browser hiccup can't strand reservations or drop the trail.
+    await doUpdate({ orderId, status: 'cancelled', cancellationReason: reason || null, userId: profileId, note: reason || null }) as unknown[];
     onDone(); onClose();
   };
 
@@ -1127,20 +1122,23 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const shipmentList = rows<Shipment>(shipments);
 
   const handleStatusAction = async (next: string) => {
-    const res = await doUpdateStatus({ orderId, status: next, cancellationReason: null }) as unknown[];
+    // Status flip, payment derivation, and the audit row are one atomic
+    // statement server-side (updateOrderStatus hardening).
+    const res = await doUpdateStatus({ orderId, status: next, cancellationReason: null, userId: profileId, note: null }) as unknown[];
     if (res && res.length > 0) {
       if (next === 'confirmed') {
         // Confirming a quote starts the reservation lifecycle for its
         // warehouse lines, targeted per line: the line's own warehouse
         // (split shipments) or the order-level one when the line has none
-        // (shortfall there = backorder at that warehouse).
+        // (shortfall there = backorder at that warehouse). If this loop
+        // dies mid-way, the Items panel shows the under-reserved line
+        // with a one-click repair.
         const orderWhParam = whOverride !== null ? whOverride : (order?.preferred_warehouse_id ? String(order.preferred_warehouse_id) : '');
         for (const it of rows<OrderItemRow>(items).filter(i => i.fulfillment_source === 'warehouse')) {
           const whParam = it.preferred_warehouse_id != null ? String(it.preferred_warehouse_id) : orderWhParam;
           await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity), warehouse_id: whParam });
         }
       }
-      await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: status, newValue: next, note: null });
     }
     reloadAll();
   };

@@ -55,10 +55,8 @@ export function AllOrdersTab() {
   const [doAudit] = useMutateAction(insertAuditLog);
 
   const inlineStatusChange = async (order: { id: number; status: string }, next: string) => {
-    const res = await doUpdateStatus({ orderId: order.id, status: next, cancellationReason: null }) as unknown[];
-    if (res && res.length > 0) {
-      await doAudit({ orderId: order.id, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: order.status, newValue: next, note: 'Inline status update' });
-    }
+    // The audit row rides inside updateOrderStatus (atomic hardening).
+    await doUpdateStatus({ orderId: order.id, status: next, cancellationReason: null, userId: profileId, note: 'Inline status update' });
     reload();
   };
   const [search, setSearch] = useState('');

@@ -618,13 +618,13 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     let confirmed = s === 'confirmed' && (isFree || total === 0);
     let gateRefused = false;
     if (s === 'confirmed' && !confirmed) {
-      const up = await doStatus({ orderId, status: 'confirmed', cancellationReason: null }) as unknown[];
+      // Audit + payment derivation ride inside updateOrderStatus (atomic).
+      const up = await doStatus({
+        orderId, status: 'confirmed', cancellationReason: null, userId: profileId,
+        note: orderDivision === 'china' ? 'Confirmed at creation (China division — payment handled externally)' : 'Confirmed at creation (payment verified)',
+      }) as unknown[];
       confirmed = !!up && up.length > 0;
-      if (confirmed) {
-        await doAudit({ orderId, userId: profileId, changeType: 'status', fieldName: 'status', oldValue: 'quote', newValue: 'confirmed', note: orderDivision === 'china' ? 'Confirmed at creation (China division — payment handled externally)' : 'Confirmed at creation (payment verified)' });
-      } else {
-        gateRefused = true;
-      }
+      if (!confirmed) gateRefused = true;
     }
     if (confirmed) {
       // Confirming reserves stock for warehouse-sourced lines, recorded in

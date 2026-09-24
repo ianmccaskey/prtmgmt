@@ -99,6 +99,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [moveQty, setMoveQty] = useState('');
   const [moveBusy, setMoveBusy] = useState(false);
   const [moveErr, setMoveErr] = useState('');
+  const [resFixBusy, setResFixBusy] = useState(false);
   const [moveWhAvailRaw] = useLoadAction(listWarehouseAvailability, [moveFor ? 1 : 0], {}, { enabled: !!moveFor });
   const moveWhAvail = asRows<{ product_id: number; warehouse_id: number; warehouse_name: string; available: number }>(moveWhAvailRaw);
 
@@ -408,19 +409,59 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
                 </span>
               ))}
               {(() => {
+                if (item.fulfillment_source !== 'warehouse') return null;
                 const held = resList.filter(r => r.product_id === item.product_id);
-                if (item.fulfillment_source !== 'warehouse' || held.length === 0) return null;
+                const heldSum = held.reduce((s, r) => s + Number(r.quantity), 0);
+                // Under-reservation detector (the 0257 class): a confirmed
+                // order whose reserve chain died leaves lines silently
+                // unbacked. Shortfall = un-allocated line quantity minus
+                // ledgered reservations, computed per product (the ledger
+                // is per product) and shown on its first line only.
+                const productLines = items.filter(l => l.product_id === item.product_id && l.fulfillment_source === 'warehouse' && !l.is_shipped);
+                const isFirstProductLine = productLines[0]?.id === item.id;
+                const neededRemaining = productLines.reduce((s, l) => {
+                  const alloc = allocations.filter(a => a.sales_order_item_id === l.id).reduce((x, a) => x + Number(a.quantity), 0);
+                  return s + Math.max(0, Number(l.quantity) - alloc);
+                }, 0);
+                const shortfall = Math.max(0, neededRemaining - heldSum);
                 return (
                   <>
-                    <span className="text-xs text-muted-foreground">
-                      Reserved: {held.map(r => `${r.quantity} @ ${r.warehouse_name}`).join(' · ')}
-                    </span>
-                    {!isReadOnly && orderStatusConfirmedPlus && !item.is_shipped && (
+                    {held.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        Reserved: {held.map(r => `${r.quantity} @ ${r.warehouse_name}`).join(' · ')}
+                      </span>
+                    )}
+                    {held.length > 0 && !isReadOnly && orderStatusConfirmedPlus && !item.is_shipped && (
                       <Button size="sm" variant="ghost" className="h-5 px-1.5 text-xs text-blue-600"
                         title="Move part of this line's reserved stock to another warehouse (split shipment)"
                         onClick={() => openMove(item)}>
                         <ArrowLeftRight className="h-3 w-3 mr-1" /> Split / Move
                       </Button>
+                    )}
+                    {isFirstProductLine && shortfall > 0 && orderStatusConfirmedPlus && (
+                      <>
+                        <Badge variant="outline" className="text-xs px-1 py-0 text-amber-700 border-amber-300 bg-amber-50">
+                          Under-reserved — {shortfall} kit(s) unbacked
+                        </Badge>
+                        {!isReadOnly && (
+                          <Button size="sm" variant="ghost" className="h-5 px-1.5 text-xs text-amber-700" disabled={resFixBusy}
+                            title="Reserve the missing quantity now (FIFO at the line's warehouse; any stock shortfall stays a visible backorder)"
+                            onClick={async () => {
+                              setResFixBusy(true);
+                              try {
+                                const wh = itemWh(item);
+                                await doReserve({ order_id: orderId, product_id: item.product_id, quantity: shortfall, warehouse_id: wh != null ? String(wh) : '' });
+                                await doAudit({ orderId, userId: profileId, changeType: 'other', fieldName: 'reservations', oldValue: null, newValue: null, note: `Under-reservation repaired: reserved ${shortfall}× ${item.product_sku} (confirm chain had not completed)` });
+                                reloadRes();
+                                onChanged();
+                              } finally {
+                                setResFixBusy(false);
+                              }
+                            }}>
+                            {resFixBusy ? 'Reserving…' : `Reserve ${shortfall}`}
+                          </Button>
+                        )}
+                      </>
                     )}
                   </>
                 );

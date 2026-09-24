@@ -17,6 +17,14 @@ import { action } from '@uibakery/data';
  * covered by locally-consumed ledger. Each release logs a
  * 'reservation_released' activity row at the releasing warehouse. Manual
  * holds (no order) are never touched.
+ *
+ * The ORDER STATUS flip rides in the same statement (2026-09 hardening —
+ * ORD-2026-0239 shipped fully but stayed 'confirmed' because the
+ * browser's separate flip call never ran). Sub-statements share one
+ * snapshot, so the derived-status check can't see this statement's own
+ * allocation insert — this item's quantity is added manually, mirroring
+ * receiveLineAtomic. The dialog's trailing markOrderShippedFromWarehouse
+ * call remains as an idempotent belt-and-braces repair.
  */
 function shipAllocationAtomic() {
   return action('shipAllocationAtomic', 'SQL', {
@@ -124,6 +132,34 @@ function shipAllocationAtomic() {
           -({{params.quantity}}::int), 'shipments_outbound', {{params.shipment_id}}::bigint,
           {{params.notes}}
         )
+      ),
+      order_status AS (
+        UPDATE sales_orders so
+        SET status = CASE
+          WHEN NOT EXISTS (
+            SELECT 1 FROM sales_order_items soi
+            LEFT JOIN (
+              SELECT sales_order_item_id, SUM(quantity) AS q
+              FROM sales_order_item_allocations GROUP BY sales_order_item_id
+            ) a ON a.sales_order_item_id = soi.id
+            WHERE soi.sales_order_id = {{params.order_id}}::bigint
+              AND soi.fulfillment_source = 'warehouse'
+              AND COALESCE(a.q, 0)
+                  + CASE WHEN soi.id = {{params.item_id}}::bigint THEN {{params.quantity}}::int ELSE 0 END
+                < soi.quantity
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM sales_order_items soi
+            WHERE soi.sales_order_id = {{params.order_id}}::bigint
+              AND soi.fulfillment_source = 'china_direct'
+              AND NOT EXISTS (
+                SELECT 1 FROM shipments_outbound sob
+                WHERE sob.sales_order_id = soi.sales_order_id AND sob.origin = 'china'
+              )
+          )
+          THEN 'shipped' ELSE 'partially_shipped' END
+        WHERE so.id = {{params.order_id}}::bigint
+          AND so.status IN ('confirmed', 'partially_shipped')
       )
       SELECT id AS allocation_id FROM alloc
     `,
