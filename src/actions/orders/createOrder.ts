@@ -30,16 +30,14 @@ export function createOrder() {
         {{params.freeOrderReasonId}},
         {{params.freeOrderNote}},
         {{params.partialFulfillmentAllowed}}::boolean,
-        -- Confirmation is payment-gated. At creation nothing is verified
-        -- yet, so 'confirmed' is only honored for free/$0 orders (their
-        -- payment_status derives straight to 'paid'); everything else is
-        -- forced to 'quote' regardless of what the client sent.
-        CASE
-          WHEN {{params.status}} = 'confirmed'
-            AND ({{params.isFreeOrder}}::boolean = true OR {{params.totalUsd}}::numeric = 0)
-          THEN 'confirmed'
-          ELSE 'quote'
-        END,
+        -- Orders are ALWAYS born as quotes. Confirmation happens only
+        -- through updateOrderStatus, whose single statement carries the
+        -- gate, the payment derivation, and the audit row (2026-09
+        -- hardening — the old free/$0 direct-confirm here skipped all
+        -- three when the caller's chain died, ORD-2026-0257 class). The
+        -- status param is ignored by design — a stale client sending
+        -- 'confirmed' still gets a quote.
+        'quote',
         {{params.subtotalUsd}}::numeric,
         {{params.customerShippingChargeUsd}}::numeric,
         {{params.discountUsd}}::numeric,
