@@ -787,7 +787,10 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
                               className="inline-flex items-center gap-1 text-blue-600 underline"
                               onClick={async () => {
                                 const ok = await printLabel(labels[g.warehouse_id].label_url);
-                                if (!ok) window.open(labels[g.warehouse_id].label_url, '_blank');
+                                if (!ok) {
+                                  // Popup blocked (fallback open would be blocked too).
+                                  setError('Print popup was blocked by the browser — use "Open label (PDF)" and press Ctrl+P.');
+                                }
                               }}
                             >
                               <Printer className="h-3 w-3" /> Print label

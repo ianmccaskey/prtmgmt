@@ -1085,6 +1085,8 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   // Orders are read-only for warehouse and logistics roles (access matrix).
   const readOnlyRole = isLogistics || isWarehouse;
   const [cancelOpen, setCancelOpen] = useState(false);
+  // Set when a label print popup was blocked (shown in the tracking hero).
+  const [printNotice, setPrintNotice] = useState('');
   const [doUpdateStatus, updatingStatus] = useMutateAction(updateOrderStatus);
   const [doAudit] = useMutateAction(insertAuditLog);
 
@@ -1298,6 +1300,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                           </Badge>
                         )}
                       </div>
+                      {printNotice && <p className="text-xs text-amber-700">{printNotice}</p>}
                       {shipmentList.map(s => (
                         <div key={String(s.id)} className="flex items-center justify-between gap-2 flex-wrap text-sm">
                           <span className="text-blue-900 min-w-0">
@@ -1329,7 +1332,9 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                               <Button size="icon" variant="ghost" className="h-6 w-6 text-blue-700" title="Print label"
                                 onClick={async () => {
                                   const ok = await printLabel(String(s.label_url));
-                                  if (!ok && !String(s.label_url).startsWith('data:')) window.open(String(s.label_url), '_blank');
+                                  // Popup blocked — a fallback open would be blocked
+                                  // too; tell the user instead of failing silently.
+                                  setPrintNotice(ok ? '' : 'Print popup was blocked by the browser — use the Label link and press Ctrl+P.');
                                 }}>
                                 <Printer className="h-3.5 w-3.5" />
                               </Button>
