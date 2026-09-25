@@ -19,7 +19,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ExternalLink, Plus, Trash2, Truck } from 'lucide-react';
+import { ExternalLink, Plus, Printer, Trash2, Truck } from 'lucide-react';
+import { printLabel } from '@/lib/printLabel';
 import { calcShippingCost, RatePlan } from '@/lib/shippingCost';
 import { QueueOrder, itemRemaining, lineFulfillableAt, parseWarehouses } from '@/app/pages/warehouse/FulfillmentTab';
 import {
@@ -774,12 +775,24 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
                             </Button>
                           </div>
                           <p className="text-green-700 font-mono break-all">{labels[g.warehouse_id].tracking_number}</p>
-                          <a
-                            href={labels[g.warehouse_id].label_url} target="_blank" rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-blue-600 underline"
-                          >
-                            <ExternalLink className="h-3 w-3" /> Open label (PDF)
-                          </a>
+                          <span className="inline-flex items-center gap-3">
+                            <a
+                              href={labels[g.warehouse_id].label_url} target="_blank" rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-blue-600 underline"
+                            >
+                              <ExternalLink className="h-3 w-3" /> Open label (PDF)
+                            </a>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-blue-600 underline"
+                              onClick={async () => {
+                                const ok = await printLabel(labels[g.warehouse_id].label_url);
+                                if (!ok) window.open(labels[g.warehouse_id].label_url, '_blank');
+                              }}
+                            >
+                              <Printer className="h-3 w-3" /> Print label
+                            </button>
+                          </span>
                           {labels[g.warehouse_id].kits !== g.kits && (
                             <p className="text-amber-700">
                               Allocation changed since purchase ({labels[g.warehouse_id].kits} → {g.kits} kits) — verify the

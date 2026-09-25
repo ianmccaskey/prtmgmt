@@ -17,7 +17,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { StatusBadge, PaymentBadge, SourceBadges, ChannelBadge } from './OrderBadges';
-import { AlertTriangle, Check, Copy, Crown, Flag, Pencil, Plus, RefreshCw, Package, Truck } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Crown, Flag, Pencil, Plus, Printer, RefreshCw, Package, Truck } from 'lucide-react';
+import { printLabel } from '@/lib/printLabel';
 import { Switch } from '@/components/ui/switch';
 import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
 import { carrierTrackingUrl } from '@/lib/shippo';
@@ -1323,6 +1324,15 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                               ) : (
                                 <a href={String(s.label_url)} target="_blank" rel="noreferrer" className="text-xs text-blue-700 underline">Label</a>
                               )
+                            )}
+                            {s.label_url != null && (
+                              <Button size="icon" variant="ghost" className="h-6 w-6 text-blue-700" title="Print label"
+                                onClick={async () => {
+                                  const ok = await printLabel(String(s.label_url));
+                                  if (!ok && !String(s.label_url).startsWith('data:')) window.open(String(s.label_url), '_blank');
+                                }}>
+                                <Printer className="h-3.5 w-3.5" />
+                              </Button>
                             )}
                             {s.tracking_number != null && (
                               <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-700"
