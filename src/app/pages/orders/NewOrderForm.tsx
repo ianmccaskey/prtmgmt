@@ -82,8 +82,12 @@ function CustomerCombo({ onSelect, onCreateNew }: { onSelect: (c: Customer) => v
   // Hide rows while a search is in flight — with cmdk filtering off, stale
   // results from the previous query would otherwise show under the new one.
   const results = !searching && q.length >= 2 ? rows<Customer>(res) : [];
+  // modal: the form lives in a modal Sheet whose scroll-lock blocks
+  // wheel/touch scrolling on PORTALED popovers (they render outside the
+  // locked subtree). A modal popover registers itself with the lock,
+  // restoring list scrolling on desktop and mobile.
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button variant="outline" className="w-full justify-between font-normal text-muted-foreground">
           Search by name, email, phone… <ChevronsUpDown className="h-4 w-4 opacity-50" />
@@ -130,8 +134,9 @@ function ProductCombo({ onAdd }: { onAdd: (p: Product) => void }) {
   // everything server-side); each keystroke narrows via SKU/name ILIKE. The
   // server does the filtering, so cmdk's own filter is off.
   const [res, loading] = useLoadAction(searchProducts, [open, q], { q }, { enabled: open });
+  // modal: see CustomerSearch — required for scrollability inside the Sheet.
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="w-full justify-start font-normal text-muted-foreground">
           <Search className="h-3 w-3 mr-1" /> Add product by SKU or name…
