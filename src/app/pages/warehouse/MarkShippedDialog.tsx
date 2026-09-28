@@ -9,6 +9,10 @@ import listWarehouseShipFromAction from '@/actions/warehouse/listWarehouseShipFr
 import getMyLabelReturnAddressAction from '@/actions/settings/getMyLabelReturnAddress';
 import listParcelTemplatesAction from '@/actions/warehouse/listParcelTemplates';
 import createOutboundShipmentAction from '@/actions/warehouse/createOutboundShipment';
+import savePurchasedLabelAction from '@/actions/warehouse/savePurchasedLabel';
+import listPurchasedLabelsAction from '@/actions/warehouse/listPurchasedLabels';
+import consumePurchasedLabelAction from '@/actions/warehouse/consumePurchasedLabel';
+import discardPurchasedLabelAction from '@/actions/warehouse/discardPurchasedLabel';
 import shipAllocationAtomicAction from '@/actions/warehouse/shipAllocationAtomic';
 import markOrderShippedFromWarehouseAction from '@/actions/warehouse/markOrderShippedFromWarehouse';
 import createShipmentNotificationAction from '@/actions/orders/createShipmentNotification';
@@ -59,6 +63,21 @@ export type PurchasedLabel = {
   label_url: string; transaction_id: string; cost: number; tracking_number: string;
   /** Kits in the shipment group at purchase time — drift afterwards gets flagged. */
   kits: number;
+  /**
+   * purchased_labels row id — the purchase persisted the moment Shippo
+   * confirmed it, so it survives navigation. null = the save failed and
+   * this label exists only in browser state (the close guard warns hard).
+   */
+  dbId: number | null;
+  /** Rehydrated from a previous visit rather than bought in this one. */
+  restored?: boolean;
+};
+
+type SavedLabelRow = {
+  id: number; origin_warehouse_id: number; carrier: string | null;
+  tracking_number: string; label_url: string | null;
+  shippo_transaction_id: string | null; label_cost_usd: string | number | null;
+  kits: number | null;
 };
 
 /**
@@ -72,7 +91,7 @@ function ShippoSection({ wh, order, returnAddr, templates, onPurchased }: {
   returnAddr: ShippoAddress | null;
   /** This warehouse's box templates (Settings → Warehouses → Shipping Box Templates). */
   templates: ParcelTemplate[];
-  onPurchased: (carrier: string, label: Omit<PurchasedLabel, 'kits'>) => void;
+  onPurchased: (carrier: string, label: Omit<PurchasedLabel, 'kits' | 'dbId' | 'restored'>) => void;
 }) {
   const [parcel, setParcel] = useState({ length: '10', width: '8', height: '6', weight: '' });
   // Which sender block Shippo gets as address_from (it's the label's From /
@@ -377,6 +396,12 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
   const [shipAllocation] = useMutateAction(shipAllocationAtomicAction);
   const [markShipped] = useMutateAction(markOrderShippedFromWarehouseAction);
   const [createNotification] = useMutateAction(createShipmentNotificationAction);
+  const [saveLabel] = useMutateAction(savePurchasedLabelAction);
+  const [consumeLabel] = useMutateAction(consumePurchasedLabelAction);
+  const [discardLabel] = useMutateAction(discardPurchasedLabelAction);
+  // Persisted, still-open label purchases for this order (bought in an
+  // earlier visit, never recorded on a shipment) — rehydrated below.
+  const [savedLabelsRaw] = useLoadAction(listPurchasedLabelsAction, [order.order_id], { order_id: order.order_id });
 
   // Warehouse users only allocate from their own warehouse (access matrix).
   const stock: FifoRow[] = useMemo(() => {
@@ -415,6 +440,15 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
   // Labels purchased via Shippo this session, keyed by warehouse — recorded
   // on the shipment row at Confirm.
   const [labels, setLabels] = useState<Record<number, PurchasedLabel>>({});
+  // Persistence state of each purchase's savePurchasedLabel call. 'pending'
+  // blocks Confirm (a Confirm racing an in-flight save would skip consume
+  // and leave the row open forever); 'failed' allows Confirm — the row
+  // never existed, the close guard warns hard instead.
+  const [labelSaves, setLabelSaves] = useState<Record<number, 'pending' | 'failed'>>({});
+  // Mirror of labels for async save-resolution checks (an Unlink during the
+  // save round-trip must win: the resolved row gets discarded, not linked).
+  const labelsRef = React.useRef(labels);
+  useEffect(() => { labelsRef.current = labels; }, [labels]);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -454,13 +488,71 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
     };
   }, [myRetRaw, displayName]);
 
+  // Restore label purchases persisted by savePurchasedLabel: a label bought
+  // in an earlier visit survives navigation instead of stranding real money
+  // in lost browser state. Runs once when the rows arrive; newest per
+  // warehouse wins; never overwrites a label already in this session's
+  // state; out-of-scope warehouses are skipped (their label belongs to the
+  // other warehouse's scoped view and would only block this one).
+  const [rehydrated, setRehydrated] = useState(false);
+  useEffect(() => {
+    if (rehydrated) return;
+    const rows = asRows<SavedLabelRow>(savedLabelsRaw);
+    if (rows.length === 0) return;
+    setRehydrated(true);
+    const byWh: Record<number, SavedLabelRow> = {};
+    for (const r of rows) {
+      const whId = Number(r.origin_warehouse_id);
+      if (scopeWarehouseId && String(whId) !== scopeWarehouseId) continue;
+      if (!byWh[whId]) byWh[whId] = r; // rows arrive newest-first
+    }
+    setLabels(prev => {
+      const next = { ...prev };
+      for (const [whIdStr, r] of Object.entries(byWh)) {
+        const whId = Number(whIdStr);
+        if (next[whId]) continue;
+        next[whId] = {
+          label_url: r.label_url || '',
+          transaction_id: r.shippo_transaction_id || '',
+          cost: Number(r.label_cost_usd ?? 0),
+          tracking_number: r.tracking_number,
+          kits: Number(r.kits ?? 0),
+          dbId: Number(r.id),
+          restored: true,
+        };
+      }
+      return next;
+    });
+    setCarriers(prev => {
+      const next = { ...prev };
+      for (const [whIdStr, r] of Object.entries(byWh)) {
+        const whId = Number(whIdStr);
+        if (!next[whId] && r.carrier) next[whId] = r.carrier;
+      }
+      return next;
+    });
+    setTrackings(prev => {
+      const next = { ...prev };
+      for (const [whIdStr, r] of Object.entries(byWh)) {
+        const whId = Number(whIdStr);
+        if (!(next[whId] || '').trim()) next[whId] = r.tracking_number;
+      }
+      return next;
+    });
+  }, [savedLabelsRaw, rehydrated, scopeWarehouseId]);
+
   // A purchased label already cost real money — closing without confirming
-  // would leave it unrecorded, so double-check the intent.
+  // deserves a heads-up. Persisted labels are restored next open, so that
+  // confirm is gentle; a label whose save FAILED exists only in this
+  // browser state, so losing it means losing the app's only record.
   const guardedClose = () => {
     if (saving) return;
-    if (Object.keys(labels).length > 0 && !saved &&
-        !window.confirm('A shipping label was already purchased but the shipment is not recorded yet. Close anyway? (The label stays valid on Shippo, but the app will have no record of it.)')) {
-      return;
+    const pending = Object.values(labels);
+    if (pending.length > 0 && !saved) {
+      const msg = pending.every(l => l.dbId != null)
+        ? 'The purchased label is saved and will be restored next time you open Mark Shipped for this order — but the shipment is NOT recorded yet. Close anyway?'
+        : 'A shipping label was purchased but could NOT be saved for recovery, and the shipment is not recorded yet. If you close now the app will have no record of it — note the tracking number first. Close anyway?';
+      if (!window.confirm(msg)) return;
     }
     onClose();
   };
@@ -590,7 +682,11 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
 
   const missingShipInfo = shipmentGroups.some(g => !carriers[g.warehouse_id] || !(trackings[g.warehouse_id] || '').trim());
   const nothingAllocated = shipmentGroups.length === 0;
-  const canConfirm = !saving && !planLoading && !!plan && problems.length === 0 && !nothingAllocated && !missingShipInfo;
+  // A label save still in flight holds Confirm for the round-trip: a
+  // Confirm that raced it would skip the consume step and leave the
+  // purchased_labels row open forever. A FAILED save does not hold it.
+  const labelSavePending = Object.values(labelSaves).includes('pending');
+  const canConfirm = !saving && !planLoading && !!plan && problems.length === 0 && !nothingAllocated && !missingShipInfo && !labelSavePending;
 
   const upAlloc = (key: string, patch: Partial<AllocRow>) => setAllocs(prev => prev.map(a => a.key === key ? { ...a, ...patch } : a));
   const rmAlloc = (key: string) => setAllocs(prev => prev.filter(a => a.key !== key));
@@ -618,6 +714,11 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
         }) as { id: number }[];
         const shipmentId = res?.[0]?.id;
         if (!shipmentId) throw new Error(`Failed to create shipment for ${g.warehouse_name}`);
+        if (label?.dbId != null) {
+          // Non-fatal: listPurchasedLabels also hides labels whose tracking
+          // number already sits on one of this order's shipments.
+          try { await consumeLabel({ label_id: label.dbId, shipment_id: String(shipmentId) }); } catch { /* belt above */ }
+        }
         for (const a of g.allocs) {
           const r = rowFor(a.inventory_id)!;
           // Single atomic statement: allocation + shipment item + ledger
@@ -635,7 +736,11 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
       setSaved(true);
       onDone();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Shipping failed — some steps may have completed. Reload and re-run; remaining lines stay in the queue.');
+      // If the chain died AFTER a shipment row was created, the label and
+      // tracking already live on that shipment — the stash won't (and must
+      // not) restore it, so point at the drawer.
+      setError((e instanceof Error ? e.message : 'Shipping failed — some steps may have completed.') +
+        ' Reload and re-run; remaining lines stay in the queue. If a shipment row was already created, its label and tracking are on the order drawer — do not re-buy the label.');
     } finally {
       setSaving(false);
     }
@@ -769,12 +874,22 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
                             </p>
                             <Button
                               size="sm" variant="ghost" className="h-6 text-xs text-red-500 shrink-0"
-                              onClick={() => setLabels(l => { const n = { ...l }; delete n[g.warehouse_id]; return n; })}
+                              onClick={() => {
+                                const dbId = labels[g.warehouse_id]?.dbId;
+                                // Drop the persisted reference too, or it
+                                // rehydrates on the next open. Best-effort.
+                                if (dbId != null) discardLabel({ label_id: dbId }).catch(() => {});
+                                setLabels(l => { const n = { ...l }; delete n[g.warehouse_id]; return n; });
+                              }}
                             >
                               Unlink label
                             </Button>
                           </div>
                           <p className="text-green-700 font-mono break-all">{labels[g.warehouse_id].tracking_number}</p>
+                          {labels[g.warehouse_id].restored && (
+                            <p className="text-green-800/70">Restored from an earlier purchase — bought before this visit, never recorded.</p>
+                          )}
+                          {labels[g.warehouse_id].label_url && (
                           <span className="inline-flex items-center gap-3">
                             <a
                               href={labels[g.warehouse_id].label_url} target="_blank" rel="noreferrer"
@@ -799,13 +914,16 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
                               <Printer className="h-3 w-3" /> Print label
                             </button>
                           </span>
+                          )}
                           {labels[g.warehouse_id].kits !== g.kits && (
                             <p className="text-amber-700">
                               Allocation changed since purchase ({labels[g.warehouse_id].kits} → {g.kits} kits) — verify the
                               parcel and postage still fit, or unlink and re-quote.
                             </p>
                           )}
-                          <p className="text-green-800/70">Recorded on the shipment when you confirm below.</p>
+                          {labelSaves[g.warehouse_id] === 'pending'
+                            ? <p className="text-green-800/70">Saving label for recovery…</p>
+                            : <p className="text-green-800/70">Recorded on the shipment when you confirm below.</p>}
                         </div>
                       ) : (() => {
                         const wh = shipFromFor(g.warehouse_id);
@@ -813,10 +931,50 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
                           <ShippoSection
                             wh={wh} order={order} returnAddr={myReturnAddr}
                             templates={parcelTemplates.filter(t => Number(t.warehouse_id) === g.warehouse_id)}
-                            onPurchased={(carrier, label) => {
-                              setLabels(l => ({ ...l, [g.warehouse_id]: { ...label, kits: g.kits } }));
+                            onPurchased={async (carrier, label) => {
+                              setLabels(l => ({ ...l, [g.warehouse_id]: { ...label, kits: g.kits, dbId: null } }));
                               setCarriers(c => ({ ...c, [g.warehouse_id]: carrier }));
                               setTrackings(t => ({ ...t, [g.warehouse_id]: label.tracking_number }));
+                              // Persist immediately — the purchase must survive
+                              // navigating away (ORD-2026-0268). State first so
+                              // the UI never waits on the save; Confirm is held
+                              // while the save is pending, or it would race the
+                              // consume step and leave the row open forever.
+                              setLabelSaves(s => ({ ...s, [g.warehouse_id]: 'pending' }));
+                              try {
+                                const res = await saveLabel({
+                                  order_id: order.order_id,
+                                  warehouse_id: g.warehouse_id,
+                                  carrier,
+                                  tracking_number: label.tracking_number,
+                                  label_url: label.label_url,
+                                  transaction_id: label.transaction_id,
+                                  cost: String(label.cost),
+                                  kits: String(g.kits),
+                                  user_id: profileId != null ? String(profileId) : '',
+                                }) as { id: number }[];
+                                const dbId = res?.[0]?.id;
+                                if (!dbId) throw new Error('save returned no id');
+                                // Unlink may have won the race: if this exact
+                                // purchase is no longer in state, the user's
+                                // intent was discard — drop the row we just
+                                // created instead of linking it.
+                                const cur = labelsRef.current[g.warehouse_id];
+                                if (cur && cur.transaction_id === label.transaction_id) {
+                                  setLabels(l => {
+                                    const c = l[g.warehouse_id];
+                                    return c && c.transaction_id === label.transaction_id
+                                      ? { ...l, [g.warehouse_id]: { ...c, dbId: Number(dbId) } }
+                                      : l;
+                                  });
+                                } else {
+                                  discardLabel({ label_id: Number(dbId) }).catch(() => {});
+                                }
+                                setLabelSaves(s => { const n = { ...s }; delete n[g.warehouse_id]; return n; });
+                              } catch {
+                                setLabelSaves(s => ({ ...s, [g.warehouse_id]: 'failed' }));
+                                setError('Label purchased and usable, but it could NOT be saved for recovery — finish this shipment before leaving, or note the tracking number.');
+                              }
                             }}
                           />
                         ) : null;
@@ -836,7 +994,11 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
                 </span>
                 <Button
                   size="sm" variant="outline" className="h-7 text-xs shrink-0"
-                  onClick={() => setLabels(l => { const n = { ...l }; delete n[whId]; return n; })}
+                  onClick={() => {
+                    const dbId = labels[whId]?.dbId;
+                    if (dbId != null) discardLabel({ label_id: dbId }).catch(() => {});
+                    setLabels(l => { const n = { ...l }; delete n[whId]; return n; });
+                  }}
                 >
                   Discard label reference
                 </Button>
