@@ -1085,7 +1085,8 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   // Orders are read-only for warehouse and logistics roles (access matrix).
   const readOnlyRole = isLogistics || isWarehouse;
   const [cancelOpen, setCancelOpen] = useState(false);
-  // Set when a label print popup was blocked (shown in the tracking hero).
+  // Print-label outcome the user must act on — popup blocked, or a legacy
+  // PDF that needs a manual print — shown in the tracking hero.
   const [printNotice, setPrintNotice] = useState('');
   const [doUpdateStatus, updatingStatus] = useMutateAction(updateOrderStatus);
   const [doAudit] = useMutateAction(insertAuditLog);
@@ -1331,10 +1332,13 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                             {s.label_url != null && (
                               <Button size="icon" variant="ghost" className="h-6 w-6 text-blue-700" title="Print label"
                                 onClick={async () => {
-                                  const ok = await printLabel(String(s.label_url));
+                                  const res = await printLabel(String(s.label_url));
                                   // Popup blocked — a fallback open would be blocked
                                   // too; tell the user instead of failing silently.
-                                  setPrintNotice(ok ? '' : 'Print popup was blocked by the browser — use the Label link and press Ctrl+P.');
+                                  setPrintNotice(
+                                    res === 'blocked' ? 'Print popup was blocked by the browser — use the Label link and press Ctrl+P.'
+                                    : res === 'manual' ? 'This PDF label opened in a new tab — press its print button (or Ctrl+P) there.'
+                                    : '');
                                 }}>
                                 <Printer className="h-3.5 w-3.5" />
                               </Button>

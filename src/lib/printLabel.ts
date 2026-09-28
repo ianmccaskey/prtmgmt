@@ -1,21 +1,36 @@
 /**
  * One-click label printing.
  *
- * Two paths, because Shippo's label host (deliver.goshippo.com) serves
- * NO CORS headers (verified: no Access-Control-Allow-Origin; OPTIONS
- * 403), so the browser cannot fetch those PDFs for a silent print:
+ * Shippo's label host (deliver.goshippo.com) serves NO CORS headers
+ * (verified: no Access-Control-Allow-Origin; OPTIONS 403), so the browser
+ * cannot fetch those files for a silent print. Three paths:
  *
- *  - data: URLs (labels uploaded via Replace Label) and any
- *    CORS-permitting URL: fetched to a blob and printed from a hidden
- *    same-origin iframe — fully silent, stays on the page.
- *  - everything else (Shippo URLs): a minimal popup embedding the PDF
- *    full-viewport that calls print() once loaded — one click to the
- *    print dialog instead of open-tab-then-Ctrl+P.
- *
- * Returns false only when a popup was needed and the browser blocked it
- * (caller should fall back to opening the URL normally).
+ *  - data: URLs (labels uploaded via Replace Label) and any CORS-permitting
+ *    URL: fetched to a blob and printed from a hidden same-origin iframe —
+ *    fully silent, stays on the page.
+ *  - cross-origin IMAGE labels (Shippo labels are purchased as PNG for
+ *    exactly this reason): a minimal popup with an <img> that calls print()
+ *    once loaded. Cross-origin images render in print output, so this is
+ *    one click to the print dialog.
+ *  - cross-origin PDF labels (legacy, purchased before the PNG switch):
+ *    there is NO working auto-print. Chrome's PDF plugin in an embedded
+ *    frame isn't composited into the opener's print() — it prints as a
+ *    black box — and a popup navigated to the PDF is cross-origin, so its
+ *    print() is unreachable. The popup opens Chrome's PDF viewer directly
+ *    and the caller tells the user to press its print button ('manual').
  */
-export async function printLabel(url: string): Promise<boolean> {
+export type PrintLabelResult = 'printed' | 'manual' | 'blocked';
+
+/** True when the URL's path names an image file (query string ignored). */
+function isImageUrl(url: string): boolean {
+  try {
+    return /\.(png|jpe?g|gif|webp)$/i.test(new URL(url, window.location.href).pathname);
+  } catch {
+    return false;
+  }
+}
+
+export async function printLabel(url: string): Promise<PrintLabelResult> {
   // Silent path: same-origin printable blob.
   try {
     const res = await fetch(url);
@@ -39,22 +54,41 @@ export async function printLabel(url: string): Promise<boolean> {
       frame.contentWindow?.print();
       // The frame must outlive the print dialog; clean up well after.
       setTimeout(() => { URL.revokeObjectURL(obj); frame.remove(); }, 120000);
-      return true;
+      return 'printed';
     }
   } catch {
-    // CORS or network — fall through to the popup path.
+    // CORS or network — fall through to the popup paths.
   }
 
+  const escaped = url.replace(/"/g, '&quot;');
+
+  if (isImageUrl(url)) {
+    const win = window.open('', '_blank');
+    if (!win) return 'blocked';
+    win.document.write(
+      '<html><head><title>Print label</title>' +
+      // 4in = the label's physical width: prints at true size on letter
+      // paper and exactly fills a 4x6 thermal roll.
+      '<style>body{margin:0}img{width:4in;height:auto;display:block}</style>' +
+      '</head><body>' +
+      `<p id="err" style="display:none;font-family:sans-serif;padding:12px">Label failed to load — close this window and use Open label.</p>` +
+      `<img src="${escaped}"` +
+      ' onload="setTimeout(function(){window.focus();window.print();},150)"' +
+      ' onerror="this.style.display=\'none\';document.getElementById(\'err\').style.display=\'block\'">' +
+      '</body></html>');
+    win.document.close();
+    return 'printed';
+  }
+
+  // Legacy cross-origin PDF: open the browser's own PDF viewer. Not
+  // window.open(url, '_blank', 'noopener') — with noopener Chrome returns
+  // null even on SUCCESS, which would misreport every open as blocked.
+  // Open blank (null here really means blocked), sever opener, navigate.
   const win = window.open('', '_blank');
-  if (!win) return false;
-  win.document.write(
-    '<html><head><title>Print label</title>' +
-    '<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%}</style>' +
-    '</head><body>' +
-    `<iframe src="${url.replace(/"/g, '&quot;')}" onload="setTimeout(function(){window.focus();window.print();},800)"></iframe>` +
-    '</body></html>');
-  win.document.close();
-  return true;
+  if (!win) return 'blocked';
+  win.opener = null;
+  win.location.href = url;
+  return 'manual';
 }
 
 export default printLabel;

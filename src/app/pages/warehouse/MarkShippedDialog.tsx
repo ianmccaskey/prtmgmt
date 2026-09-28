@@ -780,16 +780,19 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
                               href={labels[g.warehouse_id].label_url} target="_blank" rel="noreferrer"
                               className="inline-flex items-center gap-1 text-blue-600 underline"
                             >
-                              <ExternalLink className="h-3 w-3" /> Open label (PDF)
+                              <ExternalLink className="h-3 w-3" /> Open label
                             </a>
                             <button
                               type="button"
                               className="inline-flex items-center gap-1 text-blue-600 underline"
                               onClick={async () => {
-                                const ok = await printLabel(labels[g.warehouse_id].label_url);
-                                if (!ok) {
+                                const res = await printLabel(labels[g.warehouse_id].label_url);
+                                if (res === 'blocked') {
                                   // Popup blocked (fallback open would be blocked too).
-                                  setError('Print popup was blocked by the browser — use "Open label (PDF)" and press Ctrl+P.');
+                                  setError('Print popup was blocked by the browser — use "Open label" and press Ctrl+P.');
+                                } else if (res === 'manual') {
+                                  // Legacy PDF label: no auto-print possible cross-origin.
+                                  setError('This PDF label opened in a new tab — press its print button (or Ctrl+P) there.');
                                 }
                               }}
                             >

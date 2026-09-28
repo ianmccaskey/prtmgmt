@@ -201,7 +201,12 @@ export async function getShippoRates(
 export async function buyShippoLabel(apiKey: string, rateObjectId: string): Promise<ShippoLabel> {
   const tx = await post(apiKey, '/transactions/', {
     rate: rateObjectId,
-    label_file_type: 'PDF_4x6',
+    // PNG (4x6), not PDF: deliver.goshippo.com serves no CORS headers, and a
+    // cross-origin PDF can't be auto-printed from a popup (Chrome's PDF
+    // plugin isn't composited into the opener's print — it comes out as a
+    // black box). A cross-origin <img> prints fine, so PNG labels keep the
+    // one-click Print label button working.
+    label_file_type: 'PNG',
     async: false,
   });
   if (tx.status !== 'SUCCESS') {
