@@ -9,6 +9,7 @@ function listInboundShipments() {
         '#' || si.tracking_number AS tracking_number, si.departure_date, si.arrival_date,
         si.status, si.customs_status, si.hts_code, si.declared_value,
         si.notes, si.is_seed,
+        si.carrier, si.tracking_status, si.tracking_details, si.tracking_eta, si.tracking_checked_at,
         f.name AS factory_name, f.id AS factory_id,
         COUNT(sii.id) AS line_count,
         COALESCE(SUM(sii.quantity_shipped), 0) AS total_shipped,

@@ -15,11 +15,14 @@ import getShipmentStats from '@/actions/logistics/getShipmentStats';
 import { usePagination, PaginationFooter } from '@/components/Paginated';
 import listFactories from '@/actions/logistics/listFactories';
 import { NewShipmentDialog, ShipmentPrefillItem } from './NewShipmentDialog';
+import { carrierTrackingUrl } from '@/lib/shippo';
 
 type Shipment = {
   id: number; reference_number: string; factory_name: string; mode: string;
   freight_forwarder: string; tracking_number: string; departure_date: string;
   arrival_date: string; status: string; customs_status: string;
+  carrier: string | null; tracking_status: string | null; tracking_details: string | null;
+  tracking_eta: string | null; tracking_checked_at: string | null;
   line_count: number; total_shipped: number; total_received: number; discrepancy_lines: number;
 };
 type Stats = {
@@ -56,6 +59,16 @@ function StatusPipeline({ status }: { status: string }) {
     </div>
   );
 }
+
+// Shippo tracking statuses → friendly labels (statuses per lib/shippo.ts).
+const TRACK_LABELS: Record<string, string> = {
+  PRE_TRANSIT: 'Pre-transit', TRANSIT: 'In transit', DELIVERED: 'Delivered',
+  RETURNED: 'Returned', FAILURE: 'Failed', UNKNOWN: 'Unknown',
+};
+const trackLabel = (s: string) => TRACK_LABELS[s] || s;
+// tracking_eta is a real timestamptz (a moment, not a date-only column),
+// so local-date formatting is correct here.
+const fmtEta = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
 function ModeIcon({ mode }: { mode: string }) {
   if (mode === 'air') return <Plane className="h-4 w-4 text-blue-500" />;
@@ -240,9 +253,39 @@ export function LogisticsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-sm">{s.freight_forwarder || '—'}</TableCell>
-                  <TableCell className="font-mono text-xs">{dbText(s.tracking_number) || '—'}</TableCell>
+                  <TableCell className="text-xs">
+                    {(() => {
+                      const num = dbText(s.tracking_number);
+                      if (!num) return '—';
+                      const url = carrierTrackingUrl(s.carrier, num);
+                      return (
+                        <div className="space-y-0.5">
+                          {url ? (
+                            <a
+                              href={url} target="_blank" rel="noreferrer"
+                              className="font-mono text-blue-600 underline"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              {num}
+                            </a>
+                          ) : <span className="font-mono">{num}</span>}
+                          {s.tracking_status && s.status !== 'delivered' && (
+                            <p className="text-gray-500" title={s.tracking_details || undefined}>
+                              {trackLabel(s.tracking_status)}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </TableCell>
                   <TableCell className="text-sm">{s.departure_date ? s.departure_date.split('T')[0] : '—'}</TableCell>
-                  <TableCell className="text-sm">{s.arrival_date ? s.arrival_date.split('T')[0] : '—'}</TableCell>
+                  <TableCell className="text-sm">
+                    {s.arrival_date
+                      ? s.arrival_date.split('T')[0]
+                      : s.tracking_eta && s.status !== 'delivered'
+                        ? <span className="text-amber-700 flex items-center gap-1"><Clock className="h-3 w-3" /> ETA {fmtEta(s.tracking_eta)}</span>
+                        : '—'}
+                  </TableCell>
                   <TableCell><StatusPipeline status={s.status} /></TableCell>
                   <TableCell>
                     <Badge className={STATUS_COLORS[s.status] || 'bg-gray-100 text-gray-700'}>

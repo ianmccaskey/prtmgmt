@@ -31,12 +31,21 @@ import listBatches from '@/actions/batches/listBatches';
 import listWarehouses from '@/actions/warehouse/listWarehouses';
 import listReceiveAddresses from '@/actions/warehouse/listReceiveAddresses';
 import { ReceiveShipmentDialog } from './ReceiveShipmentDialog';
+import { carrierTrackingUrl } from '@/lib/shippo';
+
+// Shippo tracking statuses → friendly labels (statuses per lib/shippo.ts).
+const TRACK_LABELS: Record<string, string> = {
+  PRE_TRANSIT: 'Pre-transit', TRANSIT: 'In transit', DELIVERED: 'Delivered',
+  RETURNED: 'Returned', FAILURE: 'Failed', UNKNOWN: 'Unknown',
+};
 
 type Shipment = {
   id: number; reference_number: string; factory_name: string; factory_id: number;
   freight_forwarder: string; mode: string; tracking_number: string;
   departure_date: string; arrival_date: string; status: string;
   customs_status: string; hts_code: string; declared_value: number; notes: string;
+  carrier: string | null; tracking_status: string | null; tracking_details: string | null;
+  tracking_eta: string | null; tracking_checked_at: string | null;
 };
 type ShipmentItem = {
   id: number; shipment_id: number; product_id: number; batch_id: number;
@@ -307,11 +316,41 @@ export function ShipmentDetailPage() {
               <dt className="text-gray-500">Freight Forwarder</dt>
               <dd>{detail.freight_forwarder || '—'}</dd>
               <dt className="text-gray-500">Tracking</dt>
-              <dd className="font-mono text-xs">{dbText(detail.tracking_number) || '—'}</dd>
+              <dd className="font-mono text-xs">
+                {(() => {
+                  const num = dbText(detail.tracking_number);
+                  if (!num) return '—';
+                  const url = carrierTrackingUrl(detail.carrier, num);
+                  return url
+                    ? <a href={url} target="_blank" rel="noreferrer" className="text-blue-600 underline">{num}</a>
+                    : num;
+                })()}
+                {detail.carrier && <span className="ml-1 text-gray-400">({detail.carrier})</span>}
+              </dd>
+              {detail.tracking_status && (
+                <>
+                  <dt className="text-gray-500">Carrier status</dt>
+                  <dd className="text-xs">
+                    <span className="font-medium">{TRACK_LABELS[detail.tracking_status] || detail.tracking_status}</span>
+                    {detail.tracking_details && <span className="text-gray-500"> — {detail.tracking_details}</span>}
+                    {detail.tracking_checked_at && (
+                      <span className="block text-gray-400">
+                        as of {new Date(detail.tracking_checked_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </dd>
+                </>
+              )}
               <dt className="text-gray-500">Departure</dt>
               <dd>{detail.departure_date ? detail.departure_date.split('T')[0] : '—'}</dd>
               <dt className="text-gray-500">Arrival</dt>
-              <dd>{detail.arrival_date ? detail.arrival_date.split('T')[0] : '—'}</dd>
+              <dd>
+                {detail.arrival_date
+                  ? detail.arrival_date.split('T')[0]
+                  : detail.tracking_eta && detail.status !== 'delivered'
+                    ? <span className="text-amber-700">ETA {new Date(detail.tracking_eta).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                    : '—'}
+              </dd>
             </dl>
           </CardContent>
         </Card>

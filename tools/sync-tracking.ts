@@ -145,6 +145,140 @@ for (const s of ships) {
   }
 }
 
+// ---- Inbound (logistics) shipments -----------------------------------
+// Same Shippo /tracks polling for factory shipments. shipments_inbound has
+// no carrier field historically, so the carrier is auto-detected from the
+// tracking number's format and stored on first detection; numbers that
+// match no known format are skipped (never polled, never stamped, so they
+// stay visible as "no tracking data" rather than silently consumed).
+
+function detectCarrier(num: string): string | null {
+  const n = num.replace(/\s+/g, '');
+  if (/^1Z/i.test(n)) return 'UPS';
+  if (/^9\d{21,25}$/.test(n)) return 'USPS';
+  if (/^\d{12}$/.test(n) || /^\d{15}$/.test(n)) return 'FedEx';
+  if (/^\d{10}$/.test(n)) return 'DHL';
+  return null;
+}
+
+type InboundRow = {
+  id: number; reference_number: string; carrier: string | null;
+  tracking_number: string; tracking_status: string | null;
+};
+
+// The trackable-format predicate lives in SQL so untrackable numbers
+// (ocean freight refs etc., which never get stamped) can't occupy the
+// LIMIT slots forever and starve real polls behind them. The regexes
+// mirror detectCarrier, with the stored leading '#' tolerated.
+const inbound = await sql`
+  SELECT si.id, si.reference_number, si.carrier, si.tracking_number, si.tracking_status
+  FROM shipments_inbound si
+  WHERE si.status IN ('freight_forwarder', 'in_transit')
+    AND COALESCE(si.tracking_number, '') <> ''
+    AND (si.carrier IN ('USPS', 'UPS', 'FedEx', 'DHL')
+      OR si.tracking_number ~* '^#?1Z'
+      OR si.tracking_number ~ '^#?9[0-9]{21,25}$'
+      OR si.tracking_number ~ '^#?([0-9]{12}|[0-9]{15}|[0-9]{10})$')
+    AND (si.tracking_checked_at IS NULL OR si.tracking_checked_at < NOW() - INTERVAL '25 minutes')
+  ORDER BY si.tracking_checked_at ASC NULLS FIRST, si.id
+  LIMIT 50` as InboundRow[];
+
+const untrackable = await sql`
+  SELECT COUNT(*)::int AS n
+  FROM shipments_inbound si
+  WHERE si.status IN ('freight_forwarder', 'in_transit')
+    AND COALESCE(si.tracking_number, '') <> ''
+    AND si.carrier IS NULL
+    AND NOT (si.tracking_number ~* '^#?1Z'
+      OR si.tracking_number ~ '^#?9[0-9]{21,25}$'
+      OR si.tracking_number ~ '^#?([0-9]{12}|[0-9]{15}|[0-9]{10})$')` as { n: number }[];
+
+console.log(`${inbound.length} inbound shipment(s) due for a tracking poll` +
+  (untrackable[0]?.n ? ` (${untrackable[0].n} with unrecognized number formats left untracked)` : '') + '.');
+let inDelivered = 0, inUpdated = 0, inSkipped = 0, inFailed = 0;
+
+for (const s of inbound) {
+  const num = String(s.tracking_number).replace(/^#/, '').trim();
+  const carrier = s.carrier || detectCarrier(num);
+  const token = carrier ? CARRIER_TOKENS[carrier] : null;
+  if (!token) {
+    inSkipped++;
+    continue;
+  }
+
+  let status: string | null = null;
+  let statusDate: string | null = null;
+  let details: string | null = null;
+  let eta: string | null = null;
+  try {
+    const res = await fetch(`https://api.goshippo.com/tracks/${token}/${encodeURIComponent(num)}`, {
+      headers: { Authorization: `ShippoToken ${apiKey}` },
+    });
+    if (res.ok) {
+      const data = await res.json() as {
+        eta?: string | null;
+        tracking_status?: { status?: string; status_date?: string; status_details?: string } | null;
+      };
+      status = data?.tracking_status?.status || null;
+      statusDate = data?.tracking_status?.status_date || null;
+      details = data?.tracking_status?.status_details || null;
+      eta = data?.eta || null;
+    } else {
+      console.error(`  inbound ${s.id} (${s.reference_number}, ${carrier} ${num}): HTTP ${res.status}`);
+    }
+  } catch (e) {
+    console.error(`  inbound ${s.id} (${s.reference_number}, ${carrier} ${num}): ${e instanceof Error ? e.message : e}`);
+  }
+
+  try {
+    if (status === 'DELIVERED') {
+      // Carrier delivery stamps tracking + arrival, but the APP status
+      // only flips to 'delivered' once every line has been received —
+      // the same guard the manual updateShipmentStatus enforces. A
+      // delivered app status removes the shipment from the warehouse
+      // In-Transit receive tab, so flipping early would orphan the
+      // receiving flow; until then the UI shows carrier status
+      // "Delivered" against app status "In Transit" (= arrived, not
+      // yet received).
+      await sql`
+        UPDATE shipments_inbound SET
+          status = CASE WHEN NOT EXISTS (
+              SELECT 1 FROM shipments_inbound_items sii
+              WHERE sii.shipment_id = shipments_inbound.id AND sii.quantity_received IS NULL
+            ) THEN 'delivered' ELSE status END,
+          arrival_date = COALESCE(arrival_date, ${statusDate ? statusDate.slice(0, 10) : null}::date, CURRENT_DATE),
+          carrier = COALESCE(carrier, ${carrier}),
+          tracking_status = 'DELIVERED',
+          tracking_details = ${details},
+          tracking_eta = ${eta}::timestamptz,
+          tracking_checked_at = NOW()
+        WHERE id = ${s.id} AND status IN ('freight_forwarder', 'in_transit')`;
+      inDelivered++;
+      console.log(`  inbound ${s.id} (${s.reference_number}, ${carrier} ${num}): DELIVERED (carrier)`);
+    } else {
+      // Stamp the poll time even when Shippo had nothing usable, so the
+      // row isn't permanently due. Keep the last known status when this
+      // poll returned none, but refresh details/ETA only from real data.
+      const st = status ?? s.tracking_status ?? null;
+      await sql`
+        UPDATE shipments_inbound SET
+          carrier = COALESCE(carrier, ${carrier}),
+          tracking_status = ${st},
+          tracking_details = COALESCE(${details}, tracking_details),
+          tracking_eta = COALESCE(${eta}::timestamptz, tracking_eta),
+          tracking_checked_at = NOW()
+        WHERE id = ${s.id}`;
+      inUpdated++;
+      if (status) console.log(`  inbound ${s.id} (${s.reference_number}, ${carrier} ${num}): ${status}${eta ? ` (ETA ${eta.slice(0, 10)})` : ''}`);
+    }
+  } catch (e) {
+    inFailed++;
+    console.error(`  inbound ${s.id}: DB update failed — ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+console.log(`Inbound: ${inDelivered} delivered, ${inUpdated} status-stamped, ${inSkipped} skipped (unrecognized number format), ${inFailed} failed.`);
+
 // Self-healing sweep, mirrors src/actions/orders/promoteDeliveredOrders.ts.
 const promoted = await sql`
   WITH ord AS (
