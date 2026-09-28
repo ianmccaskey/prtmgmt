@@ -30,6 +30,15 @@ function isImageUrl(url: string): boolean {
   }
 }
 
+/**
+ * Print CSS shared by every image-label document: @page declares 4x6
+ * media so the print dialog defaults to label stock instead of letter
+ * with margins (labels are 4x6 — Shippo PNGs and uploaded label images
+ * alike), and the image fills that page exactly.
+ */
+const IMAGE_PRINT_STYLE =
+  '<style>@page{size:4in 6in;margin:0}html,body{margin:0}img{width:4in;height:auto;display:block}</style>';
+
 export async function printLabel(url: string): Promise<PrintLabelResult> {
   // Silent path: same-origin printable blob.
   try {
@@ -44,10 +53,18 @@ export async function printLabel(url: string): Promise<PrintLabelResult> {
       frame.style.width = '0';
       frame.style.height = '0';
       frame.style.border = '0';
+      // An image blob gets the 4x6 print document via srcdoc (a bare image
+      // document can't carry @page and would print letter-sized); a PDF
+      // blob is loaded directly — it declares its own page size.
+      const isImage = blob.type.startsWith('image/');
       await new Promise<void>((resolve, reject) => {
         frame.onload = () => resolve();
         frame.onerror = () => reject(new Error('load failed'));
-        frame.src = obj;
+        if (isImage) {
+          frame.srcdoc = `<html><head>${IMAGE_PRINT_STYLE}</head><body><img src="${obj}"></body></html>`;
+        } else {
+          frame.src = obj;
+        }
         document.body.appendChild(frame);
       });
       frame.contentWindow?.focus();
@@ -67,9 +84,7 @@ export async function printLabel(url: string): Promise<PrintLabelResult> {
     if (!win) return 'blocked';
     win.document.write(
       '<html><head><title>Print label</title>' +
-      // 4in = the label's physical width: prints at true size on letter
-      // paper and exactly fills a 4x6 thermal roll.
-      '<style>body{margin:0}img{width:4in;height:auto;display:block}</style>' +
+      IMAGE_PRINT_STYLE +
       '</head><body>' +
       `<p id="err" style="display:none;font-family:sans-serif;padding:12px">Label failed to load — close this window and use Open label.</p>` +
       `<img src="${escaped}"` +
