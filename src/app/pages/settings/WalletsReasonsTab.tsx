@@ -72,6 +72,23 @@ export function WalletsReasonsTab() {
     }
   };
 
+  // Accumark Labs API key (COA sync: tools/sync-accumark.ts pulls the
+  // account's lab results into batch tests + the pricesheet COA links).
+  const [accumarkRaw, , , reloadAccumark] = useLoadAction(getAppSetting, [], { key: 'accumark_api_key' });
+  const accumarkConfigured = !!String(asRows<{ value: string }>(accumarkRaw)[0]?.value ?? '');
+  const [accumarkInput, setAccumarkInput] = useState('');
+  const [accumarkSaving, setAccumarkSaving] = useState(false);
+  const saveAccumark = async (clear = false) => {
+    setAccumarkSaving(true);
+    try {
+      await doSaveSetting({ key: 'accumark_api_key', value: clear ? '' : accumarkInput.trim() });
+      setAccumarkInput('');
+      reloadAccumark();
+    } finally {
+      setAccumarkSaving(false);
+    }
+  };
+
   // Wallet dialog state: showWalletForm opens the dialog; editWallet != null
   // means it's editing that wallet, otherwise adding.
   const [showWalletForm, setShowWalletForm] = useState(false);
@@ -266,6 +283,34 @@ export function WalletsReasonsTab() {
           </Button>
           {heliusConfigured && (
             <Button size="sm" variant="outline" onClick={() => saveHelius(true)} disabled={heliusSaving}>Remove</Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Accumark Labs (COA sync) */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Lock className="h-4 w-4" /> Accumark Labs API Key
+            {accumarkConfigured && <Badge variant="outline" className="text-xs text-green-600 border-green-300">configured</Badge>}
+          </CardTitle>
+          <p className="text-xs text-gray-400">
+            Auto-imports your Accumark Labs COAs as batch test results (and the pricesheet&apos;s COA links).
+            Results match by lot code, so put the batch number on the sample submission. Get a key from
+            Accumark&apos;s client portal.
+          </p>
+        </CardHeader>
+        <CardContent className="flex items-center gap-2 flex-wrap">
+          <Input
+            type="password" value={accumarkInput} onChange={e => setAccumarkInput(e.target.value)}
+            placeholder={accumarkConfigured ? '•••••••••••• (enter new key to replace)' : 'Accumark API key…'}
+            className="max-w-md"
+          />
+          <Button size="sm" onClick={() => saveAccumark(false)} disabled={accumarkSaving || !accumarkInput.trim()}>
+            {accumarkSaving ? 'Saving…' : 'Save Key'}
+          </Button>
+          {accumarkConfigured && (
+            <Button size="sm" variant="outline" onClick={() => saveAccumark(true)} disabled={accumarkSaving}>Remove</Button>
           )}
         </CardContent>
       </Card>

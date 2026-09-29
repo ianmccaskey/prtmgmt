@@ -1,0 +1,34 @@
+# Imports Accumark Labs COAs as batch test results (lot code ↔ batch number
+# matching; QC rollup; pricesheet COA links pick them up automatically).
+# Lab results land 48-72h after sample receipt, so a few polls a day is
+# plenty — no need for the hourly cadence the shipping syncs use.
+#
+# Secrets required: DATABASE_URL (shared with tracking-sync). The Accumark
+# API key itself lives in app_settings (Settings → Wallets & Config).
+name: accumark-sync
+
+on:
+  schedule:
+    # FALLBACK ONLY — cron-job.org drives the real cadence via
+    # workflow_dispatch (see tracking-sync.yml for the Neon-compute
+    # rationale). Aligned at minute 7 with the other syncs.
+    - cron: '7 */6 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: accumark-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Import Accumark COAs
+        run: bun tools/sync-accumark.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
