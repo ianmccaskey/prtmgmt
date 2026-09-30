@@ -17,8 +17,9 @@
  *    does the same; unknown params are ignored server-side).
  *  - Per-code details:    GET /badge/{code} — public, no auth, includes
  *    lot_code, dates, overall_status, and the per-analyte result arrays.
- *  - Human report:        https://accumarklabs.com/verify/{code} — stored as
- *    the test_report_url so the app/pricesheet link straight to the live COA.
+ *  - Human report:        https://accumarklabs.com/accuverify/?accuverify_code={code}
+ *    — stored as the test_report_url so the app/pricesheet link straight
+ *    to the live COA.
  *
  * The API key comes from app_settings.accumark_api_key (Settings → Wallets &
  * Config → Accumark Labs API Key) or the ACCUMARK_API_KEY env var. No key =
@@ -42,7 +43,9 @@ if (!url) {
 const sql = new SQL(url);
 
 const API_BASE = 'https://accumarklabs.com/wp-json/accumark/v1';
-const VERIFY_BASE = 'https://accumarklabs.com/verify/';
+// The live report URL, exactly as their own payloads' verify_url builds it
+// (the prettier /verify/{code} form 404s — verified 2026-09-30).
+const VERIFY_BASE = 'https://accumarklabs.com/accuverify/?accuverify_code=';
 const LAB_NAME = 'Accumark Labs';
 
 /** Normalize a lot/batch code for matching: trim, uppercase, drop spaces. */
@@ -61,12 +64,18 @@ type PlannedTest = {
   notes: string;
 };
 
-/** Map a status-ish string onto the batch_tests pass_fail CHECK values. */
+/**
+ * Map a status-ish string onto the batch_tests pass_fail CHECK values.
+ * Accumark's live vocabulary (observed 2026-09-30): per-test status
+ * "CONFORMS" / "Conforms 2/2" / "MEASURED" (informational, no judgement),
+ * per-test boolean `conforms` (true/false/null), overall_status "PASSED".
+ */
 function mapPassFail(s: unknown): 'pass' | 'fail' | 'marginal' | null {
   const t = String(s ?? '').toLowerCase();
   if (!t) return null;
-  if (/fail|reject/.test(t)) return 'fail';
-  if (/pass|verified|ok|success/.test(t)) return 'pass';
+  if (/measured|informational|n\/?a|pending/.test(t)) return null;
+  if (/fail|reject|nonconform|non-conform/.test(t)) return 'fail';
+  if (/conform|pass|verified|ok|success/.test(t)) return 'pass';
   return 'marginal';
 }
 
@@ -81,10 +90,24 @@ function mapPassFail(s: unknown): 'pass' | 'fail' | 'marginal' | null {
 function parseLabValue(raw: unknown): number | null {
   if (typeof raw === 'number') return Number.isFinite(raw) && Math.abs(raw) < 1e8 ? raw : null;
   if (raw == null) return null;
-  const m = String(raw).match(/^\s*[<>≤≥~]?\s*(-?\d+(?:[.,]\d+)?)\s*(?:%|[a-zA-Zµμ][a-zA-Zµμ/%-]{0,9})?\s*$/);
+  let s = String(raw);
+  // Accumark's replicate-summary format: "mean 28.74 mg · SD 1.58 · %RSD
+  // 5.51% · n=2". The mean is the reportable value — take the segment
+  // between 'mean' and the first '·' and parse it strictly like any other.
+  const meanM = s.match(/^\s*mean\s+([^·]+)/i);
+  if (meanM) s = meanM[1];
+  const m = s.match(/^\s*[<>≤≥~]?\s*(-?\d+(?:[.,]\d+)?)\s*(?:%|[a-zA-Zµμ][a-zA-Zµμ/%-]{0,9})?\s*$/);
   if (!m) return null;
   const v = Number(m[1].replace(',', '.'));
   return Number.isFinite(v) && Math.abs(v) < 1e8 ? v : null;
+}
+
+/** Accumark dates arrive as MM/DD/YYYY; normalize to ISO or null. */
+function parseUsDate(raw: unknown): string | null {
+  const s = String(raw ?? '').trim();
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) return `${us[3]}-${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(s.slice(0, 10)) ? s.slice(0, 10) : null;
 }
 
 /**
@@ -105,7 +128,12 @@ function readAnalyte(entry: Record<string, unknown>) {
   const unitsRaw = pick(['units', 'unit', 'uom']);
   const units = unitsRaw == null ? null : String(unitsRaw).slice(0, 16);
   const status = pick(['status', 'pass_fail', 'result_status', 'outcome', 'grade']);
-  return { name, value, units, status, rawValue };
+  // Accumark's per-test boolean verdict; true/false only (null = no judgement).
+  const conforms = typeof entry.conforms === 'boolean' ? entry.conforms : null;
+  // Accumark's stable per-test key ('purity' | 'identity' | 'quantity') —
+  // preferred over the display name for classification.
+  const key = String(entry.key ?? '').slice(0, 40);
+  return { name, value, units, status, conforms, key, rawValue };
 }
 
 /** Classify an analyte name onto our batch_tests test_type CHECK values. */
@@ -211,8 +239,7 @@ async function main() {
     }
 
     const sampleName = String(badge.sample_name ?? badge.product_name ?? '').slice(0, 120);
-    const testDateRaw = String(badge.date_completed ?? '').slice(0, 10);
-    const testDate = /^\d{4}-\d{2}-\d{2}$/.test(testDateRaw) ? testDateRaw : null;
+    const testDate = parseUsDate(badge.date_completed);
     const overall = mapPassFail(badge.overall_status);
 
     // Collect analytes across whichever result arrays this report carries.
@@ -223,19 +250,25 @@ async function main() {
     for (const arr of analyteArrays) {
       for (const raw of arr) {
         const a = readAnalyte(raw);
-        if (!a.name && a.value == null) continue;
-        const cls = classify(a.name);
+        if (!a.name && !a.key && a.value == null) continue;
+        const cls = classify(a.key || a.name);
         // Purity is a percentage by definition — a value outside [0,100]
         // is a misparse, and null is more honest than a wrong number.
         const value = cls.type === 'hplc_purity' && a.value != null && (a.value < 0 || a.value > 100)
           ? null : a.value;
+        // Verdict precedence: status text ("CONFORMS" → pass, "MEASURED" →
+        // no judgement) → per-test conforms boolean → the COA's overall.
+        const pf = mapPassFail(a.status)
+          ?? (a.conforms === true ? 'pass' as const : a.conforms === false ? 'fail' as const : null)
+          ?? overall;
         planned.push({
           batch_id: batchId,
           test_type: cls.type,
           test_date: testDate,
           result_value: value,
-          result_units: a.units || cls.units,
-          pass_fail: mapPassFail(a.status) ?? overall,
+          // Units only mean something next to a value.
+          result_units: value != null ? (a.units || cls.units) : null,
+          pass_fail: pf,
           test_report_url: reportUrl,
           notes: `${cls.note}${a.name && a.name !== cls.note ? ` (${a.name})` : ''} — Accumark ${code}${sampleName ? `, sample: ${sampleName}` : ''}`.slice(0, 300),
         });
@@ -268,14 +301,10 @@ async function main() {
       // ONE statement per COA (the repo's no-transactions atomicity rule):
       // either every row of this report lands or none do. A partial insert
       // would be frozen forever by the per-code dedupe on the next run.
+      // Bun's sql(rows) helper expands to a single multi-row INSERT.
+      const insertRows = planned.map(p => ({ ...p, lab_name: LAB_NAME }));
       const rows = await sql`
-        INSERT INTO batch_tests (batch_id, test_type, test_date, lab_name, result_value, result_units, pass_fail, test_report_url, notes)
-        SELECT t.batch_id, t.test_type, NULLIF(t.test_date, '')::date, ${LAB_NAME},
-               t.result_value, t.result_units, t.pass_fail, t.test_report_url, t.notes
-        FROM jsonb_to_recordset(${JSON.stringify(planned)}::jsonb)
-          AS t(batch_id bigint, test_type text, test_date text, result_value numeric,
-               result_units text, pass_fail text, test_report_url text, notes text)
-        RETURNING id` as { id: number }[];
+        INSERT INTO batch_tests ${sql(insertRows)} RETURNING id` as { id: number }[];
       inserted += rows.length;
       touchedBatches.add(batchId);
       knownUrls.add(reportUrl);
