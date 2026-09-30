@@ -23,7 +23,8 @@
  *
  * The API key comes from app_settings.accumark_api_key (Settings → Wallets &
  * Config → Accumark Labs API Key) or the ACCUMARK_API_KEY env var. No key =
- * clean exit, nothing to do.
+ * clean exit, nothing to do — except --codes mode, which uses only the
+ * public badge endpoint and needs no key.
  *
  * Invoked by .github/workflows/accumark-sync.yml (cron-job.org drives the
  * real cadence; needs the DATABASE_URL repo secret), or locally:
@@ -162,10 +163,23 @@ async function fetchJson(path: string, apiKey?: string): Promise<unknown> {
 }
 
 async function main() {
+  // --codes A,B,...: import SPECIFIC certificates via the public badge
+  // endpoint, bypassing the account list. Accumark's /client/coas only
+  // lists COAs whose peptide exists in the account's peptide catalog
+  // (observed 2026-09-30: new T60/NAD+ certificates were live and public
+  // but invisible to the list until their catalog entries exist), so this
+  // is the escape hatch for a certificate you can see that the sync can't.
+  const codesArgIdx = process.argv.indexOf('--codes');
+  const codesArgVal = codesArgIdx >= 0 ? String(process.argv[codesArgIdx + 1] ?? '') : '';
+  // A following flag (e.g. `--codes --dry-run`) is not a code value.
+  const manualCodes = codesArgVal.startsWith('--') ? []
+    : codesArgVal.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+
   const keyRows = await sql`
     SELECT value FROM app_settings WHERE key = 'accumark_api_key' AND COALESCE(value, '') <> ''` as { value: string }[];
   const apiKey = keyRows[0]?.value || process.env.ACCUMARK_API_KEY || '';
-  if (!apiKey) {
+  // Manual codes need no key — the badge endpoint is public.
+  if (!apiKey && manualCodes.length === 0) {
     console.log('No Accumark API key configured (Settings → Wallets & Config, or ACCUMARK_API_KEY) — nothing to do.');
     return;
   }
@@ -182,20 +196,25 @@ async function main() {
     WHERE test_report_url LIKE ${VERIFY_BASE + '%'}` as { test_report_url: string }[];
   const knownUrls = new Set(existing.map(r => r.test_report_url));
 
-  // Page through the account's COAs.
+  // Page through the account's COAs — or take the explicit code list.
   type CoaItem = Record<string, unknown>;
   const items: CoaItem[] = [];
-  for (let page = 1; page <= 20; page++) {
-    const body = await fetchJson(`/client/coas?per_page=100&page=${page}&with_summary=1`, apiKey) as
-      { items?: CoaItem[]; total_pages?: number } | CoaItem[];
-    const chunk = Array.isArray(body) ? body : (body.items ?? []);
-    items.push(...chunk);
-    const totalPages = Array.isArray(body) ? 1 : Number(body.total_pages ?? 1);
-    if (page >= totalPages || chunk.length === 0) break;
-  }
-  console.log(`${items.length} COA(s) on the Accumark account.`);
-  if (DRY_RUN && items.length > 0) {
-    console.log('First COA list item (dry-run shape check):', JSON.stringify(items[0]).slice(0, 800));
+  if (manualCodes.length > 0) {
+    for (const code of manualCodes) items.push({ code });
+    console.log(`${items.length} certificate code(s) supplied via --codes.`);
+  } else {
+    for (let page = 1; page <= 20; page++) {
+      const body = await fetchJson(`/client/coas?per_page=100&page=${page}&with_summary=1`, apiKey) as
+        { items?: CoaItem[]; total_pages?: number } | CoaItem[];
+      const chunk = Array.isArray(body) ? body : (body.items ?? []);
+      items.push(...chunk);
+      const totalPages = Array.isArray(body) ? 1 : Number(body.total_pages ?? 1);
+      if (page >= totalPages || chunk.length === 0) break;
+    }
+    console.log(`${items.length} COA(s) on the Accumark account.`);
+    if (DRY_RUN && items.length > 0) {
+      console.log('First COA list item (dry-run shape check):', JSON.stringify(items[0]).slice(0, 800));
+    }
   }
 
   let inserted = 0, skippedKnown = 0, failedCount = 0, newFetched = 0;
