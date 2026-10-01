@@ -142,8 +142,15 @@ function classify(name: string): { type: PlannedTest['test_type']; units: string
   if (/purity/i.test(name)) return { type: 'hplc_purity', units: '%', note: 'HPLC purity' };
   if (/endotoxin|\bLAL\b/i.test(name)) return { type: 'endotoxin', units: 'EU/mg', note: 'Endotoxin (LAL)' };
   if (/steril/i.test(name)) return { type: 'sterility', units: null, note: 'Sterility' };
-  if (/quantity|content|net\s*mass|\bmg\b/i.test(name)) return { type: 'other', units: 'mg', note: 'Quantity verification' };
-  if (/identity/i.test(name)) return { type: 'other', units: null, note: 'Identity confirmation' };
+  // Accumark's Identity confirmation IS the batch's identity test — the
+  // role mass_spec plays in the QC rollup (newest hplc_purity pass +
+  // newest mass_spec pass => passed). Ian's call 2026-10-01: an Accumark
+  // identity pass satisfies the identity leg, so classify it as mass_spec
+  // rather than stranding every Accumark-only batch in 'pending'.
+  // Checked before quantity so a name like '10mg - Identity' can't be
+  // captured by the \bmg\b branch.
+  if (/identity/i.test(name)) return { type: 'mass_spec', units: null, note: 'Identity confirmation' };
+  if (/quantity|content|net\s*mass|\bmg\b/i.test(name)) return { type: 'other', units: 'mg', note: 'Quantity (mass) verification' };
   return { type: 'other', units: null, note: name || 'Accumark result' };
 }
 
