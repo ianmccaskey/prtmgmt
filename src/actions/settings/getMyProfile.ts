@@ -9,7 +9,7 @@ function getMyProfile() {
         w.name AS assigned_warehouse_name,
         (SELECT COUNT(*) FROM user_profiles WHERE email IS NOT NULL) AS provisioned_count
       FROM (SELECT 1) AS one
-      LEFT JOIN user_profiles up ON LOWER(up.email) = LOWER({{params.email}})
+      LEFT JOIN user_profiles up ON LOWER(TRIM(up.email)) = LOWER(TRIM({{params.email}}))
       LEFT JOIN warehouses w ON w.id = up.assigned_warehouse_id
       LIMIT 1
     `,

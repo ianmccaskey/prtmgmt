@@ -61,7 +61,9 @@ export function AppUserProvider({ children }: { children: React.ReactNode }) {
 
   const row = firstRow<ProfileRow>(rows);
   const hasProfile = !!row?.id;
-  const provisionedCount = Number(row?.provisioned_count ?? 0);
+  // provisioned_count is always present on a successful load; a missing or
+  // non-numeric value means a malformed result and must not read as "0".
+  const provisionedCount = row?.provisioned_count == null ? NaN : Number(row.provisioned_count);
 
   const value = useMemo<AppUser>(() => {
     if (hasProfile && row) {
@@ -109,7 +111,7 @@ export function AppUserProvider({ children }: { children: React.ReactNode }) {
   // The profile query always returns exactly one row (LEFT JOIN from SELECT 1),
   // so no row means the query failed (e.g. DB cold start / timeout). Fail
   // closed — never fall through to the bootstrap admin grant.
-  if (error || !row) {
+  if (error || !row || !Number.isFinite(provisionedCount)) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background p-8">
         <Card className="max-w-md">
@@ -127,7 +129,8 @@ export function AppUserProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Provisioned workspace + unknown user → hard stop (no silent admin access).
-  if (!hasProfile && provisionedCount > 0) {
+  // A blank email is also never eligible for the bootstrap admin grant.
+  if (!hasProfile && (provisionedCount > 0 || !email.trim())) {
     return (
       <FullScreenNotice
         icon={<UserX className="w-8 h-8 text-muted-foreground" />}
