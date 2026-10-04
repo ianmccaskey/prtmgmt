@@ -3,6 +3,7 @@ import { useUser, useLoadAction } from '@uibakery/data';
 import getMyProfile from '@/actions/settings/getMyProfile';
 import { firstRow } from '@/lib/rows';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { ShieldAlert, UserX } from 'lucide-react';
 
 export type AppRole = 'admin' | 'sales_rep' | 'warehouse' | 'logistics';
@@ -56,7 +57,7 @@ function FullScreenNotice({ icon, title, body }: { icon: React.ReactNode; title:
 export function AppUserProvider({ children }: { children: React.ReactNode }) {
   const user = useUser();
   const email = user.email || '';
-  const [rows, loading] = useLoadAction(getMyProfile, [email], { email });
+  const [rows, loading, error, reload] = useLoadAction(getMyProfile, [email], { email });
 
   const row = firstRow<ProfileRow>(rows);
   const hasProfile = !!row?.id;
@@ -101,6 +102,26 @@ export function AppUserProvider({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="text-sm text-muted-foreground animate-pulse">Loading workspace…</div>
+      </div>
+    );
+  }
+
+  // The profile query always returns exactly one row (LEFT JOIN from SELECT 1),
+  // so no row means the query failed (e.g. DB cold start / timeout). Fail
+  // closed — never fall through to the bootstrap admin grant.
+  if (error || !row) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background p-8">
+        <Card className="max-w-md">
+          <CardContent className="py-10 flex flex-col items-center gap-3 text-center">
+            <ShieldAlert className="w-8 h-8 text-muted-foreground" />
+            <p className="font-medium">Couldn't load your account</p>
+            <p className="text-sm text-muted-foreground">
+              The database didn't respond. It may still be waking up — try again in a few seconds.
+            </p>
+            <Button size="sm" onClick={() => reload()}>Retry</Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
