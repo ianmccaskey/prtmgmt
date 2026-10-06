@@ -29,7 +29,20 @@ function listInboundShipments() {
         AND ({{params.date_from}} IS NULL OR si.arrival_date >= {{params.date_from}}::date)
         AND ({{params.date_to}} IS NULL OR si.arrival_date <= {{params.date_to}}::date)
       GROUP BY si.id, f.name, f.id
-      ORDER BY si.arrival_date DESC NULLS LAST
+      ORDER BY
+        -- Review order (ux-audit 2026-10-05): the old arrival_date DESC
+        -- NULLS LAST put delivered history first and dumped every active
+        -- shipment (NULL arrival) at the bottom in arbitrary order.
+        -- Tier 0: carrier delivered but not yet received = act today.
+        -- Tier 1: active, soonest expected arrival (real date or ETA) first.
+        -- Tier 2: delivered history, newest first.
+        CASE WHEN si.tracking_status = 'DELIVERED' AND si.status <> 'delivered' THEN 0
+             WHEN si.status IN ('freight_forwarder', 'in_transit') THEN 1
+             ELSE 2 END,
+        CASE WHEN si.status = 'delivered' THEN NULL
+             ELSE COALESCE(si.arrival_date, si.tracking_eta::date) END ASC NULLS LAST,
+        si.arrival_date DESC NULLS LAST,
+        si.id DESC
     `,
   });
 }

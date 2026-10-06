@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
 import { useLoadAction } from '@uibakery/data';
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plane, Ship, Package, AlertTriangle, CheckCircle2, Clock, Plus, Search } from 'lucide-react';
+import { Plane, Ship, Package, PackageCheck, AlertTriangle, CheckCircle2, Clock, Plus, Search } from 'lucide-react';
 import listInboundShipments from '@/actions/logistics/listInboundShipments';
 import getShipmentStats from '@/actions/logistics/getShipmentStats';
 import { usePagination, PaginationFooter } from '@/components/Paginated';
@@ -31,7 +31,6 @@ type Stats = {
 };
 
 // Must match the shipments_inbound.status CHECK constraint.
-const STATUS_STEPS = ['freight_forwarder', 'in_transit', 'delivered'];
 const STATUS_LABELS: Record<string, string> = {
   freight_forwarder: 'With FF', in_transit: 'In Transit', delivered: 'Delivered',
 };
@@ -40,25 +39,6 @@ const STATUS_COLORS: Record<string, string> = {
   in_transit: 'bg-amber-100 text-amber-700',
   delivered: 'bg-green-100 text-green-700',
 };
-
-function StatusPipeline({ status }: { status: string }) {
-  const currentIdx = STATUS_STEPS.indexOf(status);
-  return (
-    <div className="flex items-center gap-1">
-      {STATUS_STEPS.map((step, idx) => (
-        <React.Fragment key={step}>
-          <div
-            className={`h-2 w-8 rounded-full ${idx <= currentIdx ? 'bg-blue-500' : 'bg-gray-200'}`}
-            title={STATUS_LABELS[step]}
-          />
-          {idx < STATUS_STEPS.length - 1 && (
-            <div className={`h-px w-3 ${idx < currentIdx ? 'bg-blue-500' : 'bg-gray-200'}`} />
-          )}
-        </React.Fragment>
-      ))}
-    </div>
-  );
-}
 
 // Shippo tracking statuses → friendly labels (statuses per lib/shippo.ts).
 const TRACK_LABELS: Record<string, string> = {
@@ -69,11 +49,22 @@ const trackLabel = (s: string) => TRACK_LABELS[s] || s;
 // tracking_eta is a real timestamptz (a moment, not a date-only column),
 // so local-date formatting is correct here.
 const fmtEta = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+// Short display for DATE columns, read straight off the string (no timezone
+// conversion — fmtDate doctrine) and matching the ETA's "Oct 2" style.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function fmtDay(v: string | null): string {
+  const m = String(v ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}` : '—';
+}
+
+/** Carrier says delivered but the warehouse hasn't received it — act today. */
+const arrivedAwaiting = (s: Shipment) => s.tracking_status === 'DELIVERED' && s.status !== 'delivered';
 
 function ModeIcon({ mode }: { mode: string }) {
-  if (mode === 'air') return <Plane className="h-4 w-4 text-blue-500" />;
-  if (mode === 'ocean') return <Ship className="h-4 w-4 text-indigo-500" />;
-  return <Package className="h-4 w-4 text-gray-500" />;
+  const label = mode?.replace('_', ' ') || '';
+  if (mode === 'air') return <Plane className="h-4 w-4 text-blue-500 shrink-0" aria-label={label} />;
+  if (mode === 'ocean') return <Ship className="h-4 w-4 text-indigo-500 shrink-0" aria-label={label} />;
+  return <Package className="h-4 w-4 text-gray-400 shrink-0" aria-label={label} />;
 }
 
 export function LogisticsPage() {
@@ -89,6 +80,10 @@ export function LogisticsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [factoryFilter, setFactoryFilter] = useState('');
   const [modeFilter, setModeFilter] = useState('');
+  // Month-labeled stat cards filter EXACTLY what they count (status +
+  // arrival in the current month, mirroring getShipmentStats). Client-side:
+  // the rows arrive unpaginated, so no action round-trip is needed.
+  const [cardScope, setCardScope] = useState<'' | 'delivered_month' | 'disc_month'>('');
   const [searchVal, setSearchVal] = useState('');
   const [showNewDialog, setShowNewDialog] = useState(!!prefillItems?.length);
 
@@ -106,10 +101,54 @@ export function LogisticsPage() {
   const [factories] = useLoadAction(listFactories, [], {});
 
   const statsRow = (stats as Stats[])?.[0] || {} as Stats;
-  const shipmentsList = asRows<Shipment>(shipments);
+  // Current calendar month as "YYYY-MM" for arrival_date string comparison
+  // (DATE column — compared off the string, matching getShipmentStats'
+  // date_trunc('month', CURRENT_DATE) predicate).
+  const curMonth = (() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+  })();
+  const inThisMonth = (d: string | null) => String(d ?? '').slice(0, 7) === curMonth;
+  const shipmentsList = useMemo(() => {
+    const all = asRows<Shipment>(shipments);
+    if (cardScope === 'delivered_month') return all.filter(s => s.status === 'delivered' && inThisMonth(s.arrival_date));
+    if (cardScope === 'disc_month') return all.filter(s => Number(s.discrepancy_lines) > 0 && inThisMonth(s.arrival_date));
+    return all;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shipments, cardScope]);
   const pgShip = usePagination(shipmentsList);
 
   const handleSearch = () => setSearch(searchVal);
+  const anyFilter = !!(search || statusFilter || factoryFilter || modeFilter || cardScope);
+  const clearFilters = () => {
+    setSearch(''); setSearchVal(''); setStatusFilter(''); setFactoryFilter(''); setModeFilter(''); setCardScope('');
+  };
+  // Stat cards filter the table below; clicking the active one clears it.
+  // Status cards use the server filter; month cards use the client scope.
+  const toggleStatus = (v: string) => { setCardScope(''); setStatusFilter(f => (f === v ? '' : v)); };
+  const toggleScope = (v: 'delivered_month' | 'disc_month') => { setStatusFilter(''); setCardScope(s => (s === v ? '' : v)); };
+
+  const statCard = (
+    icon: React.ReactNode, label: string, value: React.ReactNode, active: boolean, onClick: () => void,
+  ) => (
+    <Card
+      role="button"
+      tabIndex={0}
+      aria-pressed={active}
+      className={`cursor-pointer transition-colors hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-blue-400 outline-none ${active ? 'ring-2 ring-blue-400' : ''}`}
+      onClick={onClick}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      title={active ? 'Click to clear this filter' : 'Click to filter the list'}
+    >
+      <CardContent className="pt-4">
+        <div className="flex items-center gap-2 mb-1">
+          {icon}
+          <span className="text-xs text-gray-500">{label}</span>
+        </div>
+        <div className="text-2xl font-bold">{value}</div>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="p-6 space-y-6">
@@ -123,44 +162,28 @@ export function LogisticsPage() {
         </Button>
       </div>
 
-      {/* Stat Cards */}
+      {/* Stat cards double as one-click filters (same contract as the dashboard cards). */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Package className="h-4 w-4 text-blue-500" />
-              <span className="text-xs text-gray-500">With Freight Forwarder</span>
-            </div>
-            <div className="text-2xl font-bold">{statsRow.with_freight_forwarder ?? 0}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Ship className="h-4 w-4 text-amber-500" />
-              <span className="text-xs text-gray-500">In Transit</span>
-            </div>
-            <div className="text-2xl font-bold">{statsRow.in_transit ?? 0}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-2 mb-1">
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
-              <span className="text-xs text-gray-500">Delivered This Month</span>
-            </div>
-            <div className="text-2xl font-bold">{statsRow.delivered_this_month ?? 0}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-2 mb-1">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
-              <span className="text-xs text-gray-500">Discrepancies This Month</span>
-            </div>
-            <div className="text-2xl font-bold text-red-600">{statsRow.discrepancies_this_month ?? 0}</div>
-          </CardContent>
-        </Card>
+        {statCard(
+          <Package className="h-4 w-4 text-blue-500" />, 'With Freight Forwarder',
+          statsRow.with_freight_forwarder ?? 0,
+          statusFilter === 'freight_forwarder', () => toggleStatus('freight_forwarder'),
+        )}
+        {statCard(
+          <Ship className="h-4 w-4 text-amber-500" />, 'In Transit',
+          statsRow.in_transit ?? 0,
+          statusFilter === 'in_transit', () => toggleStatus('in_transit'),
+        )}
+        {statCard(
+          <CheckCircle2 className="h-4 w-4 text-green-500" />, 'Delivered This Month',
+          statsRow.delivered_this_month ?? 0,
+          cardScope === 'delivered_month', () => toggleScope('delivered_month'),
+        )}
+        {statCard(
+          <AlertTriangle className="h-4 w-4 text-red-500" />, 'Discrepancies This Month',
+          <span className="text-red-600">{statsRow.discrepancies_this_month ?? 0}</span>,
+          cardScope === 'disc_month', () => toggleScope('disc_month'),
+        )}
       </div>
 
       {/* Filters */}
@@ -178,11 +201,19 @@ export function LogisticsPage() {
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
                 className="w-64"
               />
-              <Button variant="outline" size="icon" onClick={handleSearch}>
+              <Button variant="outline" size="icon" onClick={handleSearch} aria-label="Search shipments">
                 <Search className="h-4 w-4" />
               </Button>
             </div>
-            <Select value={statusFilter || 'all'} onValueChange={v => setStatusFilter(v === 'all' ? '' : v)}>
+            <Select
+              value={statusFilter || 'all'}
+              onValueChange={v => {
+                // A month-card scope + a conflicting status filter would
+                // guarantee an empty table — the dropdown wins, scope clears.
+                setCardScope('');
+                setStatusFilter(v === 'all' ? '' : v);
+              }}
+            >
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="All Statuses" />
               </SelectTrigger>
@@ -222,37 +253,43 @@ export function LogisticsPage() {
               <TableRow>
                 <TableHead>Reference</TableHead>
                 <TableHead>Factory</TableHead>
-                <TableHead>Mode</TableHead>
-                <TableHead>Freight Forwarder</TableHead>
                 <TableHead>Tracking</TableHead>
-                <TableHead>Departure</TableHead>
                 <TableHead>Arrival</TableHead>
-                <TableHead>Pipeline</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Lines</TableHead>
+                <TableHead className="text-center">Lines</TableHead>
                 <TableHead>Discrepancies</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {shipmentsLoading ? (
-                <TableRow><TableCell colSpan={11} className="text-center py-8 text-gray-400">Loading…</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">Loading…</TableCell></TableRow>
               ) : shipmentsList.length === 0 ? (
-                <TableRow><TableCell colSpan={11} className="text-center py-8 text-gray-400">No shipments found</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-gray-400">
+                    {anyFilter ? (
+                      <span>
+                        No shipments match these filters.{' '}
+                        <button type="button" className="text-blue-600 underline" onClick={clearFilters}>Clear filters</button>
+                      </span>
+                    ) : 'No inbound shipments yet — create one with New Inbound Shipment.'}
+                  </TableCell>
+                </TableRow>
               ) : pgShip.pageRows.map(s => (
                 <TableRow
                   key={s.id}
-                  className="cursor-pointer hover:bg-gray-50"
+                  className={`cursor-pointer ${arrivedAwaiting(s) ? 'bg-amber-50/60 hover:bg-amber-50' : 'hover:bg-gray-50'}`}
                   onClick={() => navigate(`/logistics/${s.id}`)}
                 >
-                  <TableCell className="font-mono font-medium text-blue-600">{s.reference_number}</TableCell>
-                  <TableCell>{s.factory_name || '—'}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
+                  <TableCell className="font-medium text-blue-600">
+                    <div className="flex items-center gap-1.5">
                       <ModeIcon mode={s.mode} />
-                      <span className="capitalize text-sm">{s.mode?.replace('_', ' ')}</span>
+                      <span className="font-mono">{s.reference_number}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm">{s.freight_forwarder || '—'}</TableCell>
+                  <TableCell>
+                    <div className="text-sm">{s.factory_name || '—'}</div>
+                    {s.freight_forwarder && <div className="text-xs text-gray-500">{s.freight_forwarder}</div>}
+                  </TableCell>
                   <TableCell className="text-xs">
                     {(() => {
                       const num = dbText(s.tracking_number);
@@ -269,7 +306,7 @@ export function LogisticsPage() {
                               {num}
                             </a>
                           ) : <span className="font-mono">{num}</span>}
-                          {s.tracking_status && s.status !== 'delivered' && (
+                          {s.tracking_status && s.status !== 'delivered' && !arrivedAwaiting(s) && (
                             <p className="text-gray-500" title={s.tracking_details || undefined}>
                               {trackLabel(s.tracking_status)}
                             </p>
@@ -278,19 +315,23 @@ export function LogisticsPage() {
                       );
                     })()}
                   </TableCell>
-                  <TableCell className="text-sm">{s.departure_date ? s.departure_date.split('T')[0] : '—'}</TableCell>
                   <TableCell className="text-sm">
                     {s.arrival_date
-                      ? s.arrival_date.split('T')[0]
+                      ? fmtDay(s.arrival_date)
                       : s.tracking_eta && s.status !== 'delivered'
                         ? <span className="text-amber-700 flex items-center gap-1"><Clock className="h-3 w-3" /> ETA {fmtEta(s.tracking_eta)}</span>
                         : '—'}
                   </TableCell>
-                  <TableCell><StatusPipeline status={s.status} /></TableCell>
                   <TableCell>
-                    <Badge className={STATUS_COLORS[s.status] || 'bg-gray-100 text-gray-700'}>
-                      {STATUS_LABELS[s.status] || s.status}
-                    </Badge>
+                    {arrivedAwaiting(s) ? (
+                      <Badge className="bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 w-fit">
+                        <PackageCheck className="h-3 w-3" /> Arrived — receive
+                      </Badge>
+                    ) : (
+                      <Badge className={STATUS_COLORS[s.status] || 'bg-gray-100 text-gray-700'}>
+                        {STATUS_LABELS[s.status] || s.status}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-center">{s.line_count}</TableCell>
                   <TableCell>
