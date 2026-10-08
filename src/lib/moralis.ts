@@ -54,16 +54,114 @@ export type OnChainDeposit = {
 const solanaRpcUrl = (heliusKey?: string | null) =>
   heliusKey ? `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(heliusKey)}` : 'https://api.mainnet-beta.solana.com';
 
-async function solanaRpc(method: string, params: unknown[], heliusKey?: string | null): Promise<unknown> {
-  const res = await fetch(solanaRpcUrl(heliusKey), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+// ---- Pacing + retry ------------------------------------------------
+// Helius' free tier allows ~10 requests/second and hard-429s past it —
+// and one wallet check can fire dozens of lookups across two tokens
+// plus by-hash verifications. Every Solana RPC call in the app funnels
+// through ONE queue with minimum spacing, and 429/5xx responses retry
+// with exponential backoff (honoring Retry-After when sent).
+const RPC_MIN_INTERVAL_MS = 125; // ≈8 req/s ceiling, under the free tier's 10
+let rpcQueue: Promise<void> = Promise.resolve();
+let rpcLastDone = 0;
+
+function throttled<T>(fn: () => Promise<T>): Promise<T> {
+  const run = rpcQueue.then(async () => {
+    const wait = rpcLastDone + RPC_MIN_INTERVAL_MS - Date.now();
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    try {
+      return await fn();
+    } finally {
+      rpcLastDone = Date.now();
+    }
   });
-  if (!res.ok) throw new Error(`Solana RPC HTTP ${res.status}`);
+  rpcQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function solanaRpcPost(body: unknown, heliusKey?: string | null): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await throttled(() => fetch(solanaRpcUrl(heliusKey), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }));
+    if (res.status === 429 || res.status >= 500) {
+      if (attempt >= 4) throw new Error(`Solana RPC HTTP ${res.status} (still failing after ${attempt} retries — likely rate limited)`);
+      const retryAfterMs = Number(res.headers.get('retry-after')) * 1000;
+      const backoffMs = Number.isFinite(retryAfterMs) && retryAfterMs > 0
+        ? retryAfterMs
+        : 400 * Math.pow(2.5, attempt) * (0.8 + Math.random() * 0.4);
+      await new Promise(r => setTimeout(r, backoffMs));
+      continue;
+    }
+    if (!res.ok) throw new Error(`Solana RPC HTTP ${res.status}`);
+    return res;
+  }
+}
+
+async function solanaRpc(method: string, params: unknown[], heliusKey?: string | null): Promise<unknown> {
+  const res = await solanaRpcPost({ jsonrpc: '2.0', id: 1, method, params }, heliusKey);
   const j = await res.json() as { result?: unknown; error?: { message?: string } };
   if (j.error) throw new Error(j.error.message || 'Solana RPC error');
   return j.result;
 }
+
+/**
+ * JSON-RPC batch: N operations in ONE HTTP request — one rate-limit slot
+ * instead of N. Per-item errors come back as null (the deposit scan skips
+ * them), positional by request id.
+ */
+async function solanaRpcBatch(reqs: { method: string; params: unknown[] }[], heliusKey?: string | null): Promise<unknown[]> {
+  if (reqs.length === 0) return [];
+  const res = await solanaRpcPost(reqs.map((r, i) => ({ jsonrpc: '2.0', id: i, method: r.method, params: r.params })), heliusKey);
+  const arr = await res.json() as { id?: number; result?: unknown; error?: unknown }[];
+  const out: unknown[] = new Array(reqs.length).fill(null);
+  if (!Array.isArray(arr)) throw new Error('Solana RPC batch: unexpected response shape');
+  for (const item of arr) {
+    if (item && typeof item.id === 'number' && item.id >= 0 && item.id < out.length && !item.error) {
+      out[item.id] = item.result ?? null;
+    }
+  }
+  return out;
+}
+
+// ---- Immutable-TX cache --------------------------------------------
+// A finalized Solana transaction never changes, so its parsed deposit
+// delta for a given (signature, owner, mint) caches forever. Persisted
+// to localStorage so repeat wallet checks cost ZERO lookups for known
+// signatures — with the poisoning-spam dust that dominates the recent
+// signature window, this is the difference between ~60 fetches per
+// check and a handful. Entries: { d: owner's delta, t: blockTime }.
+type SolTxCacheEntry = { d: number; t: number | null };
+const SOLTX_CACHE_KEY = 'prt:soltx-cache:v1';
+const SOLTX_CACHE_MAX = 1500;
+let solTxCache: Map<string, SolTxCacheEntry> | null = null;
+
+function txCache(): Map<string, SolTxCacheEntry> {
+  if (solTxCache) return solTxCache;
+  solTxCache = new Map();
+  try {
+    const raw = localStorage.getItem(SOLTX_CACHE_KEY);
+    if (raw) for (const [k, v] of JSON.parse(raw) as [string, SolTxCacheEntry][]) solTxCache.set(k, v);
+  } catch { /* cold cache is always safe */ }
+  return solTxCache;
+}
+
+function txCachePut(key: string, entry: SolTxCacheEntry) {
+  const c = txCache();
+  c.set(key, entry);
+  // Trim the LIVE map too, not just the serialization — insertion order
+  // ≈ age, drop the oldest once over cap.
+  while (c.size > SOLTX_CACHE_MAX) {
+    const oldest = c.keys().next().value;
+    if (oldest == null) break;
+    c.delete(oldest);
+  }
+  try {
+    localStorage.setItem(SOLTX_CACHE_KEY, JSON.stringify([...c.entries()]));
+  } catch { /* persistence is best-effort */ }
+}
+
+const txCacheKey = (sig: string, owner: string, mint: string) => `${sig}|${owner}|${mint}`;
 
 /**
  * Incoming SPL token deposits to a Solana wallet since a timestamp, via the
@@ -83,18 +181,36 @@ async function getSolanaTokenDeposits(
     const sigs = await solanaRpc('getSignaturesForAddress', [acc.pubkey, { limit: 50 }], heliusKey) as
       { signature: string; blockTime?: number | null; err?: unknown }[];
     const due = (sigs || []).filter(s => !s.err && (s.blockTime ?? 0) >= sinceEpoch).slice(0, 30);
-    for (const s of due) {
-      const tx = await solanaRpc('getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }], heliusKey) as SolanaParsedTx;
-      if (!tx || tx.meta?.err) continue;
-      const delta = splOwnerDelta(tx, owner, mint);
-      if (delta > 0) {
-        deposits.push({
-          txHash: s.signature,
-          amount: delta,
-          at: tx.blockTime ? new Date(tx.blockTime * 1000).toISOString() : null,
-          from: null,
+
+    // Known signatures resolve from the immutable-TX cache; only the rest
+    // are fetched, batched 15 per HTTP request.
+    const uncached = due.filter(s => !txCache().has(txCacheKey(s.signature, owner, mint)));
+    for (let i = 0; i < uncached.length; i += 15) {
+      const chunk = uncached.slice(i, i + 15);
+      const results = await solanaRpcBatch(
+        chunk.map(s => ({ method: 'getTransaction', params: [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }] })),
+        heliusKey,
+      );
+      results.forEach((raw, j) => {
+        const tx = raw as SolanaParsedTx;
+        // null = not found or per-item error — may be transient, never cached.
+        if (!tx) return;
+        txCachePut(txCacheKey(chunk[j].signature, owner, mint), {
+          d: tx.meta?.err ? 0 : splOwnerDelta(tx, owner, mint),
+          t: tx.blockTime ?? null,
         });
-      }
+      });
+    }
+
+    for (const s of due) {
+      const hit = txCache().get(txCacheKey(s.signature, owner, mint));
+      if (!hit || hit.d <= 0) continue;
+      deposits.push({
+        txHash: s.signature,
+        amount: hit.d,
+        at: hit.t ? new Date(hit.t * 1000).toISOString() : null,
+        from: null,
+      });
     }
   }
   return deposits;
@@ -133,6 +249,13 @@ export async function getTxDeposit(
   if (network === 'solana') {
     const mint = TOKENS.solana[asset];
     if (!mint) return null;
+    // Finalized TXs are immutable — a cached parse answers instantly.
+    const cached = txCache().get(txCacheKey(txHash, address, mint));
+    if (cached) {
+      return cached.d > 0
+        ? { txHash, amount: cached.d, at: cached.t ? new Date(cached.t * 1000).toISOString() : null, from: null }
+        : null;
+    }
     let tx: SolanaParsedTx;
     try {
       tx = await solanaRpc('getTransaction',
@@ -145,8 +268,9 @@ export async function getTxDeposit(
       if (msg.includes('invalid')) return null;
       throw e;
     }
-    if (!tx || tx.meta?.err) return null;
-    const delta = splOwnerDelta(tx, address, mint);
+    if (!tx) return null; // unknown hash — possibly unindexed yet, never cached
+    const delta = tx.meta?.err ? 0 : splOwnerDelta(tx, address, mint);
+    txCachePut(txCacheKey(txHash, address, mint), { d: delta, t: tx.blockTime ?? null });
     if (delta <= 0) return null;
     return { txHash, amount: delta, at: tx.blockTime ? new Date(tx.blockTime * 1000).toISOString() : null, from: null };
   }
