@@ -10,7 +10,7 @@ export function createOrder() {
         ship_city, ship_state, ship_postal_code, ship_country,
         order_channel, is_free_order, free_order_reason_id, free_order_note,
         partial_fulfillment_allowed, status,
-        subtotal_usd, customer_shipping_charge_usd, discount_usd, total_usd,
+        subtotal_usd, customer_shipping_charge_usd, shipping_fee_recipient, discount_usd, total_usd,
         payment_status, notes, preferred_warehouse_id
       ) VALUES (
         'ORD-' || TO_CHAR(CURRENT_DATE, 'YYYY') || '-' || LPAD(NEXTVAL('sales_order_seq')::text, 4, '0'),
@@ -40,6 +40,8 @@ export function createOrder() {
         'quote',
         {{params.subtotalUsd}}::numeric,
         {{params.customerShippingChargeUsd}}::numeric,
+        -- 'vendor' = under-MOQ fee, 'warehouse' = expedited label fee.
+        COALESCE(NULLIF({{params.shippingFeeRecipient}}, ''), 'vendor'),
         {{params.discountUsd}}::numeric,
         {{params.totalUsd}}::numeric,
         'unpaid',

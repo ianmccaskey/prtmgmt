@@ -6,7 +6,7 @@ function getCommissionSummary() {
     query: `
       SELECT
         (SELECT COALESCE(SUM(t.earned), 0) FROM (
-           SELECT ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS earned
+           SELECT ROUND(SUM((so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * rp.commission_rate), 2) AS earned
            FROM sales_orders so
            JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
            WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status NOT IN ('cancelled','quote')
@@ -27,6 +27,20 @@ function getCommissionSummary() {
              AND COALESCE(NULLIF({{params.division}}, ''), 'us') = 'us'
              AND ({{params.date_from}} IS NULL OR so.shipped_date >= {{params.date_from}}::date)
              AND ({{params.date_to}} IS NULL OR so.shipped_date <= {{params.date_to}}::date)
+        ) + (
+           -- Expedited shipping fees routed to the shipping warehouse,
+           -- dated by the attributed (first) shipment.
+           SELECT COALESCE(SUM(f.fee), 0) FROM (
+             SELECT DISTINCT ON (so3.id) so3.customer_shipping_charge_usd AS fee, sh3.shipped_date
+             FROM sales_orders so3
+             JOIN shipments_outbound sh3 ON sh3.sales_order_id = so3.id AND sh3.origin = 'warehouse'
+             WHERE so3.shipping_fee_recipient = 'warehouse'
+               AND COALESCE(so3.customer_shipping_charge_usd, 0) > 0
+               AND so3.status NOT IN ('cancelled', 'quote')
+             ORDER BY so3.id, sh3.id) f
+           WHERE COALESCE(NULLIF({{params.division}}, ''), 'us') = 'us'
+             AND ({{params.date_from}} IS NULL OR f.shipped_date >= {{params.date_from}}::date)
+             AND ({{params.date_to}} IS NULL OR f.shipped_date <= {{params.date_to}}::date)
         ) AS warehouse_commission_earned_usd,
         (SELECT COALESCE(SUM(amount_usd), 0) FROM commission_payments
            WHERE payee_type = 'warehouse'

@@ -314,6 +314,13 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [lines, setLines] = useState<LineItem[]>([mkLine()]);
   const [discount, setDiscount] = useState('0');
   const [shipping, setShipping] = useState('0');
+  // Who the shipping charge belongs to: 'vendor' for the under-MOQ fee,
+  // 'warehouse' for an expedited-label fee (warehouses pay their own
+  // labels). Auto-derived below; the rep can override.
+  const [shipRecipient, setShipRecipient] = useState<'vendor' | 'warehouse'>('vendor');
+  // True once the rep touches the shipping amount — the MOQ auto-fill
+  // must never fight a manual entry.
+  const shipTouchedRef = useRef(false);
   const [notes, setNotes] = useState('');
   const [overrideNote, setOverrideNote] = useState('');
   const [ship, setShip] = useState({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
@@ -448,6 +455,25 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
 
   const subtotal = lines.reduce((s, l) => s + (l.product ? l.quantity * l.unit_price : 0), 0);
   const total = Math.max(0, subtotal - Number(discount) + Number(shipping));
+
+  // Shipping routing rule (2026-10-08): shipping is generally free. Any
+  // line below its product's MOQ auto-adds the $15 under-MOQ fee, which
+  // belongs to the VENDOR; a manually-entered charge on a normal order is
+  // an expedited-label fee and belongs to the shipping WAREHOUSE. The rep
+  // can override both the amount and the recipient.
+  const underMoq = !isFree && lines.some(l =>
+    l.product && l.quantity > 0 && l.quantity < Number(l.product.min_order_quantity ?? 1));
+  useEffect(() => {
+    if (shipTouchedRef.current) return;
+    if (underMoq && (Number(shipping) || 0) === 0) {
+      setShipping('15');
+      setShipRecipient('vendor');
+    } else if (!underMoq && shipping === '15' && shipRecipient === 'vendor') {
+      // Only unwinds the exact auto-fill, never a manual value.
+      setShipping('0');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [underMoq]);
 
   // A verified check is a proof about ONE (hash, asset, network, amount)
   // tuple — edit any part of it and the green banner would vouch for
@@ -597,7 +623,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       // directly as 'confirmed' used to skip all three when the chain
       // died (ORD-2026-0257 class).
       partialFulfillmentAllowed: partial, status: s === 'confirmed' ? 'quote' : s,
-      subtotalUsd: subtotal, customerShippingChargeUsd: Number(shipping), discountUsd: Number(discount), totalUsd: total,
+      subtotalUsd: subtotal, customerShippingChargeUsd: Number(shipping),
+      shippingFeeRecipient: (Number(shipping) || 0) > 0 ? shipRecipient : 'vendor',
+      discountUsd: Number(discount), totalUsd: total,
       notes: notes || null, createdByUserId: profileId,
       salesRepUserProfileId: salesRepId ? Number(salesRepId) : null,
       preferredWarehouseId: !splitMode && effectiveWh ? effectiveWh.id : null,
@@ -684,7 +712,8 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
 
   const reset = () => {
     setCustomer(null); setChannel('telegram'); setIsFree(false); setFreeReasonId(''); setFreeNote('');
-    setPartial(false); setLines([mkLine()]); setDiscount('0'); setShipping('0'); setNotes('');
+    setPartial(false); setLines([mkLine()]); setDiscount('0'); setShipping('0');
+    setShipRecipient('vendor'); shipTouchedRef.current = false; setNotes('');
     setOverrideNote(''); setShip({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
     setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx('');
     setChainCheck({ state: 'idle', msg: '' });
@@ -1012,8 +1041,33 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground w-28 shrink-0">Shipping ($)</span>
-              <Input type="number" min={0} step={0.01} value={shipping} onChange={e => setShipping(e.target.value)} className="h-7 w-28" />
+              <Input
+                type="number" min={0} step={0.01} value={shipping}
+                onChange={e => {
+                  shipTouchedRef.current = true;
+                  setShipping(e.target.value);
+                  // A manual charge on a normal order is an expedited fee
+                  // by default; under-MOQ keeps the vendor fee.
+                  if (!underMoq && (Number(e.target.value) || 0) > 0) setShipRecipient('warehouse');
+                }}
+                className="h-7 w-28"
+              />
             </div>
+            {(Number(shipping) || 0) > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground w-28 shrink-0">Fee goes to</span>
+                <Select value={shipRecipient} onValueChange={v => setShipRecipient(v as 'vendor' | 'warehouse')}>
+                  <SelectTrigger className="h-7 w-48 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="vendor">Vendor (under-MOQ fee)</SelectItem>
+                    <SelectItem value="warehouse">Ship warehouse (expedited)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {underMoq && (Number(shipping) || 0) === 15 && shipRecipient === 'vendor' && !isFree && (
+              <p className="text-xs text-amber-700">$15 under-MOQ shipping fee auto-added — edit the amount to override.</p>
+            )}
             <Separator />
             <div className="flex justify-between font-semibold items-center">
               <span className="flex items-center gap-1">

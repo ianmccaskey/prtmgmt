@@ -152,6 +152,9 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [editTotals, setEditTotals] = useState(false);
   const [discount, setDiscount] = useState('');
   const [shipping, setShipping] = useState('');
+  // 'vendor' = under-MOQ fee, 'warehouse' = expedited-label fee (routes to
+  // the shipping warehouse in settlements).
+  const [shipRecipient, setShipRecipient] = useState<'vendor' | 'warehouse'>('vendor');
 
   const orderStatusConfirmedPlus = ['confirmed', 'partially_shipped'].includes(String(order.status));
   // Reservations target each line's fulfillment warehouse (split shipments)
@@ -195,11 +198,13 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
     }
   };
 
-  const recalc = async (discountUsd?: number, shippingUsd?: number) => {
+  const recalc = async (discountUsd?: number, shippingUsd?: number, feeRecipient?: string) => {
     await doRecalc({
       orderId,
       discountUsd: discountUsd ?? (Number(order.discount_usd) || 0),
       shippingUsd: shippingUsd ?? (Number(order.customer_shipping_charge_usd) || 0),
+      // '' keeps the stored recipient (recalcOrderTotals COALESCE).
+      shippingFeeRecipient: feeRecipient ?? '',
     });
     // Totals changed → payment_status re-derives (chained: single-statement actions).
     await doRecomputePayment({ orderId });
@@ -344,9 +349,9 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
       await doAudit({ orderId, userId: profileId, changeType: 'discount', fieldName: 'discount_usd', oldValue: String(Number(order.discount_usd)), newValue: String(d), note: null });
     }
     if (s !== Number(order.customer_shipping_charge_usd)) {
-      await doAudit({ orderId, userId: profileId, changeType: 'shipping_cost', fieldName: 'customer_shipping_charge_usd', oldValue: String(Number(order.customer_shipping_charge_usd)), newValue: String(s), note: null });
+      await doAudit({ orderId, userId: profileId, changeType: 'shipping_cost', fieldName: 'customer_shipping_charge_usd', oldValue: String(Number(order.customer_shipping_charge_usd)), newValue: String(s), note: `fee to ${shipRecipient}` });
     }
-    await recalc(d, s);
+    await recalc(d, s, shipRecipient);
     setBusy(false); setEditTotals(false);
     onChanged();
   };
@@ -541,6 +546,15 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
             <Input type="number" min={0} step="0.01" className="h-7 w-24 text-xs" value={discount} onChange={e => setDiscount(e.target.value)} />
             <Label className="text-xs">Shipping $</Label>
             <Input type="number" min={0} step="0.01" className="h-7 w-24 text-xs" value={shipping} onChange={e => setShipping(e.target.value)} />
+            {(parseFloat(shipping) || 0) > 0 && (
+              <Select value={shipRecipient} onValueChange={v => setShipRecipient(v as 'vendor' | 'warehouse')}>
+                <SelectTrigger className="h-7 w-44 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="vendor">Vendor (under-MOQ)</SelectItem>
+                  <SelectItem value="warehouse">Ship warehouse (expedited)</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
             <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600" onClick={saveTotals} disabled={busy}><Save className="h-3 w-3" /></Button>
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditTotals(false)}><X className="h-3 w-3" /></Button>
           </div>
@@ -551,7 +565,14 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
               <span>−${Number(order.discount_usd).toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-muted-foreground">
-              <span>Customer Shipping</span>
+              <span>
+                Customer Shipping
+                {Number(order.customer_shipping_charge_usd) > 0 && (
+                  <span className="ml-1 text-xs">
+                    ({String(order.shipping_fee_recipient) === 'warehouse' ? 'to ship warehouse' : 'to vendor'})
+                  </span>
+                )}
+              </span>
               <span>${Number(order.customer_shipping_charge_usd).toFixed(2)}</span>
             </div>
           </>
@@ -561,7 +582,12 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
           <span>${Number(order.total_usd).toFixed(2)}</span>
         </div>
         {!isReadOnly && !editTotals && (
-          <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-600 px-0" onClick={() => { setDiscount(String(Number(order.discount_usd))); setShipping(String(Number(order.customer_shipping_charge_usd))); setEditTotals(true); }}>
+          <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-600 px-0" onClick={() => {
+            setDiscount(String(Number(order.discount_usd)));
+            setShipping(String(Number(order.customer_shipping_charge_usd)));
+            setShipRecipient(String(order.shipping_fee_recipient) === 'warehouse' ? 'warehouse' : 'vendor');
+            setEditTotals(true);
+          }}>
             Edit discount / shipping
           </Button>
         )}

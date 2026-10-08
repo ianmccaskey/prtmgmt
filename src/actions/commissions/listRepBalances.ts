@@ -16,7 +16,9 @@ function listRepBalances() {
       LEFT JOIN (
         SELECT
           so.sales_rep_user_profile_id,
-          ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS commission_earned,
+          -- Shipping charges are never commissioned (MOQ fee → vendor,
+          -- expedited fee → shipping warehouse).
+          ROUND(SUM((so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * rp.commission_rate), 2) AS commission_earned,
           COUNT(*) AS orders_count
         FROM sales_orders so
         JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id

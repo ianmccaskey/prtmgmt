@@ -44,37 +44,76 @@ function getVendorBalance() {
           AND COALESCE(op.verified_at, op.quoted_at) > COALESCE(ls.settled_at, '-infinity'::timestamptz)
       ) cyc ON true
       LEFT JOIN LATERAL (
-        SELECT (
-          COALESCE((SELECT SUM(t.earned) FROM (
-                      SELECT ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS earned
-                      FROM sales_orders so
-                      JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
-                      WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status NOT IN ('cancelled', 'quote')
-                        AND rp.division = div.d
-                      GROUP BY so.sales_rep_user_profile_id) t), 0)
-          - COALESCE((SELECT SUM(cp.amount_usd) FROM commission_payments cp
-                      JOIN user_profiles pu ON pu.id = cp.sales_rep_user_profile_id
-                      WHERE cp.payee_type = 'sales_rep' AND pu.division = div.d), 0)
-        )::numeric(14,2) AS outstanding
+        -- Per-payee positive balances (an overpaid rep must not offset an
+        -- unpaid one) — MUST mirror executeSettlementAtomic rep_out, or the
+        -- UI reads zero while Close Cycle refuses. Shipping charges are
+        -- never commissioned: the MOQ fee belongs to the vendor, expedited
+        -- fees to the shipping warehouse (2026-10-08 routing rule).
+        SELECT COALESCE(SUM(GREATEST(0, COALESCE(o.earned, 0) - COALESCE(p.paid, 0))), 0)::numeric(14,2) AS outstanding
+        FROM user_profiles up
+        LEFT JOIN (
+          SELECT so.sales_rep_user_profile_id AS rid, ROUND(SUM((so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * rp.commission_rate), 2) AS earned
+          FROM sales_orders so
+          JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
+          WHERE so.status NOT IN ('cancelled', 'quote')
+          GROUP BY so.sales_rep_user_profile_id
+        ) o ON o.rid = up.id
+        LEFT JOIN (
+          SELECT sales_rep_user_profile_id AS rid, SUM(amount_usd) AS paid
+          FROM commission_payments WHERE payee_type = 'sales_rep'
+          GROUP BY sales_rep_user_profile_id
+        ) p ON p.rid = up.id
+        WHERE up.division = div.d
       ) rep ON true
       LEFT JOIN LATERAL (
+        -- Per-warehouse positive balances, rate-plan earnings PLUS expedited
+        -- shipping fees routed to the warehouse that ships the order (first
+        -- warehouse-origin shipment; warehouses pay their own labels).
+        -- MUST mirror executeSettlementAtomic wh_out.
         SELECT (CASE WHEN div.d = 'us' THEN
-          COALESCE((SELECT SUM(internal_shipping_cost_usd) FROM shipments_outbound
-                    WHERE origin = 'warehouse' AND internal_shipping_cost_usd IS NOT NULL), 0)
-          - COALESCE((SELECT SUM(amount_usd) FROM commission_payments WHERE payee_type = 'warehouse'), 0)
+          COALESCE((SELECT SUM(GREATEST(0, COALESCE(e.earned, 0) - COALESCE(p.paid, 0)))
+                    FROM warehouses w
+                    LEFT JOIN (
+                      SELECT u.wid, SUM(u.earned) AS earned FROM (
+                        SELECT origin_warehouse_id AS wid, SUM(internal_shipping_cost_usd) AS earned
+                        FROM shipments_outbound
+                        WHERE origin = 'warehouse' AND internal_shipping_cost_usd IS NOT NULL
+                        GROUP BY origin_warehouse_id
+                        UNION ALL
+                        SELECT f.wid, SUM(f.fee) FROM (
+                          SELECT DISTINCT ON (so3.id) sh3.origin_warehouse_id AS wid, so3.customer_shipping_charge_usd AS fee
+                          FROM sales_orders so3
+                          JOIN shipments_outbound sh3 ON sh3.sales_order_id = so3.id AND sh3.origin = 'warehouse'
+                          WHERE so3.shipping_fee_recipient = 'warehouse'
+                            AND COALESCE(so3.customer_shipping_charge_usd, 0) > 0
+                            AND so3.status NOT IN ('cancelled', 'quote')
+                          ORDER BY so3.id, sh3.id) f GROUP BY f.wid
+                      ) u GROUP BY u.wid
+                    ) e ON e.wid = w.id
+                    LEFT JOIN (
+                      SELECT warehouse_id AS wid, SUM(amount_usd) AS paid
+                      FROM commission_payments WHERE payee_type = 'warehouse'
+                      GROUP BY warehouse_id
+                    ) p ON p.wid = w.id), 0)
         ELSE 0 END)::numeric(14,2) AS outstanding
       ) wh ON true
       LEFT JOIN LATERAL (
         -- Operator-fronted costs (product testing etc.) reimbursed like a
-        -- payee: lifetime incurred minus lifetime reimbursements. ROUND on
-        -- both sums so the UI gate and executeSettlementAtomic's exp_out
-        -- can never disagree over a sub-cent remainder.
-        SELECT (
-          COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM operating_expenses
-                    WHERE division = div.d), 0)
-          - COALESCE((SELECT ROUND(SUM(amount_usd), 2) FROM commission_payments
-                      WHERE payee_type = 'expense' AND division = div.d), 0)
-        )::numeric(14,2) AS outstanding
+        -- payee. Per-user positive balances with the same ROUNDs — MUST
+        -- mirror executeSettlementAtomic exp_out so the UI and the close
+        -- gate can never disagree.
+        SELECT COALESCE(SUM(GREATEST(0, COALESCE(e.earned, 0) - COALESCE(pp.paid, 0))), 0)::numeric(14,2) AS outstanding
+        FROM user_profiles up
+        LEFT JOIN (
+          SELECT payee_user_profile_id AS uid, ROUND(SUM(amount_usd), 2) AS earned
+          FROM operating_expenses WHERE division = div.d
+          GROUP BY payee_user_profile_id) e ON e.uid = up.id
+        LEFT JOIN (
+          SELECT sales_rep_user_profile_id AS uid, ROUND(SUM(amount_usd), 2) AS paid
+          FROM commission_payments
+          WHERE payee_type = 'expense' AND division = div.d
+          GROUP BY sales_rep_user_profile_id) pp ON pp.uid = up.id
+        WHERE e.uid IS NOT NULL OR pp.uid IS NOT NULL
       ) exp ON true
       LEFT JOIN LATERAL (
         SELECT COALESCE(SUM(amount_usd), 0)::numeric(14,2) AS paid
@@ -98,7 +137,7 @@ function getVendorBalance() {
           - COALESCE((SELECT SUM(GREATEST(COALESCE(o.earned, 0), COALESCE(p.paid, 0)))
                       FROM user_profiles up2
                       LEFT JOIN (
-                        SELECT so.sales_rep_user_profile_id AS rid, ROUND(SUM(so.total_usd * rp.commission_rate), 2) AS earned
+                        SELECT so.sales_rep_user_profile_id AS rid, ROUND(SUM((so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * rp.commission_rate), 2) AS earned
                         FROM sales_orders so
                         JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
                         WHERE so.status NOT IN ('cancelled', 'quote')
@@ -111,10 +150,21 @@ function getVendorBalance() {
           - COALESCE((SELECT SUM(GREATEST(COALESCE(e.earned, 0), COALESCE(p.paid, 0)))
                       FROM warehouses w2
                       LEFT JOIN (
-                        SELECT origin_warehouse_id AS wid, SUM(internal_shipping_cost_usd) AS earned
-                        FROM shipments_outbound
-                        WHERE origin = 'warehouse' AND internal_shipping_cost_usd IS NOT NULL
-                        GROUP BY origin_warehouse_id) e ON e.wid = w2.id
+                        SELECT u.wid, SUM(u.earned) AS earned FROM (
+                          SELECT origin_warehouse_id AS wid, SUM(internal_shipping_cost_usd) AS earned
+                          FROM shipments_outbound
+                          WHERE origin = 'warehouse' AND internal_shipping_cost_usd IS NOT NULL
+                          GROUP BY origin_warehouse_id
+                          UNION ALL
+                          SELECT f.wid, SUM(f.fee) FROM (
+                            SELECT DISTINCT ON (so3.id) sh3.origin_warehouse_id AS wid, so3.customer_shipping_charge_usd AS fee
+                            FROM sales_orders so3
+                            JOIN shipments_outbound sh3 ON sh3.sales_order_id = so3.id AND sh3.origin = 'warehouse'
+                            WHERE so3.shipping_fee_recipient = 'warehouse'
+                              AND COALESCE(so3.customer_shipping_charge_usd, 0) > 0
+                              AND so3.status NOT IN ('cancelled', 'quote')
+                            ORDER BY so3.id, sh3.id) f GROUP BY f.wid
+                        ) u GROUP BY u.wid) e ON e.wid = w2.id
                       LEFT JOIN (
                         SELECT warehouse_id AS wid, SUM(amount_usd) AS paid
                         FROM commission_payments WHERE payee_type = 'warehouse'

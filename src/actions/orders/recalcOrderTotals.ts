@@ -14,6 +14,8 @@ export function recalcOrderTotals() {
       SET subtotal_usd = sub.subtotal,
           discount_usd = {{params.discountUsd}}::numeric,
           customer_shipping_charge_usd = {{params.shippingUsd}}::numeric,
+          -- Optional: callers that don't edit the recipient pass '' and keep it.
+          shipping_fee_recipient = COALESCE(NULLIF({{params.shippingFeeRecipient}}, ''), so.shipping_fee_recipient),
           total_usd = GREATEST(0, sub.subtotal - {{params.discountUsd}}::numeric + {{params.shippingUsd}}::numeric)
       FROM (
         SELECT COALESCE(SUM(line_total_usd), 0) AS subtotal

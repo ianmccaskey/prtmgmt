@@ -37,6 +37,16 @@ export function getDashboardStats() {
         (SELECT COUNT(*) FROM shipments_outbound WHERE issue_flag IS NOT NULL) AS outbound_issues,
         (
           (SELECT COALESCE(SUM(internal_shipping_cost_usd),0) FROM shipments_outbound WHERE origin = 'warehouse')
+          -- Expedited shipping fees routed to the shipping warehouse
+          -- (mirrors getVendorBalance / listWarehouseBalances).
+          + (SELECT COALESCE(SUM(f.fee),0) FROM (
+               SELECT DISTINCT ON (so3.id) so3.customer_shipping_charge_usd AS fee
+               FROM sales_orders so3
+               JOIN shipments_outbound sh3 ON sh3.sales_order_id = so3.id AND sh3.origin = 'warehouse'
+               WHERE so3.shipping_fee_recipient = 'warehouse'
+                 AND COALESCE(so3.customer_shipping_charge_usd, 0) > 0
+                 AND so3.status NOT IN ('cancelled', 'quote')
+               ORDER BY so3.id, sh3.id) f)
           - (SELECT COALESCE(SUM(amount_usd),0) FROM commission_payments WHERE payee_type = 'warehouse')
         ) AS warehouse_payables_usd,
         (SELECT COUNT(DISTINCT soi.sales_order_id) FROM sales_order_items soi

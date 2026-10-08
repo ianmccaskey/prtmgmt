@@ -6,7 +6,10 @@ function listRepCommissionOrders() {
     query: `
       SELECT
         so.id AS sales_order_id, so.order_number, so.order_date, so.status,
-        so.total_usd, so.total_usd * up.commission_rate AS commission_usd,
+        so.total_usd,
+        -- Commission basis excludes the shipping charge (MOQ fee → vendor,
+        -- expedited fee → shipping warehouse).
+        (so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * up.commission_rate AS commission_usd,
         up.commission_rate,
         up.id AS sales_rep_user_profile_id, up.display_name AS sales_rep_name,
         c.full_name AS customer_name
