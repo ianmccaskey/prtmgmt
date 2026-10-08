@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
@@ -22,6 +22,7 @@ import searchProducts from '@/actions/orders/searchProducts';
 import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo';
 import reserveBatchStock from '@/actions/warehouse/reserveBatchStock';
 import listWarehouseAvailability from '@/actions/orders/listWarehouseAvailability';
+import updateOrderItemWarehouse from '@/actions/orders/updateOrderItemWarehouse';
 import releaseProductReservation from '@/actions/warehouse/releaseProductReservation';
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 import listOrderReservations from '@/actions/orders/listOrderReservations';
@@ -49,13 +50,17 @@ type ProductOption = { id: number; sku: string; name: string; list_price: string
  * allocated/shipped lines are locked. Reservations follow edits on
  * warehouse-sourced lines via the reservation ledger.
  */
-export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnly, onChanged }: {
+export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnly, onChanged, onLineWhPendingChange }: {
   orderId: number;
   order: OrderLike;
   items: OrderItemRow[];
   allocations: AllocationRow[];
   isReadOnly: boolean;
   onChanged: () => void;
+  /** Fires true while a per-line warehouse edit is in flight — the drawer
+   * holds Confirm during that window so the edit can't be silently dropped
+   * by the quote gate. */
+  onLineWhPendingChange?: (pending: boolean) => void;
 }) {
   const { profileId } = useAppUser();
   const [doUpdateItem] = useMutateAction(updateOrderItemQtyPrice);
@@ -82,8 +87,41 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [addPrice, setAddPrice] = useState('');
   const [products] = useLoadAction(searchProducts, [addOpen], { q: '' }, { enabled: addOpen });
   const productOptions = asRows<ProductOption>(products);
-  const [whAvailRaw] = useLoadAction(listWarehouseAvailability, [addOpen], {}, { enabled: addOpen });
+  // Quotes also need availability for the per-line warehouse selector.
+  const isQuote = String(order.status) === 'quote';
+  const [whAvailRaw] = useLoadAction(listWarehouseAvailability, [addOpen || isQuote ? 1 : 0], {}, { enabled: addOpen || isQuote });
   const whAvailability = asRows<{ product_id: number; warehouse_id: number; warehouse_name: string; available: number }>(whAvailRaw);
+  const [doLineWarehouse] = useMutateAction(updateOrderItemWarehouse);
+  const [lineWhBusy, setLineWhBusy] = useState<number | null>(null);
+  const [lineWhError, setLineWhError] = useState('');
+  // Counter, not boolean: two overlapping line edits must not let the
+  // first one's finally re-enable the drawer's Confirm while the second
+  // is still in flight.
+  const lineWhPendingCountRef = useRef(0);
+  const setLineWarehouse = async (it: OrderItemRow, whId: string) => {
+    setLineWhBusy(it.id);
+    setLineWhError('');
+    lineWhPendingCountRef.current++;
+    onLineWhPendingChange?.(true);
+    try {
+      const oldName = it.preferred_warehouse_name || 'order default';
+      const newName = whId === '' ? 'order default' : (whAvailability.find(a => String(a.warehouse_id) === whId)?.warehouse_name || whId);
+      const res = await doLineWarehouse({
+        itemId: it.id, warehouseId: whId, userId: profileId,
+        note: `${it.product_name}: fulfillment warehouse ${oldName} → ${newName} (quote)`,
+      }) as unknown[];
+      if (!res || res.length === 0) {
+        // Quote gate refused — the order was confirmed (or the line went
+        // away) while this panel was open. Never fail silently.
+        setLineWhError('Warehouse change did not apply — this order is no longer a quote. Reloading; use Split / Move to reallocate reservations.');
+      }
+      onChanged();
+    } finally {
+      setLineWhBusy(null);
+      lineWhPendingCountRef.current = Math.max(0, lineWhPendingCountRef.current - 1);
+      onLineWhPendingChange?.(lineWhPendingCountRef.current > 0);
+    }
+  };
 
   const [shipToOpen, setShipToOpen] = useState(false);
   const [shipForm, setShipForm] = useState({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
@@ -358,6 +396,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
 
   return (
     <div className="space-y-2">
+      {lineWhError && <p className="text-xs text-red-600 bg-red-50 rounded p-2">{lineWhError}</p>}
       {items.map(item => {
         const itemAllocs = allocations.filter(a => a.sales_order_item_id === item.id);
         const locked = isReadOnly || item.is_shipped || itemAllocs.length > 0;
@@ -403,11 +442,42 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
                   Batch {item.preferred_batch_number}
                 </Badge>
               )}
-              {item.fulfillment_source === 'warehouse' && item.preferred_warehouse_name && (
+              {item.fulfillment_source === 'warehouse' && isQuote && !isReadOnly ? (
+                // Quote lines: the warehouse is just a confirm-time preference
+                // (no reservations yet), so it's directly editable here.
+                // Confirmed orders use Split/Move, which moves the ledger.
+                <Select
+                  value={item.preferred_warehouse_id != null ? String(item.preferred_warehouse_id) : 'default'}
+                  onValueChange={v => setLineWarehouse(item, v === 'default' ? '' : v)}
+                  disabled={lineWhBusy === item.id}
+                >
+                  <SelectTrigger className="h-6 w-auto gap-1 text-xs px-2 text-indigo-600 border-indigo-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Order default</SelectItem>
+                    {whAvailability
+                      .filter(a => a.product_id === item.product_id)
+                      .map(a => (
+                        <SelectItem key={a.warehouse_id} value={String(a.warehouse_id)}>
+                          {a.warehouse_name} ({a.available} avail)
+                        </SelectItem>
+                      ))}
+                    {item.preferred_warehouse_id != null
+                      && !whAvailability.some(a => a.product_id === item.product_id && Number(a.warehouse_id) === Number(item.preferred_warehouse_id)) && (
+                      // The currently-pinned warehouse has no sellable stock —
+                      // still render it so the Select shows the real state.
+                      <SelectItem value={String(item.preferred_warehouse_id)}>
+                        {item.preferred_warehouse_name || `Warehouse #${item.preferred_warehouse_id}`} (0 avail)
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              ) : item.fulfillment_source === 'warehouse' && item.preferred_warehouse_name ? (
                 <Badge variant="outline" className="text-xs px-1 py-0 text-indigo-600 border-indigo-200">
                   From {item.preferred_warehouse_name}
                 </Badge>
-              )}
+              ) : null}
               {itemAllocs.map(a => (
                 <span key={a.id} className="text-xs text-muted-foreground bg-slate-50 rounded px-1.5 py-0.5">
                   {a.quantity}× {a.batch_number} @ {a.warehouse_name}{Number(a.quantity_shipped) > 0 ? ` (${a.quantity_shipped} shipped)` : ''}

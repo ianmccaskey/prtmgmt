@@ -1106,6 +1106,16 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [doUpdateWarehouse] = useMutateAction(updateOrderPreferredWarehouse);
   const [doSaveNotes] = useMutateAction(updateOrderNotes);
   const [doReserveDraft] = useMutateAction(reserveProductStockFifo);
+  // True while the Items panel has a per-line warehouse edit in flight —
+  // Confirm is held during that window: confirming mid-edit would let the
+  // quote gate silently drop the user's just-picked warehouse.
+  const [lineWhPending, setLineWhPending] = useState(false);
+  // Imperative fresh read of the order's lines for confirm-time targeting:
+  // the `items` prop can lag a just-saved per-line warehouse edit (the
+  // editor updates the DB, then reloads async), and reserving from stale
+  // prefs would put the ledger at the old warehouse while the DB shows
+  // the new one.
+  const [fetchItemsFresh] = useMutateAction(getOrderItems);
   const [doRelease] = useMutateAction(releaseProductReservation);
   const [editingRep, setEditingRep] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
@@ -1143,7 +1153,10 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
         // dies mid-way, the Items panel shows the under-reserved line
         // with a one-click repair.
         const orderWhParam = whOverride !== null ? whOverride : (order?.preferred_warehouse_id ? String(order.preferred_warehouse_id) : '');
-        for (const it of rows<OrderItemRow>(items).filter(i => i.fulfillment_source === 'warehouse')) {
+        // Fresh DB read — the items prop may not have caught up with a
+        // per-line warehouse edit made seconds ago in the Items panel.
+        const freshItems = rows<OrderItemRow>(await fetchItemsFresh({ orderId }) as unknown[]);
+        for (const it of freshItems.filter(i => i.fulfillment_source === 'warehouse')) {
           const whParam = it.preferred_warehouse_id != null ? String(it.preferred_warehouse_id) : orderWhParam;
           await doReserveDraft({ order_id: orderId, product_id: it.product_id, quantity: Number(it.quantity), warehouse_id: whParam });
         }
@@ -1360,7 +1373,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       // China-division quotes confirm without payment — the
                       // customer paid the rep's external wallet already.
                       ['paid', 'partial_paid'].includes(String(order.payment_status)) || String(order.sales_rep_division) === 'china' ? (
-                        <Button size="sm" className="h-7 text-xs" disabled={updatingStatus} onClick={() => handleStatusAction('confirmed')}>Confirm Order</Button>
+                        <Button size="sm" className="h-7 text-xs" disabled={updatingStatus || lineWhPending} onClick={() => handleStatusAction('confirmed')}>Confirm Order</Button>
                       ) : (
                         <TooltipProvider>
                           <Tooltip>
@@ -1400,6 +1413,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                           allocations={allocations}
                           isReadOnly={isReadOnly || readOnlyRole}
                           onChanged={reloadAll}
+                          onLineWhPendingChange={setLineWhPending}
                         />
                       )}
                     </TabsContent>
