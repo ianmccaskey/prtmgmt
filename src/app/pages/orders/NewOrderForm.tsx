@@ -322,6 +322,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // must never fight a manual entry.
   const shipTouchedRef = useRef(false);
   const [notes, setNotes] = useState('');
+  // Note to the warehouse — surfaced loudly in the fulfillment queue and
+  // the Mark Shipped dialog (distinct from internal notes).
+  const [whNote, setWhNote] = useState('');
   const [overrideNote, setOverrideNote] = useState('');
   const [ship, setShip] = useState({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
   const [editShip, setEditShip] = useState(false);
@@ -626,7 +629,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       subtotalUsd: subtotal, customerShippingChargeUsd: Number(shipping),
       shippingFeeRecipient: (Number(shipping) || 0) > 0 ? shipRecipient : 'vendor',
       discountUsd: Number(discount), totalUsd: total,
-      notes: notes || null, createdByUserId: profileId,
+      notes: notes || null, warehouseNote: whNote || '', createdByUserId: profileId,
       salesRepUserProfileId: salesRepId ? Number(salesRepId) : null,
       preferredWarehouseId: !splitMode && effectiveWh ? effectiveWh.id : null,
     }) as { id: number; order_number: string }[];
@@ -713,7 +716,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const reset = () => {
     setCustomer(null); setChannel('telegram'); setIsFree(false); setFreeReasonId(''); setFreeNote('');
     setPartial(false); setLines([mkLine()]); setDiscount('0'); setShipping('0');
-    setShipRecipient('vendor'); shipTouchedRef.current = false; setNotes('');
+    setShipRecipient('vendor'); shipTouchedRef.current = false; setNotes(''); setWhNote('');
     setOverrideNote(''); setShip({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
     setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx('');
     setChainCheck({ state: 'idle', msg: '' });
@@ -1206,9 +1209,19 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
           </div>
 
           {/* Notes */}
-          <div className="mb-6 space-y-1">
-            <Label>Internal Notes</Label>
-            <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Notes…" />
+          <div className="mb-6 space-y-3">
+            <div className="space-y-1">
+              <Label>Internal Notes</Label>
+              <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Notes…" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-amber-700">Note to Warehouse</Label>
+              <Textarea
+                value={whNote} onChange={e => setWhNote(e.target.value)} rows={2}
+                className="border-amber-300 focus-visible:ring-amber-400"
+                placeholder="Packing instructions the warehouse must see when shipping…"
+              />
+            </div>
           </div>
 
           {/* Footer actions. Confirmation requires paid/partial-paid — a

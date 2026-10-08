@@ -17,6 +17,7 @@ export type QueueItem = {
   preferred_warehouse_id: number | null; preferred_warehouse_name: string | null;
   ship_to_name: string; ship_address_line1: string; ship_address_line2: string | null;
   ship_city: string; ship_state: string | null; ship_postal_code: string | null; ship_country: string;
+  warehouse_note: string | null;
   customer_name: string;
   item_id: number; product_id: number; quantity: number; unit_price_usd: string;
   preferred_batch_id: number | null; preferred_batch_number: string | null;
@@ -34,6 +35,7 @@ export type QueueOrder = {
   preferred_warehouse_id: number | null; preferred_warehouse_name: string | null;
   ship_to_name: string; ship_address_line1: string; ship_address_line2: string | null;
   ship_city: string; ship_state: string | null; ship_postal_code: string | null; ship_country: string;
+  warehouse_note: string | null;
   items: QueueItem[];
 };
 
@@ -88,7 +90,7 @@ export function groupQueueRows(rows: QueueItem[]): QueueOrder[] {
         customer_name: r.customer_name, ship_to_name: r.ship_to_name,
         ship_address_line1: r.ship_address_line1, ship_address_line2: r.ship_address_line2,
         ship_city: r.ship_city, ship_state: r.ship_state, ship_postal_code: r.ship_postal_code,
-        ship_country: r.ship_country, items: [],
+        ship_country: r.ship_country, warehouse_note: r.warehouse_note, items: [],
       };
       orders.push(o);
     }
@@ -194,6 +196,11 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
                       <span className="font-medium">{o.customer_name}</span>
                       <span className="text-xs text-slate-400 ml-1.5">{o.ship_city}, {o.ship_country} · {fmtDate(o.order_date)}</span>
                     </div>
+                    {String(o.warehouse_note || '').trim() && (
+                      <p className="text-xs font-medium text-amber-800 bg-amber-100 border border-amber-300 rounded px-2 py-1">
+                        📌 {String(o.warehouse_note)}
+                      </p>
+                    )}
                     <div className="space-y-0.5">
                       {o.items.map(it => {
                         const rem = itemRemaining(it);
@@ -265,6 +272,11 @@ export function FulfillmentTab({ warehouseId, warehouseList, rows, loading, relo
                       <td className="px-4 py-2">
                         <div className="font-medium">{o.customer_name}</div>
                         <div className="text-xs text-slate-400">{o.ship_city}, {o.ship_country}</div>
+                        {String(o.warehouse_note || '').trim() && (
+                          <div className="mt-1 text-xs font-medium text-amber-800 bg-amber-100 border border-amber-300 rounded px-2 py-1 max-w-[260px]">
+                            📌 {String(o.warehouse_note)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-2">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[o.status] || 'bg-slate-100 text-slate-600'}`}>{o.status.replace('_', ' ')}</span>

@@ -30,6 +30,7 @@ import reserveProductStockFifo from '@/actions/warehouse/reserveProductStockFifo
 import getOrderItemAllocations from '@/actions/orders/getOrderItemAllocations';
 import getOrderNotifications from '@/actions/orders/getOrderNotifications';
 import updateOrderNotes from '@/actions/orders/updateOrderNotes';
+import updateOrderWarehouseNote from '@/actions/orders/updateOrderWarehouseNote';
 import { OrderItemsEditor, OrderItemRow, AllocationRow } from '@/app/pages/orders/OrderItemsEditor';
 import getOrderDetail from '@/actions/orders/getOrderDetail';
 import { buildOrderQuoteText } from '@/lib/orderQuote';
@@ -1105,6 +1106,7 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [warehousesRaw] = useLoadAction(listWarehousesAction, [], {});
   const [doUpdateWarehouse] = useMutateAction(updateOrderPreferredWarehouse);
   const [doSaveNotes] = useMutateAction(updateOrderNotes);
+  const [doSaveWhNote] = useMutateAction(updateOrderWarehouseNote);
   const [doReserveDraft] = useMutateAction(reserveProductStockFifo);
   // True while the Items panel has a per-line warehouse edit in flight —
   // Confirm is held during that window: confirming mid-edit would let the
@@ -1119,6 +1121,8 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [doRelease] = useMutateAction(releaseProductReservation);
   const [editingRep, setEditingRep] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  const [whNoteDraft, setWhNoteDraft] = useState<string | null>(null);
+  const [savingWhNote, setSavingWhNote] = useState(false);
   const [copiedQuote, setCopiedQuote] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
   // Local mirror of a just-edited fulfillment warehouse ('' = auto) so a
@@ -1173,6 +1177,19 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
     setSavingNotes(false);
     setNotesDraft(null);
     reloadDetail();
+  };
+
+  const saveWhNote = async () => {
+    if (whNoteDraft == null) return;
+    setSavingWhNote(true);
+    // Update + audit are one statement server-side.
+    await doSaveWhNote({ orderId, note: whNoteDraft || '', userId: profileId });
+    setSavingWhNote(false);
+    setWhNoteDraft(null);
+    // Full refresh, not just the drawer: the fulfillment queue feeds this
+    // note straight into Mark Shipped, so a stale parent row would show
+    // the packer an outdated banner.
+    reloadAll();
   };
 
   return (
@@ -1446,6 +1463,21 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                       {!readOnlyRole && <div className="flex justify-end">
                         <Button size="sm" className="h-7 text-xs" onClick={saveNotes} disabled={savingNotes || notesDraft == null}>
                           {savingNotes ? 'Saving…' : 'Save Notes'}
+                        </Button>
+                      </div>}
+                      <Separator />
+                      <p className="text-xs text-amber-700 font-medium">Note to warehouse — shown loudly in the fulfillment queue and the Mark Shipped dialog.</p>
+                      <Textarea
+                        rows={3}
+                        disabled={readOnlyRole}
+                        className="border-amber-300 focus-visible:ring-amber-400"
+                        value={whNoteDraft ?? String(order.warehouse_note || '')}
+                        onChange={e => setWhNoteDraft(e.target.value)}
+                        placeholder="Packing instructions the warehouse must see when shipping…"
+                      />
+                      {!readOnlyRole && <div className="flex justify-end">
+                        <Button size="sm" className="h-7 text-xs" onClick={saveWhNote} disabled={savingWhNote || whNoteDraft == null}>
+                          {savingWhNote ? 'Saving…' : 'Save Warehouse Note'}
                         </Button>
                       </div>}
                     </TabsContent>

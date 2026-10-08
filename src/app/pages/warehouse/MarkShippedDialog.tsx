@@ -762,6 +762,15 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
 
         {stockLoading || planLoading ? <Skeleton className="h-40 w-full" /> : (
           <div className="space-y-5">
+            {/* Note to warehouse — the one thing the packer must not miss.
+                Plain String, not dbText: free text must round-trip exactly
+                (dbText strips a leading '#', which this column never has). */}
+            {String(order.warehouse_note || '').trim() && (
+              <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-1">📌 Note to warehouse</p>
+                <p className="text-sm text-amber-900 whitespace-pre-wrap">{String(order.warehouse_note)}</p>
+              </div>
+            )}
             {scopeWarehouseId && hiddenLineCount > 0 && (
               <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
                 Showing only {scopeWarehouseName || 'this warehouse'}&apos;s portion of this order — {hiddenLineCount} other
