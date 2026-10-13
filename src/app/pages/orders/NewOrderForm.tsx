@@ -73,6 +73,21 @@ function mkLine(): LineItem {
   return { key: Math.random().toString(36).slice(2), product: null, quantity: 1, unit_price: 0, fulfillment_source: 'warehouse', price_mode: 'list', preferred_batch_id: null, preferred_warehouse_id: null };
 }
 
+// Number box bound to a numeric field. Feeding Number(e.target.value) straight
+// back snaps a cleared box to "0" (Number('') is 0, and React rewrites an empty
+// number input whose value is 0), forcing the rep to click past the 0 to
+// retype. Holds the typed text while focused; an empty box commits nothing and
+// blur shows the committed value again.
+function NumField({ value, onValue, onBlur, ...props }:
+  Omit<React.ComponentProps<typeof Input>, 'type' | 'value' | 'onChange'> & { value: number; onValue: (n: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <Input {...props} type="number" value={draft ?? value}
+      onChange={e => { setDraft(e.target.value); if (e.target.value !== '') onValue(Number(e.target.value)); }}
+      onBlur={e => { setDraft(null); onBlur?.(e); }} />
+  );
+}
+
 function CustomerCombo({ onSelect, onCreateNew }: { onSelect: (c: Customer) => void; onCreateNew: (name: string) => void }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
@@ -851,7 +866,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     <div><Label className="text-xs">Qty (kits)</Label>
-                      <Input type="number" min={1} value={line.quantity} onChange={e => changeQty(line, Number(e.target.value))} className="h-8" />
+                      <NumField min={1} value={line.quantity} onValue={n => changeQty(line, n)} className="h-8" />
                       {Number(line.product!.min_order_quantity ?? 1) > 1 && line.quantity > 0 && line.quantity < Number(line.product!.min_order_quantity) && (
                         // Soft minimum: warn, never block — reps can override
                         // the published MOQ deliberately.
@@ -861,7 +876,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                       )}
                     </div>
                     <div><Label className="text-xs">Unit Price</Label>
-                      <Input type="number" min={0} step={0.01} value={line.unit_price} onChange={e => upLine(line.key, { unit_price: Number(e.target.value), price_mode: 'manual' })} className="h-8" /></div>
+                      <NumField min={0} step={0.01} value={line.unit_price} onValue={n => upLine(line.key, { unit_price: n, price_mode: 'manual' })} className="h-8" /></div>
                     <div><Label className="text-xs">Source</Label>
                       <Select value={line.fulfillment_source} onValueChange={v => upLine(line.key, { fulfillment_source: v as LineItem['fulfillment_source'], ...(v === 'china_direct' ? { preferred_batch_id: null } : {}) })}>
                         <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
