@@ -136,17 +136,31 @@ export type BtcDepositChannel = {
 export async function openBtcDepositChannel(
   q: BtcSwapQuote, destAddress: string, refundBtcAddress: string,
 ): Promise<BtcDepositChannel> {
-  const ch = await sdk.requestDepositAddressV2({
-    // The SDK validates the quote object it produced; the cast just erases
-    // our opaque wrapper.
-    quote: q.quote as Parameters<SwapSDK['requestDepositAddressV2']>[0]['quote'],
-    destAddress,
-    fillOrKillParams: {
-      slippageTolerancePercent: q.slippagePercent,
-      refundAddress: refundBtcAddress.trim(),
-      retryDurationBlocks: 100,
-    },
-  });
+  let ch;
+  try {
+    ch = await sdk.requestDepositAddressV2({
+      // The SDK validates the quote object it produced; the cast just erases
+      // our opaque wrapper.
+      quote: q.quote as Parameters<SwapSDK['requestDepositAddressV2']>[0]['quote'],
+      destAddress,
+      fillOrKillParams: {
+        slippageTolerancePercent: q.slippagePercent,
+        refundAddress: refundBtcAddress.trim(),
+        retryDurationBlocks: 100,
+      },
+    });
+  } catch (e: unknown) {
+    // The SDK collapses the service's HTTP body into one generic string.
+    // The usual cause is Chainflip pausing channel creation service-side
+    // (503 "Opening swap deposit channels is currently unavailable" —
+    // observed 2026-10-13), which quoting does NOT catch: quotes keep
+    // working while opens fail. Give the rep the real story and a path.
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/failed to open swap deposit channel/i.test(msg)) {
+      throw new Error('Chainflip is not accepting new deposit channels right now (service-side pause — quotes still work, opens don\'t). Try again in a few minutes; if the customer can\'t wait, take USDC/USDT directly. Still failing after 30+ minutes? Flag it — that may be a different rejection, not a pause.');
+    }
+    throw e;
+  }
   const expMs = (ch as { estimatedDepositChannelExpiryTime?: number }).estimatedDepositChannelExpiryTime;
   return {
     channelId: String(ch.depositChannelId),
