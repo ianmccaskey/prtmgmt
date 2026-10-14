@@ -50,7 +50,8 @@ export function listOrders() {
           -- delivered order stays visible rather than vanishing).
           COALESCE({{params.repScope}}, '') = ''
           OR (
-            so.sales_rep_user_profile_id::text = {{params.repScope}}
+            (so.sales_rep_user_profile_id::text = {{params.repScope}}
+             OR so.sales_rep_user_profile_id_2::text = {{params.repScope}})
             AND (
               so.status <> 'delivered'
               OR COALESCE(

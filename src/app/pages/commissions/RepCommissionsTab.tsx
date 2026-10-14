@@ -29,7 +29,8 @@ type RepBalance = {
 
 type RepOrder = {
   sales_order_id: number; order_number: string; order_date: string; status: string;
-  total_usd: number; commission_usd: number; sales_rep_name: string; customer_name: string;
+  total_usd: number; commission_usd: number; split_pct: number;
+  sales_rep_user_profile_id: number; sales_rep_name: string; customer_name: string;
 };
 
 const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
@@ -270,8 +271,15 @@ export function RepCommissionsTab({ division }: { division: string }) {
             </TableHeader>
             <TableBody>
               {orderList.map(o => (
-                <TableRow key={o.sales_order_id}>
-                  <TableCell className="font-medium">{o.order_number}</TableCell>
+                // Split orders appear once per rep share, so the key needs
+                // the rep too.
+                <TableRow key={`${o.sales_order_id}-${o.sales_rep_user_profile_id}`}>
+                  <TableCell className="font-medium">
+                    {o.order_number}
+                    {Number(o.split_pct) < 100 && (
+                      <span className="ml-1 text-xs text-muted-foreground">({Number(o.split_pct)}% split)</span>
+                    )}
+                  </TableCell>
                   <TableCell>{fmtDate(o.order_date)}</TableCell>
                   <TableCell>{o.customer_name}</TableCell>
                   <TableCell><Badge variant="outline">{o.status}</Badge></TableCell>

@@ -8,26 +8,26 @@ export function getOrdersStatStrip() {
       -- figure to that rep's own orders.
       SELECT
         (SELECT COUNT(*) FROM sales_orders WHERE status = 'confirmed'
-          AND (COALESCE({{params.repScope}}, '') = '' OR sales_rep_user_profile_id::text = {{params.repScope}})) AS confirmed_count,
+          AND (COALESCE({{params.repScope}}, '') = '' OR sales_rep_user_profile_id::text = {{params.repScope}} OR sales_rep_user_profile_id_2::text = {{params.repScope}})) AS confirmed_count,
         (SELECT COUNT(*) FROM sales_orders WHERE status = 'quote'
-          AND (COALESCE({{params.repScope}}, '') = '' OR sales_rep_user_profile_id::text = {{params.repScope}})) AS quote_count,
+          AND (COALESCE({{params.repScope}}, '') = '' OR sales_rep_user_profile_id::text = {{params.repScope}} OR sales_rep_user_profile_id_2::text = {{params.repScope}})) AS quote_count,
         (SELECT COUNT(*) FROM sales_orders
           WHERE status = 'shipped'
           AND DATE_TRUNC('month', order_date) = DATE_TRUNC('month', CURRENT_DATE)
-          AND (COALESCE({{params.repScope}}, '') = '' OR sales_rep_user_profile_id::text = {{params.repScope}})) AS shipped_this_month,
+          AND (COALESCE({{params.repScope}}, '') = '' OR sales_rep_user_profile_id::text = {{params.repScope}} OR sales_rep_user_profile_id_2::text = {{params.repScope}})) AS shipped_this_month,
         (SELECT COALESCE(SUM(total_usd),0) FROM sales_orders
           WHERE status IN ('shipped','delivered')
           AND DATE_TRUNC('month', order_date) = DATE_TRUNC('month', CURRENT_DATE)
-          AND (COALESCE({{params.repScope}}, '') = '' OR sales_rep_user_profile_id::text = {{params.repScope}})) AS revenue_this_month,
+          AND (COALESCE({{params.repScope}}, '') = '' OR sales_rep_user_profile_id::text = {{params.repScope}} OR sales_rep_user_profile_id_2::text = {{params.repScope}})) AS revenue_this_month,
         (SELECT COALESCE(SUM(so.total_usd),0) FROM sales_orders so
           WHERE so.payment_status IN ('unpaid','partial_paid')
           AND so.status NOT IN ('quote','cancelled')
-          AND (COALESCE({{params.repScope}}, '') = '' OR so.sales_rep_user_profile_id::text = {{params.repScope}})) AS unpaid_balance,
+          AND (COALESCE({{params.repScope}}, '') = '' OR so.sales_rep_user_profile_id::text = {{params.repScope}} OR so.sales_rep_user_profile_id_2::text = {{params.repScope}})) AS unpaid_balance,
         (SELECT COUNT(DISTINCT soi.sales_order_id) FROM sales_order_items soi
           JOIN sales_orders so ON so.id = soi.sales_order_id
           WHERE soi.fulfillment_source = 'china_direct'
           AND so.status = 'confirmed'
-          AND (COALESCE({{params.repScope}}, '') = '' OR so.sales_rep_user_profile_id::text = {{params.repScope}})) AS china_direct_awaiting
+          AND (COALESCE({{params.repScope}}, '') = '' OR so.sales_rep_user_profile_id::text = {{params.repScope}} OR so.sales_rep_user_profile_id_2::text = {{params.repScope}})) AS china_direct_awaiting
     `,
   });
 }

@@ -317,6 +317,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [channel, setChannel] = useState('telegram');
   const [salesRepId, setSalesRepId] = useState<string>('');
+  // Optional split: second rep (same division) + the PRIMARY's share %.
+  const [salesRepId2, setSalesRepId2] = useState<string>('');
+  const [repSplitPct, setRepSplitPct] = useState<string>('50');
   // The selected rep's division decides which wallets can take this
   // order's payment (China reps' money never lands in US wallets).
   const orderDivision = rows<{ id: number; division?: string | null }>(salesReps)
@@ -646,6 +649,8 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
       discountUsd: Number(discount), totalUsd: total,
       notes: notes || null, warehouseNote: whNote || '', createdByUserId: profileId,
       salesRepUserProfileId: salesRepId ? Number(salesRepId) : null,
+      salesRepUserProfileId2: salesRepId ? salesRepId2 : '',
+      repSplitPct: salesRepId2 ? repSplitPct : '',
       preferredWarehouseId: !splitMode && effectiveWh ? effectiveWh.id : null,
     }) as { id: number; order_number: string }[];
     if (!res?.[0]) return;
@@ -732,6 +737,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     setCustomer(null); setChannel('telegram'); setIsFree(false); setFreeReasonId(''); setFreeNote('');
     setPartial(false); setLines([mkLine()]); setDiscount('0'); setShipping('0');
     setShipRecipient('vendor'); shipTouchedRef.current = false; setNotes(''); setWhNote('');
+    setSalesRepId2(''); setRepSplitPct('50');
     setOverrideNote(''); setShip({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
     setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx('');
     setChainCheck({ state: 'idle', msg: '' });
@@ -808,7 +814,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
             </div>
             <div className="space-y-1">
               <Label>Sales Rep</Label>
-              <Select value={salesRepId} onValueChange={setSalesRepId}>
+              <Select value={salesRepId} onValueChange={v => { setSalesRepId(v); if (v === salesRepId2) setSalesRepId2(''); }}>
                 <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
                   {rows<{ id: number; display_name: string; division?: string | null }>(salesReps).map(r => (
@@ -816,6 +822,32 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                   ))}
                 </SelectContent>
               </Select>
+              {salesRepId && (
+                <div className="flex items-center gap-1.5 pt-1">
+                  <Select value={salesRepId2 || 'none'} onValueChange={v => setSalesRepId2(v === 'none' ? '' : v)}>
+                    <SelectTrigger className="h-7 text-xs w-36"><SelectValue placeholder="2nd rep…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No 2nd rep</SelectItem>
+                      {rows<{ id: number; display_name: string; division?: string | null }>(salesReps)
+                        // Same division as the primary (the money pipelines
+                        // are per division), never the primary themselves.
+                        .filter(r => String(r.id) !== salesRepId && (r.division || 'us') === orderDivision)
+                        .map(r => (
+                          <SelectItem key={r.id} value={String(r.id)}>{r.display_name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {salesRepId2 && (
+                    <>
+                      <Input
+                        type="number" min={1} max={99} className="h-7 w-16 text-xs"
+                        value={repSplitPct} onChange={e => setRepSplitPct(e.target.value)}
+                      />
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">% to primary</span>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
             <div className="space-y-1">
               <Label>Partial Fulfillment</Label>

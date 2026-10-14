@@ -1120,6 +1120,10 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [fetchItemsFresh] = useMutateAction(getOrderItems);
   const [doRelease] = useMutateAction(releaseProductReservation);
   const [editingRep, setEditingRep] = useState(false);
+  // Draft for the rep editor: primary, optional second rep, and the
+  // primary's split % (each rep earns their own rate on their share).
+  const [repDraft, setRepDraft] = useState<{ rep1: string; rep2: string; split: string }>({ rep1: '', rep2: '', split: '50' });
+  const [savingRep, setSavingRep] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
   const [whNoteDraft, setWhNoteDraft] = useState<string | null>(null);
   const [savingWhNote, setSavingWhNote] = useState(false);
@@ -1138,6 +1142,39 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const pendingNotifications = notifications.filter(n => n.status === 'pending').length;
 
   if (!order && !detailLoading) return null;
+
+  const repDisplay = order && order.sales_rep_name
+    ? `${String(order.sales_rep_name)}${order.sales_rep_name_2
+        ? ` (${Number(order.rep_split_pct)}%) + ${String(order.sales_rep_name_2)} (${100 - Number(order.rep_split_pct)}%)`
+        : ''}`
+    : 'Unassigned';
+  const openRepEditor = () => {
+    setRepDraft({
+      rep1: order?.sales_rep_user_profile_id ? String(order.sales_rep_user_profile_id) : '',
+      rep2: order?.sales_rep_user_profile_id_2 ? String(order.sales_rep_user_profile_id_2) : '',
+      split: order?.sales_rep_user_profile_id_2 ? String(Number(order.rep_split_pct)) : '50',
+    });
+    setEditingRep(true);
+  };
+  const saveReps = async () => {
+    setSavingRep(true);
+    try {
+      // Update + audit are one statement server-side; the rep change can
+      // move the order between divisions, so payment status re-derives.
+      await doUpdateRep({
+        orderId,
+        salesRepUserProfileId: repDraft.rep1,
+        salesRepUserProfileId2: repDraft.rep2,
+        repSplitPct: repDraft.split,
+        userId: profileId,
+      });
+      await recomputeAfterRepChange({ orderId });
+      setEditingRep(false);
+      reloadDetail();
+    } finally {
+      setSavingRep(false);
+    }
+  };
 
   const status = order ? String(order.status) : '';
   const isReadOnly = !!order && (status === 'cancelled' || status === 'delivered');
@@ -1232,29 +1269,52 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
                         {copiedQuote ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                       </Button>
                     </p>
-                    <div className="flex items-center gap-2 mt-1 text-sm">
+                    <div className="flex items-center gap-2 mt-1 text-sm flex-wrap">
                       <span className="text-muted-foreground">Sales Rep:</span>
                       {editingRep ? (
-                        <Select
-                          value={order.sales_rep_user_profile_id ? String(order.sales_rep_user_profile_id) : ''}
-                          onValueChange={async (v) => {
-                            await doUpdateRep({ orderId, salesRepUserProfileId: v ? Number(v) : null });
-                            await recomputeAfterRepChange({ orderId });
-                            setEditingRep(false);
-                            reloadDetail();
-                          }}
-                        >
-                          <SelectTrigger className="h-7 w-44 text-xs"><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                          <SelectContent>
-                            {rows<{ id: number; display_name: string }>(salesReps).map(r => (
-                              <SelectItem key={r.id} value={String(r.id)}>{r.display_name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <span className="inline-flex items-center gap-1.5 flex-wrap">
+                          <Select value={repDraft.rep1} onValueChange={v => setRepDraft(d => ({ ...d, rep1: v, rep2: d.rep2 === v ? '' : d.rep2 }))}>
+                            <SelectTrigger className="h-7 w-40 text-xs"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                            <SelectContent>
+                              {rows<{ id: number; display_name: string }>(salesReps).map(r => (
+                                <SelectItem key={r.id} value={String(r.id)}>{r.display_name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select value={repDraft.rep2 || 'none'} onValueChange={v => setRepDraft(d => ({ ...d, rep2: v === 'none' ? '' : v }))}>
+                            <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="2nd rep…" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No 2nd rep</SelectItem>
+                              {rows<{ id: number; display_name: string; division?: string | null }>(salesReps)
+                                // Same division as the primary — the money
+                                // pipelines are per division.
+                                .filter(r => String(r.id) !== repDraft.rep1
+                                  && (r.division || 'us') === (rows<{ id: number; division?: string | null }>(salesReps).find(x => String(x.id) === repDraft.rep1)?.division || 'us'))
+                                .map(r => (
+                                  <SelectItem key={r.id} value={String(r.id)}>{r.display_name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                          {repDraft.rep2 && (
+                            <>
+                              <Input type="number" min={1} max={99} className="h-7 w-14 text-xs" value={repDraft.split}
+                                onChange={e => setRepDraft(d => ({ ...d, split: e.target.value }))} />
+                              <span className="text-xs text-muted-foreground">% primary</span>
+                            </>
+                          )}
+                          <Button size="sm" className="h-7 text-xs" disabled={savingRep || !repDraft.rep1} onClick={saveReps}>
+                            {savingRep ? 'Saving…' : 'Save'}
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingRep(false)}>Cancel</Button>
+                        </span>
                       ) : (
-                        readOnlyRole ? (<span className="font-medium">{String(order.sales_rep_name || 'Unassigned')}</span>) : (<button className="font-medium text-blue-600 hover:underline" onClick={() => setEditingRep(true)}>
-                          {String(order.sales_rep_name || 'Unassigned')}
-                        </button>)
+                        readOnlyRole ? (
+                          <span className="font-medium">{repDisplay}</span>
+                        ) : (
+                          <button className="font-medium text-blue-600 hover:underline" onClick={openRepEditor}>
+                            {repDisplay}
+                          </button>
+                        )
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-1 text-sm">

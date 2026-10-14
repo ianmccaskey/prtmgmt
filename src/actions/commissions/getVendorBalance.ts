@@ -52,11 +52,24 @@ function getVendorBalance() {
         SELECT COALESCE(SUM(GREATEST(0, COALESCE(o.earned, 0) - COALESCE(p.paid, 0))), 0)::numeric(14,2) AS outstanding
         FROM user_profiles up
         LEFT JOIN (
-          SELECT so.sales_rep_user_profile_id AS rid, ROUND(SUM((so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * rp.commission_rate), 2) AS earned
-          FROM sales_orders so
-          JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
-          WHERE so.status NOT IN ('cancelled', 'quote')
-          GROUP BY so.sales_rep_user_profile_id
+          -- Split-rep orders pay each rep their OWN rate on their share of
+          -- the basis (rep_split_pct = primary's share). MUST mirror
+          -- executeSettlementAtomic rep_out.
+          SELECT x.rid, ROUND(SUM(x.share_basis * x.rate), 2) AS earned FROM (
+            SELECT so.sales_rep_user_profile_id AS rid,
+                   (so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * (so.rep_split_pct / 100.0) AS share_basis,
+                   rp.commission_rate AS rate
+            FROM sales_orders so
+            JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
+            WHERE so.status NOT IN ('cancelled', 'quote')
+            UNION ALL
+            SELECT so.sales_rep_user_profile_id_2,
+                   (so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * ((100 - so.rep_split_pct) / 100.0),
+                   rp2.commission_rate
+            FROM sales_orders so
+            JOIN user_profiles rp2 ON rp2.id = so.sales_rep_user_profile_id_2
+            WHERE so.sales_rep_user_profile_id_2 IS NOT NULL AND so.status NOT IN ('cancelled', 'quote')
+          ) x GROUP BY x.rid
         ) o ON o.rid = up.id
         LEFT JOIN (
           SELECT sales_rep_user_profile_id AS rid, SUM(amount_usd) AS paid
@@ -137,11 +150,21 @@ function getVendorBalance() {
           - COALESCE((SELECT SUM(GREATEST(COALESCE(o.earned, 0), COALESCE(p.paid, 0)))
                       FROM user_profiles up2
                       LEFT JOIN (
-                        SELECT so.sales_rep_user_profile_id AS rid, ROUND(SUM((so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * rp.commission_rate), 2) AS earned
-                        FROM sales_orders so
-                        JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
-                        WHERE so.status NOT IN ('cancelled', 'quote')
-                        GROUP BY so.sales_rep_user_profile_id) o ON o.rid = up2.id
+                        SELECT x.rid, ROUND(SUM(x.share_basis * x.rate), 2) AS earned FROM (
+                          SELECT so.sales_rep_user_profile_id AS rid,
+                                 (so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * (so.rep_split_pct / 100.0) AS share_basis,
+                                 rp.commission_rate AS rate
+                          FROM sales_orders so
+                          JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
+                          WHERE so.status NOT IN ('cancelled', 'quote')
+                          UNION ALL
+                          SELECT so.sales_rep_user_profile_id_2,
+                                 (so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * ((100 - so.rep_split_pct) / 100.0),
+                                 rp2.commission_rate
+                          FROM sales_orders so
+                          JOIN user_profiles rp2 ON rp2.id = so.sales_rep_user_profile_id_2
+                          WHERE so.sales_rep_user_profile_id_2 IS NOT NULL AND so.status NOT IN ('cancelled', 'quote')
+                        ) x GROUP BY x.rid) o ON o.rid = up2.id
                       LEFT JOIN (
                         SELECT sales_rep_user_profile_id AS rid, SUM(amount_usd) AS paid
                         FROM commission_payments WHERE payee_type = 'sales_rep'

@@ -18,11 +18,13 @@ export function getOrderDetail() {
         fr.label AS free_order_reason_label,
         rep.display_name AS sales_rep_name,
         COALESCE(rep.division, 'us') AS sales_rep_division,
+        rep2.display_name AS sales_rep_name_2,
         pw.name AS preferred_warehouse_name
       FROM sales_orders so
       JOIN customers c ON c.id = so.customer_id
       LEFT JOIN free_order_reasons fr ON fr.id = so.free_order_reason_id
       LEFT JOIN user_profiles rep ON rep.id = so.sales_rep_user_profile_id
+      LEFT JOIN user_profiles rep2 ON rep2.id = so.sales_rep_user_profile_id_2
       LEFT JOIN warehouses pw ON pw.id = so.preferred_warehouse_id
       WHERE so.id = {{params.orderId}}::bigint
     `,

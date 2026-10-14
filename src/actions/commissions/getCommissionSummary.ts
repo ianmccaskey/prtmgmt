@@ -6,14 +6,28 @@ function getCommissionSummary() {
     query: `
       SELECT
         (SELECT COALESCE(SUM(t.earned), 0) FROM (
-           SELECT ROUND(SUM((so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * rp.commission_rate), 2) AS earned
-           FROM sales_orders so
-           JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
-           WHERE so.sales_rep_user_profile_id IS NOT NULL AND so.status NOT IN ('cancelled','quote')
-             AND rp.division = COALESCE(NULLIF({{params.division}}, ''), 'us')
-             AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
-             AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
-           GROUP BY so.sales_rep_user_profile_id) t
+           -- Split-rep orders pay each rep their OWN rate on their share.
+           SELECT ROUND(SUM(x.share_basis * x.rate), 2) AS earned FROM (
+             SELECT so.sales_rep_user_profile_id AS rid,
+                    (so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * (so.rep_split_pct / 100.0) AS share_basis,
+                    rp.commission_rate AS rate
+             FROM sales_orders so
+             JOIN user_profiles rp ON rp.id = so.sales_rep_user_profile_id
+             WHERE so.status NOT IN ('cancelled','quote')
+               AND rp.division = COALESCE(NULLIF({{params.division}}, ''), 'us')
+               AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
+               AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
+             UNION ALL
+             SELECT so.sales_rep_user_profile_id_2,
+                    (so.total_usd - COALESCE(so.customer_shipping_charge_usd, 0)) * ((100 - so.rep_split_pct) / 100.0),
+                    rp2.commission_rate
+             FROM sales_orders so
+             JOIN user_profiles rp2 ON rp2.id = so.sales_rep_user_profile_id_2
+             WHERE so.sales_rep_user_profile_id_2 IS NOT NULL AND so.status NOT IN ('cancelled','quote')
+               AND rp2.division = COALESCE(NULLIF({{params.division}}, ''), 'us')
+               AND ({{params.date_from}} IS NULL OR so.order_date >= {{params.date_from}}::date)
+               AND ({{params.date_to}} IS NULL OR so.order_date <= {{params.date_to}}::date)
+           ) x GROUP BY x.rid) t
         ) AS rep_commission_earned_usd,
         (SELECT COALESCE(SUM(amount_usd), 0) FROM commission_payments
            WHERE payee_type = 'sales_rep'
