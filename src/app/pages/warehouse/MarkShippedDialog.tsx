@@ -497,7 +497,17 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
   const [rehydrated, setRehydrated] = useState(false);
   useEffect(() => {
     if (rehydrated) return;
-    const rows = asRows<SavedLabelRow>(savedLabelsRaw);
+    // Shape-check before trusting: mid-load, useLoadAction can hand back
+    // placeholders that aren't rows (rows() only strips nulls). A junk
+    // entry here once rehydrated as "warehouse #NaN (tracking )" and
+    // blocked Confirm on an order with no purchased label at all. Junk is
+    // skipped WITHOUT setting rehydrated, so the real rows (if any) still
+    // restore when they arrive.
+    const rows = asRows<SavedLabelRow>(savedLabelsRaw).filter(r =>
+      typeof r === 'object' && !Array.isArray(r) &&
+      Number.isFinite(Number(r.id)) &&
+      Number.isFinite(Number(r.origin_warehouse_id)) &&
+      typeof r.tracking_number === 'string' && r.tracking_number.trim() !== '');
     if (rows.length === 0) return;
     setRehydrated(true);
     const byWh: Record<number, SavedLabelRow> = {};

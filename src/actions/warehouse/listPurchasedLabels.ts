@@ -6,7 +6,10 @@ import { action } from '@uibakery/data';
  * navigation. The NOT EXISTS belt hides a label whose tracking number
  * already sits on one of this order's shipments: if the consume step ever
  * fails after the shipment was created, the label must not resurrect as
- * "unused" and invite a double shipment.
+ * "unused" and invite a double shipment. The compare is case-insensitive:
+ * manually typed tracking numbers arrive in whatever case the user typed
+ * (ORD-2026-0316's shipment stored "1z27bd..." against the label's
+ * "1Z27BD..."), and carriers treat tracking numbers case-insensitively.
  */
 function listPurchasedLabels() {
   return action('listPurchasedLabels', 'SQL', {
@@ -22,7 +25,7 @@ function listPurchasedLabels() {
         AND NOT EXISTS (
           SELECT 1 FROM shipments_outbound sh
           WHERE sh.sales_order_id = pl.sales_order_id
-            AND sh.tracking_number = pl.tracking_number
+            AND LOWER(sh.tracking_number) = LOWER(pl.tracking_number)
         )
       ORDER BY pl.purchased_at DESC
     `,
