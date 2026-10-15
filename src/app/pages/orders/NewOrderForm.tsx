@@ -482,8 +482,17 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // belongs to the VENDOR; a manually-entered charge on a normal order is
   // an expedited-label fee and belongs to the shipping WAREHOUSE. The rep
   // can override both the amount and the recipient.
-  const underMoq = !isFree && lines.some(l =>
-    l.product && l.quantity > 0 && l.quantity < Number(l.product.min_order_quantity ?? 1));
+  // MOQ-2 rider waiver (2026-10-15): a 2-kit-minimum product under its
+  // minimum rides free when the order holds any OTHER real line — the
+  // minimum exists to avoid shipping a single kit alone, and this box
+  // isn't alone. Higher minimums still charge regardless.
+  const realLine = (l: LineItem) => !!l.product && l.quantity > 0;
+  const underMoq = !isFree && lines.some(l => {
+    if (!realLine(l)) return false;
+    const moq = Number(l.product!.min_order_quantity ?? 1);
+    if (l.quantity >= moq) return false;
+    return !(moq === 2 && lines.some(o => o !== l && realLine(o)));
+  });
   useEffect(() => {
     if (shipTouchedRef.current) return;
     if (underMoq && (Number(shipping) || 0) === 0) {
