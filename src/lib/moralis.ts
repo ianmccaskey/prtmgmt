@@ -124,6 +124,15 @@ async function solanaRpcBatch(reqs: { method: string; params: unknown[] }[], hel
   return out;
 }
 
+// Highest Solana transaction version we accept from getTransaction. Was 0;
+// version-1 transactions are live on mainnet now (the RPC refused a real
+// customer payment with "Transaction version (1) is not supported … try
+// maxSupportedTransactionVersion: 1"), and a cap below a TX's version makes
+// the node withhold it — Verify on Chain errored and the wallet-check batch
+// path silently skipped such deposits. The param is a ceiling, so old v0 and
+// legacy TXs still come back unchanged.
+const MAX_SOLANA_TX_VERSION = 1;
+
 // ---- Immutable-TX cache --------------------------------------------
 // A finalized Solana transaction never changes, so its parsed deposit
 // delta for a given (signature, owner, mint) caches forever. Persisted
@@ -188,7 +197,7 @@ async function getSolanaTokenDeposits(
     for (let i = 0; i < uncached.length; i += 15) {
       const chunk = uncached.slice(i, i + 15);
       const results = await solanaRpcBatch(
-        chunk.map(s => ({ method: 'getTransaction', params: [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }] })),
+        chunk.map(s => ({ method: 'getTransaction', params: [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: MAX_SOLANA_TX_VERSION }] })),
         heliusKey,
       );
       results.forEach((raw, j) => {
@@ -259,7 +268,7 @@ export async function getTxDeposit(
     let tx: SolanaParsedTx;
     try {
       tx = await solanaRpc('getTransaction',
-        [txHash, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }], heliusKey) as SolanaParsedTx;
+        [txHash, { encoding: 'jsonParsed', maxSupportedTransactionVersion: MAX_SOLANA_TX_VERSION }], heliusKey) as SolanaParsedTx;
     } catch (e: unknown) {
       // A malformed signature (e.g. an EVM hash recorded on a Solana
       // payment) is a deterministic "no such TX", not a transient failure
