@@ -35,6 +35,7 @@ import { OrderItemsEditor, OrderItemRow, AllocationRow } from '@/app/pages/order
 import getOrderDetail from '@/actions/orders/getOrderDetail';
 import { buildOrderQuoteText } from '@/lib/orderQuote';
 import { verifyTxCoversAmount, IDLE_CHECK, type ChainCheck } from '@/lib/chainVerify';
+import { txHashNetwork, txHashKindLabel } from '@/lib/txHashFormat';
 import getOrderItems from '@/actions/orders/getOrderItems';
 import getOrderPayments from '@/actions/orders/getOrderPayments';
 import getOrderShipments from '@/actions/orders/getOrderShipments';
@@ -112,6 +113,9 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const [payAsset, setPayAsset] = useState('USDC');
   const [payNetwork, setPayNetwork] = useState('ethereum');
   const [payTx, setPayTx] = useState('');
+  // "Network switched to X" notice after a pasted hash auto-corrected the
+  // selection (the hash format names its network — see lib/txHashFormat).
+  const [payNetNote, setPayNetNote] = useState('');
   const [payAmount, setPayAmount] = useState('');
   const [payVerified, setPayVerified] = useState(true);
   const [copiedWallet, setCopiedWallet] = useState(false);
@@ -139,6 +143,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const [fixOpen, setFixOpen] = useState<number | null>(null);
   const [fixAsset, setFixAsset] = useState('USDC');
   const [fixNetwork, setFixNetwork] = useState('ethereum');
+  const [fixNetNote, setFixNetNote] = useState('');
   // TX hash is editable too — when a deposit was swapped to another
   // asset/wallet, the record must follow the money to the swap TX.
   const [fixTx, setFixTx] = useState('');
@@ -209,7 +214,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       });
       // Insert is single-statement; the payment-status rollup chains here.
       await recomputePayment({ orderId });
-      setAddOpen(false); setPayTx(''); setPayAmount(''); setPayVerified(true);
+      setAddOpen(false); setPayTx(''); setPayNetNote(''); setPayAmount(''); setPayVerified(true);
       setChainCheck(IDLE_CHECK); autoVerifiedRef.current = false; checkSeqRef.current++;
       reloadPay();
       parentReload();
@@ -372,13 +377,26 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
           </div>
           <p className="text-muted-foreground">{p.amount_asset != null ? `${Number(p.amount_asset).toFixed(6)} ${String(p.asset)} · ` : ''}${Number(p.amount_usd).toFixed(2)}</p>
           {p.tx_hash ? (() => {
-            const url = txExplorerUrl(String(p.network || ''), String(p.tx_hash));
+            // Explorer link follows the hash's FORMAT when it names a
+            // network — a wrong-network record must still link to the
+            // explorer that can actually show the TX.
+            const implied = txHashNetwork(String(p.tx_hash));
+            const url = txExplorerUrl(implied || String(p.network || ''), String(p.tx_hash));
             return (
-              <p className="text-xs text-muted-foreground break-all">
-                TX: {url
-                  ? <a href={url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{String(p.tx_hash)}</a>
-                  : String(p.tx_hash)}
-              </p>
+              <>
+                <p className="text-xs text-muted-foreground break-all">
+                  TX: {url
+                    ? <a href={url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{String(p.tx_hash)}</a>
+                    : String(p.tx_hash)}
+                </p>
+                {implied != null && implied !== String(p.network) && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                    ⚠ This TX hash is {txHashKindLabel(implied)}, but the payment is recorded on{' '}
+                    {NETWORK_LABELS[String(p.network)] || String(p.network)} — the money moved on{' '}
+                    {NETWORK_LABELS[implied] || implied}.{isAdmin ? ' Fix Wallet below opens pre-pointed at the right network.' : ''}
+                  </p>
+                )}
+              </>
             );
           })() : p.swap_channel_id == null && (
             <p className="text-xs text-muted-foreground italic">No TX hash recorded</p>
@@ -429,9 +447,19 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             {isAdmin && (
               <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
                 const a = String(p.asset); const n = String(p.network);
-                setFixAsset(ASSETS.includes(a) ? a : 'USDC');
-                setFixNetwork((NETWORKS[a] || []).includes(n) ? n : (NETWORKS[a]?.[0] || 'ethereum'));
                 const tx = dbText(p.tx_hash as string | null) || String(p.tx_hash || '');
+                setFixAsset(ASSETS.includes(a) ? a : 'USDC');
+                // When the recorded hash's format names a DIFFERENT network
+                // than the record, open the dialog already pointed at the
+                // hash's network — the fix becomes verify-and-save.
+                const implied = txHashNetwork(tx);
+                if (implied && implied !== n && (NETWORKS[a] || []).includes(implied)) {
+                  setFixNetwork(implied);
+                  setFixNetNote(`Pre-pointed at ${NETWORK_LABELS[implied] || implied} — the recorded TX hash is ${txHashKindLabel(implied)}, not a ${NETWORK_LABELS[n] || n} one.`);
+                } else {
+                  setFixNetwork((NETWORKS[a] || []).includes(n) ? n : (NETWORKS[a]?.[0] || 'ethereum'));
+                  setFixNetNote('');
+                }
                 setFixTx(tx); setFixTxOriginal(tx);
                 setFixErr('');
                 setFixCheck(IDLE_CHECK); fixSeqRef.current++;
@@ -474,7 +502,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             // leftover TX hash/verified toggle must not ride into a new
             // direct payment.
             setAddMode('direct'); setSwapBtc(''); setSwapRefund(''); setSwapQuote(null);
-            setPayTx(''); setPayVerified(true);
+            setPayTx(''); setPayNetNote(''); setPayVerified(true);
             setChainCheck(IDLE_CHECK); autoVerifiedRef.current = false; checkSeqRef.current++;
             setAddOpen(true);
           }}
@@ -541,13 +569,13 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
           <>
           <div className="grid grid-cols-2 gap-2">
             <div><Label className="text-xs">Asset</Label>
-              <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); invalidateChainProof(); }}>
+              <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); setPayNetNote(''); invalidateChainProof(); }}>
                 <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                 <SelectContent>{ASSETS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div><Label className="text-xs">Network</Label>
-              <Select value={payNetwork} onValueChange={v => { setPayNetwork(v); invalidateChainProof(); }}>
+              <Select value={payNetwork} onValueChange={v => { setPayNetwork(v); setPayNetNote(''); invalidateChainProof(); }}>
                 <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                 <SelectContent>{(NETWORKS[payAsset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
               </Select>
@@ -580,7 +608,23 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             <Input type="number" min={0} step="0.01" value={payAmount} onChange={e => { setPayAmount(e.target.value); invalidateChainProof(); }} className="h-8" /></div>
           <div><Label className="text-xs">TX Hash (optional)</Label>
             <div className="flex gap-2">
-              <Input placeholder="0x…" value={payTx} onChange={e => { setPayTx(e.target.value); invalidateChainProof(); }} className="h-8" />
+              <Input placeholder="0x…" value={payTx} onChange={e => {
+                const v = e.target.value;
+                setPayTx(v);
+                // The hash format names its network — a mismatched paste
+                // fixes the selection itself when the asset exists there
+                // (ORD-2026-0347: a Solana signature on an ethereum record).
+                const implied = txHashNetwork(v);
+                if (implied && implied !== payNetwork && (NETWORKS[payAsset] || []).includes(implied)) {
+                  setPayNetwork(implied);
+                  setPayNetNote(`Network switched to ${NETWORK_LABELS[implied] || implied} — this TX hash is ${txHashKindLabel(implied)}.`);
+                } else if (implied !== payNetwork) {
+                  // null or an unswitchable mismatch — any previous
+                  // "switched to X" note no longer describes this hash.
+                  setPayNetNote('');
+                }
+                invalidateChainProof();
+              }} className="h-8" />
               <Button type="button" variant="outline" size="sm" className="h-8 shrink-0"
                 disabled={!payTx.trim() || !selectedWallet || chainCheck.state === 'checking' || !(Number(payAmount) > 0)}
                 title="Look the TX up on chain: does it move at least the entered amount of this asset into the receive wallet?"
@@ -606,6 +650,24 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 {chainCheck.state === 'checking' ? 'Checking…' : 'Verify on Chain'}
               </Button>
             </div>
+            {payNetNote && <p className="text-xs text-blue-700 mt-1">{payNetNote}</p>}
+            {(() => {
+              // Hash format contradicts the selection: either the user
+              // manually overrode the network (their choice stands, but
+              // the check would look on the wrong chain), or the asset
+              // can't follow the hash's network at all.
+              const imp = txHashNetwork(payTx);
+              if (!imp || imp === payNetwork) return null;
+              return (NETWORKS[payAsset] || []).includes(imp) ? (
+                <p className="text-xs text-amber-700 mt-1">
+                  This TX hash is {txHashKindLabel(imp)}, but {NETWORK_LABELS[payNetwork] || payNetwork} is selected — the on-chain check will look on the wrong network. Switch to {NETWORK_LABELS[imp] || imp} unless this is intentional.
+                </p>
+              ) : (
+                <p className="text-xs text-amber-700 mt-1">
+                  This TX hash is {txHashKindLabel(imp)}, but {payAsset} doesn&apos;t exist on {NETWORK_LABELS[imp] || imp} — check the asset and network before recording.
+                </p>
+              );
+            })()}
             {chainCheck.msg && (
               <p className={`text-xs mt-1 ${
                 chainCheck.state === 'ok' || chainCheck.state === 'over' ? 'text-green-700'
@@ -672,13 +734,13 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div><Label className="text-xs">Asset</Label>
-                <Select value={fixAsset} onValueChange={v => { setFixAsset(v); setFixNetwork(NETWORKS[v]?.[0] || ''); invalidateFixCheck(); }}>
+                <Select value={fixAsset} onValueChange={v => { setFixAsset(v); setFixNetwork(NETWORKS[v]?.[0] || ''); setFixNetNote(''); invalidateFixCheck(); }}>
                   <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                   <SelectContent>{ASSETS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div><Label className="text-xs">Network</Label>
-                <Select value={fixNetwork} onValueChange={v => { setFixNetwork(v); invalidateFixCheck(); }}>
+                <Select value={fixNetwork} onValueChange={v => { setFixNetwork(v); setFixNetNote(''); invalidateFixCheck(); }}>
                   <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                   <SelectContent>{(NETWORKS[fixAsset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
                 </Select>
@@ -697,7 +759,22 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             <div>
               <Label className="text-xs">TX Hash <span className="text-muted-foreground font-normal">(the deposit into the wallet above — for swaps, the swap TX; keep the original TX in the reason/notes)</span></Label>
               <div className="flex gap-2">
-                <Input value={fixTx} onChange={e => { setFixTx(e.target.value); invalidateFixCheck(); }} placeholder="0x… / signature" className="h-8" />
+                <Input value={fixTx} onChange={e => {
+                  const v = e.target.value;
+                  setFixTx(v);
+                  // Same self-correction as Add Payment: a pasted hash whose
+                  // format names another network moves the selection there.
+                  const implied = txHashNetwork(v);
+                  if (implied && implied !== fixNetwork && (NETWORKS[fixAsset] || []).includes(implied)) {
+                    setFixNetwork(implied);
+                    setFixNetNote(`Network switched to ${NETWORK_LABELS[implied] || implied} — this TX hash is ${txHashKindLabel(implied)}.`);
+                  } else if (implied !== fixNetwork) {
+                    // null or an unswitchable mismatch — any previous
+                    // "switched to X" note no longer describes this hash.
+                    setFixNetNote('');
+                  }
+                  invalidateFixCheck();
+                }} placeholder="0x… / signature" className="h-8" />
                 <Button type="button" variant="outline" size="sm" className="h-8 shrink-0"
                   disabled={!fixTx.trim() || !fixWallet || fixCheck.state === 'checking'}
                   title="Look the TX up on chain: does it move at least this payment's amount into the wallet above?"
@@ -718,6 +795,20 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                   {fixCheck.state === 'checking' ? 'Checking…' : 'Verify on Chain'}
                 </Button>
               </div>
+              {fixNetNote && <p className="text-xs text-blue-700 mt-1">{fixNetNote}</p>}
+              {(() => {
+                const imp = txHashNetwork(fixTx);
+                if (!imp || imp === fixNetwork) return null;
+                return (NETWORKS[fixAsset] || []).includes(imp) ? (
+                  <p className="text-xs text-amber-700 mt-1">
+                    This TX hash is {txHashKindLabel(imp)}, but {NETWORK_LABELS[fixNetwork] || fixNetwork} is selected — the on-chain check will look on the wrong network. Switch to {NETWORK_LABELS[imp] || imp} unless this is intentional.
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-700 mt-1">
+                    This TX hash is {txHashKindLabel(imp)}, but {fixAsset} doesn&apos;t exist on {NETWORK_LABELS[imp] || imp} — check the asset and network before repointing.
+                  </p>
+                );
+              })()}
               {fixCheck.msg && (
                 <p className={`text-xs mt-1 ${
                   fixCheck.state === 'ok' || fixCheck.state === 'over' ? 'text-green-700'

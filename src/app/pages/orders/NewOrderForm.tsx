@@ -22,6 +22,7 @@ import searchProducts from '@/actions/orders/searchProducts';
 import getReceiveWallets from '@/actions/orders/getReceiveWallets';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import { verifyTxCoversAmount, IDLE_CHECK, type ChainCheck } from '@/lib/chainVerify';
+import { txHashNetwork, txHashKindLabel } from '@/lib/txHashFormat';
 import { addressExplorerUrl } from '@/lib/explorers';
 import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
 import { buildOrderQuoteText } from '@/lib/orderQuote';
@@ -349,6 +350,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   const [payAsset, setPayAsset] = useState('USDC');
   const [payNetwork, setPayNetwork] = useState('ethereum');
   const [payTx, setPayTx] = useState('');
+  // "Network switched to X" notice after a pasted hash auto-corrected the
+  // selection (the hash format names its network — see lib/txHashFormat).
+  const [payNetNote, setPayNetNote] = useState('');
   const [addPay, setAddPay] = useState(false);
   // "Payment already received" — inserts the payment as verified so the
   // order can be confirmed in the same pass (no quote round-trip).
@@ -748,7 +752,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     setShipRecipient('vendor'); shipTouchedRef.current = false; setNotes(''); setWhNote('');
     setSalesRepId2(''); setRepSplitPct('50');
     setOverrideNote(''); setShip({ name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' });
-    setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx('');
+    setEditShip(false); setPayAsset('USDC'); setPayNetwork('ethereum'); setPayTx(''); setPayNetNote('');
     setChainCheck({ state: 'idle', msg: '' });
     autoVerifiedRef.current = false; checkSeqRef.current++;
     setAddPay(false); setPayVerified(true); setErrors([]); setSalesRepId(''); setFulfillWarehouse('');
@@ -1165,13 +1169,13 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <div><Label className="text-xs">Asset</Label>
-                    <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); invalidateChainProof(); }}>
+                    <Select value={payAsset} onValueChange={v => { setPayAsset(v); setPayNetwork(NETWORKS[v]?.[0] || ''); setPayNetNote(''); invalidateChainProof(); }}>
                       <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                       <SelectContent>{ASSETS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                   <div><Label className="text-xs">Network</Label>
-                    <Select value={payNetwork} onValueChange={v => { setPayNetwork(v); invalidateChainProof(); }}>
+                    <Select value={payNetwork} onValueChange={v => { setPayNetwork(v); setPayNetNote(''); invalidateChainProof(); }}>
                       <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                       <SelectContent>{(NETWORKS[payAsset] || []).map(n => <SelectItem key={n} value={n}>{NETWORK_LABELS[n] || n}</SelectItem>)}</SelectContent>
                     </Select>
@@ -1202,7 +1206,24 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                 )}
                 <div><Label className="text-xs">TX Hash (optional)</Label>
                   <div className="flex gap-2">
-                    <Input placeholder="0x…" value={payTx} onChange={e => { setPayTx(e.target.value); invalidateChainProof(); }} className="h-8" />
+                    <Input placeholder="0x…" value={payTx} onChange={e => {
+                      const v = e.target.value;
+                      setPayTx(v);
+                      // The hash format names its network — a mismatched
+                      // paste fixes the selection itself when the asset
+                      // exists there (ORD-2026-0347 class wrong-network
+                      // records die at entry).
+                      const implied = txHashNetwork(v);
+                      if (implied && implied !== payNetwork && (NETWORKS[payAsset] || []).includes(implied)) {
+                        setPayNetwork(implied);
+                        setPayNetNote(`Network switched to ${NETWORK_LABELS[implied] || implied} — this TX hash is ${txHashKindLabel(implied)}.`);
+                      } else if (implied !== payNetwork) {
+                        // null or an unswitchable mismatch — any previous
+                        // "switched to X" note no longer describes this hash.
+                        setPayNetNote('');
+                      }
+                      invalidateChainProof();
+                    }} className="h-8" />
                     <Button type="button" variant="outline" size="sm" className="h-8 shrink-0"
                       disabled={!payTx.trim() || !selectedWallet || chainCheck.state === 'checking' || total === 0}
                       title="Look the TX up on chain: does it move at least the order total of this asset into the receive wallet?"
@@ -1210,6 +1231,20 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
                       {chainCheck.state === 'checking' ? 'Checking…' : 'Verify on Chain'}
                     </Button>
                   </div>
+                  {payNetNote && <p className="text-xs text-blue-700 mt-1">{payNetNote}</p>}
+                  {(() => {
+                    const imp = txHashNetwork(payTx);
+                    if (!imp || imp === payNetwork) return null;
+                    return (NETWORKS[payAsset] || []).includes(imp) ? (
+                      <p className="text-xs text-amber-700 mt-1">
+                        This TX hash is {txHashKindLabel(imp)}, but {NETWORK_LABELS[payNetwork] || payNetwork} is selected — the on-chain check will look on the wrong network. Switch to {NETWORK_LABELS[imp] || imp} unless this is intentional.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-700 mt-1">
+                        This TX hash is {txHashKindLabel(imp)}, but {payAsset} doesn&apos;t exist on {NETWORK_LABELS[imp] || imp} — check the asset and network before recording.
+                      </p>
+                    );
+                  })()}
                   {chainCheck.msg && (
                     <p className={`text-xs mt-1 ${
                       chainCheck.state === 'ok' ? 'text-green-700'

@@ -23,6 +23,7 @@ import getAppSetting from '@/actions/settings/getAppSetting';
 import upsertAppSetting from '@/actions/settings/upsertAppSetting';
 import autoRepairPaymentAsset from '@/actions/orders/autoRepairPaymentAsset';
 import { getOnChainBalance, getTokenDeposits, getTxDeposit, OnChainDeposit } from '@/lib/moralis';
+import { txHashNetwork } from '@/lib/txHashFormat';
 import { txExplorerUrl, txExplorerUrlAuto } from '@/lib/explorers';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -174,12 +175,17 @@ function OnChainWalletCheck({ division }: { division: string }) {
   // regardless of date — a payment recorded weeks late points at a deposit
   // from before the cycle started, which is real money in the wrong window,
   // not a phantom. Step 2 (admins only): if the TX isn't on this wallet at
-  // all, check the OTHER stablecoins' wallets on the same network
-  // (USDC/USDT/PYUSD mix-ups); when the chain confirms BOTH the hash and
-  // the recorded amount on one of them,
-  // auto-repair via the atomic repoint+audit action. Hashes shared by more
-  // than one record stay manual (ambiguous); settled-cycle and double-claim
-  // refusals are surfaced, never silently skipped.
+  // all, check the sibling stablecoin wallets — normally the OTHER
+  // stablecoins on the same network (USDC/USDT/PYUSD mix-ups), but when
+  // the hash's FORMAT names a different network (a Solana signature on an
+  // ethereum record, ORD-2026-0347 class) the siblings are the stablecoin
+  // wallets on the hash's own network instead, the SAME asset included,
+  // and step 1 is skipped (the recorded wallet cannot carry that hash).
+  // When the chain confirms BOTH the hash and the recorded amount on
+  // exactly one sibling, auto-repair via the atomic repoint+audit action.
+  // Hashes shared by more than one record stay manual (ambiguous);
+  // settled-cycle and double-claim refusals are surfaced, never silently
+  // skipped.
   const { profileId, isAdmin } = useAppUser();
   const [doAutoRepair] = useMutateAction(autoRepairPaymentAsset);
   // Keyed by wallet+payment so a payment repaired onto the sibling wallet
@@ -213,30 +219,42 @@ function OnChainWalletCheck({ division }: { division: string }) {
     // Mark up front so overlapping effect runs can't double-fire; unmark on
     // transient failures so the next expand can retry that payment.
     candidates.forEach(p => resolveTried.current.add(tryKey(p.id)));
-    // Every OTHER stablecoin wallet on this network — a wrong-stablecoin
-    // record can point at any of them (USDC/USDT/PYUSD).
-    const siblings = STABLECOINS.includes(openWallet.asset)
-      ? wallets.filter(s => s.id != null && s.network === openWallet.network
-          && s.asset !== openWallet.asset && STABLECOINS.includes(String(s.asset)))
+    const stableWallets = STABLECOINS.includes(openWallet.asset)
+      ? wallets.filter(s => s.id != null && STABLECOINS.includes(String(s.asset)))
       : [];
     let alive = true;
     (async () => {
       let changed = false;
       for (const p of candidates) {
         const hash = String(p.tx_hash).trim();
-        // Step 1: the recorded TX, on the recorded wallet, any date.
-        let ownHit: OnChainDeposit | null;
-        try {
-          ownHit = await getTxDeposit(moralisKey, openWallet.asset, openWallet.network, openWallet.address, hash, heliusKey || null);
-        } catch {
-          resolveTried.current.delete(tryKey(p.id));
-          continue;
+        // The hash format names its network when recognizable; a format
+        // that contradicts this wallet's network means the record is
+        // wrong-network, not just wrong-asset.
+        const impliedNet = txHashNetwork(hash);
+        const crossNetwork = impliedNet != null && impliedNet !== String(openWallet.network);
+        // Step 1: the recorded TX, on the recorded wallet, any date —
+        // skipped when the hash cannot live on this network at all.
+        let ownHit: OnChainDeposit | null = null;
+        if (!crossNetwork) {
+          try {
+            ownHit = await getTxDeposit(moralisKey, openWallet.asset, openWallet.network, openWallet.address, hash, heliusKey || null);
+          } catch {
+            resolveTried.current.delete(tryKey(p.id));
+            continue;
+          }
         }
         if (ownHit) {
           const hit = ownHit;
           if (alive) setTxLookups(prev => ({ ...prev, [p.id]: { status: 'found', amount: hit.amount, at: hit.at } }));
           continue;
         }
+        // Sibling candidates for this payment: on a format-contradicted
+        // record, the stablecoin wallets on the hash's OWN network (same
+        // asset included — ORD-2026-0347 was USDT recorded on ethereum,
+        // paid as USDT on solana); otherwise the other stablecoins here.
+        const siblings = stableWallets.filter(s =>
+          !(String(s.asset) === String(openWallet.asset) && String(s.network) === String(openWallet.network))
+          && String(s.network) === (crossNetwork ? impliedNet : String(openWallet.network)));
         // Step 2: wrong-stablecoin check across the other stablecoin
         // wallets on this network. Look the hash up on EVERY sibling
         // BEFORE acting — one TX can move several stablecoins, so the
@@ -250,7 +268,7 @@ function OnChainWalletCheck({ division }: { division: string }) {
           const hits: { sibling: (typeof siblings)[number]; hit: OnChainDeposit }[] = [];
           for (const sibling of siblings) {
             try {
-              const sibHit = await getTxDeposit(moralisKey, String(sibling.asset), openWallet.network, String(sibling.address), hash, heliusKey || null);
+              const sibHit = await getTxDeposit(moralisKey, String(sibling.asset), String(sibling.network), String(sibling.address), hash, heliusKey || null);
               if (sibHit) hits.push({ sibling, hit: sibHit });
             } catch {
               resolveTried.current.delete(tryKey(p.id));
@@ -277,7 +295,7 @@ function OnChainWalletCheck({ division }: { division: string }) {
               const first = hits[0];
               if (alive) {
                 setRepairBlocked(prev => [...prev,
-                  `${p.order_number}: recorded TX was found on the ${String(first.sibling.asset)} wallet but carried ${money(first.hit.amount)}, not the recorded ${money(p.amount_usd)} — review it manually with Fix Wallet / Correct Amount.`]);
+                  `${p.order_number}: recorded TX was found on the ${String(first.sibling.asset)}/${String(first.sibling.network)} wallet but carried ${money(first.hit.amount)}, not the recorded ${money(p.amount_usd)} — review it manually with Fix Wallet / Correct Amount.`]);
                 setTxLookups(prev => ({ ...prev, [p.id]: { status: 'notfound' } }));
               }
               outcome = 'done';
@@ -291,13 +309,13 @@ function OnChainWalletCheck({ division }: { division: string }) {
                 // should land even if the user navigates away mid-flight;
                 // only UI updates are gated.
                 res = await doAutoRepair({
-                  paymentId: p.id, asset: siblingAsset, network: openWallet.network,
+                  paymentId: p.id, asset: siblingAsset, network: String(sibling.network),
                   walletId: sibling.id, userId: profileId,
                   // Proof re-asserted server-side: the row must still carry
                   // this hash and amount at update time, not just when the
                   // UI checked.
                   txHash: hash, amountUsd: Number(p.amount_usd),
-                  note: `Auto-repair (wallet check): recorded TX ${hash} was confirmed on-chain as a ${siblingAsset} deposit of ${sibHit.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} to ${sibling.label} — asset corrected from ${openWallet.asset}`,
+                  note: `Auto-repair (wallet check): recorded TX ${hash} was confirmed on-chain as a ${siblingAsset}/${String(sibling.network)} deposit of ${sibHit.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} to ${sibling.label} — corrected from ${openWallet.asset}/${String(openWallet.network)}`,
                 }) as unknown[];
               } catch {
                 res = null;
@@ -308,12 +326,12 @@ function OnChainWalletCheck({ division }: { division: string }) {
                 if (!res || res.length === 0) {
                   if (alive) {
                     setRepairBlocked(prev => [...prev,
-                      `${p.order_number}: TX ${hash.slice(0, 14)}… is confirmed as a ${siblingAsset} deposit, but the record can't be moved automatically (stamped settlement cycle, or a payment on that wallet already claims this TX) — review it manually.`]);
+                      `${p.order_number}: TX ${hash.slice(0, 14)}… is confirmed as a ${siblingAsset}/${String(sibling.network)} deposit, but the record can't be moved automatically (stamped settlement cycle, or a payment on that wallet already claims this TX) — review it manually.`]);
                     setTxLookups(prev => ({ ...prev, [p.id]: { status: 'notfound' } }));
                   }
                 } else {
                   changed = true;
-                  if (alive) setAutoRepaired(prev => [...prev, { order_number: p.order_number, to: `${siblingAsset} · ${openWallet.network}` }]);
+                  if (alive) setAutoRepaired(prev => [...prev, { order_number: p.order_number, to: `${siblingAsset} · ${String(sibling.network)}` }]);
                 }
                 outcome = 'done';
               }
@@ -582,8 +600,8 @@ function OnChainWalletCheck({ division }: { division: string }) {
                           <p className="text-xs text-muted-foreground">
                             A wallet reads <span className="font-medium">under</span> when a recorded payment never arrived
                             (not found on-chain), arrived short, went to a different wallet, or was recorded with the wrong
-                            asset/network. Stablecoin mix-ups (USDC/USDT/PYUSD) are repaired automatically when the recorded
-                            TX is confirmed on another stablecoin&apos;s wallet. A record marked <span className="font-medium">before this
+                            asset/network. Stablecoin and wrong-network mix-ups (USDC/USDT/PYUSD, ethereum↔solana) are
+                            repaired automatically when the recorded TX is confirmed on exactly one other receive wallet. A record marked <span className="font-medium">before this
                             cycle</span> is real money verified by direct lookup — it just landed before the last Settle All,
                             so this cycle&apos;s balance still reads under by that amount (last cycle read over by the same).
                             <span className="font-medium"> Over</span> usually means an unrecorded deposit or pre-cycle

@@ -1,4 +1,5 @@
 import { getTxDeposit } from './moralis';
+import { txHashNetwork, txHashKindLabel } from './txHashFormat';
 
 /**
  * Shared on-chain TX verification for payment entry forms: does `txHash`
@@ -29,6 +30,17 @@ export async function verifyTxCoversAmount(opts: {
   swapFlowLocation: string;
 }): Promise<ChainCheck> {
   const { asset, network, networkLabel, wallet, requiredUsd, requiredLabel } = opts;
+  // A hash whose format names a DIFFERENT network is a contradiction, not
+  // a lookup miss — say so instead of a useless "not found". (The entry
+  // forms auto-switch the network on paste when the asset allows it, so
+  // this mostly catches assets that don't exist on the hash's network.)
+  const implied = txHashNetwork(opts.txHash);
+  if (implied && implied !== network) {
+    return {
+      state: 'error',
+      msg: `This TX hash is ${txHashKindLabel(implied)}, but the payment says ${networkLabel} — the money moved on ${implied === 'solana' ? 'Solana' : 'Ethereum'}. Fix the asset/network to match where it actually landed.`,
+    };
+  }
   if (asset !== 'USDC' && asset !== 'USDT' && asset !== 'PYUSD') {
     return { state: 'error', msg: `Only USDC, USDT, and PYUSD can be checked here — verify a ${asset} payment manually on the explorer.` };
   }
