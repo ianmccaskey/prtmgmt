@@ -14,10 +14,15 @@ const TOKENS: Record<string, Record<string, string>> = {
   ethereum: {
     USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     USDT: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+    // Paxos proxy — the only PYUSD contract on Ethereum mainnet.
+    PYUSD: '0x6c3ea9036406852006290770BEdFcAbA0e23A0e8',
   },
   solana: {
     USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
     USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+    // Token-2022 mint (no transfer hook); pre/post token balances and
+    // getTokenAccountsByOwner-by-mint cover Token-2022 like classic SPL.
+    PYUSD: '2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo',
   },
 };
 
@@ -310,7 +315,7 @@ export async function getTxDeposit(
     const param = (n: string) => (d.params || []).find(p => p.name === n)?.value;
     if (String(param('to') || '').toLowerCase() !== address.toLowerCase()) continue;
     // Moralis decodes the ERC-20 amount as 'amount' (USDT) or 'value'
-    // (standard ABI); both stablecoins are 6-decimal on Ethereum.
+    // (standard ABI); USDC, USDT, and PYUSD are all 6-decimal on Ethereum.
     amount += Number(param('amount') ?? param('value') ?? 0) / 1e6;
     from = String(param('from') ?? '') || from;
   }
@@ -369,7 +374,7 @@ export async function getTokenDeposits(
 }
 
 export async function getOnChainBalance(
-  apiKey: string, asset: string, network: string, address: string,
+  apiKey: string, asset: string, network: string, address: string, heliusKey?: string | null,
 ): Promise<OnChainBalance> {
   if (network === 'ethereum') {
     if (asset === 'ETH') {
@@ -391,10 +396,18 @@ export async function getOnChainBalance(
     }
     const mint = TOKENS.solana[asset];
     if (!mint) return { amount: 0, supported: false };
-    const d = await get(apiKey, `${SOL_BASE}/account/mainnet/${address}/tokens`) as
-      Array<{ mint?: string; amount?: string }>;
-    const row = Array.isArray(d) ? d.find(t => t.mint === mint) : undefined;
-    return { amount: Number(row?.amount || 0), supported: true };
+    // Raw Solana RPC, not the Moralis gateway token list: PYUSD is a
+    // Token-2022 mint and the gateway doesn't reliably include Token-2022
+    // accounts, which would read a funded wallet as $0. Filtering
+    // getTokenAccountsByOwner by mint covers both token programs, and the
+    // call rides the same throttle/retry queue as the deposit history.
+    const accs = await solanaRpc('getTokenAccountsByOwner',
+      [address, { mint }, { encoding: 'jsonParsed' }], heliusKey) as {
+        value?: { account?: { data?: { parsed?: { info?: { tokenAmount?: { uiAmount?: number | null } } } } } }[];
+      };
+    const amount = (accs?.value || [])
+      .reduce((s, a) => s + Number(a.account?.data?.parsed?.info?.tokenAmount?.uiAmount ?? 0), 0);
+    return { amount, supported: true };
   }
   // bitcoin and anything else Moralis can't serve
   return { amount: 0, supported: false };

@@ -4,7 +4,7 @@
  *   4x T30: $340
  *   2x R20: $280
  *   Total: $600
- *   We accept USDC or USDT on ethereum and solana networks. ...
+ *   We accept USDC, USDT, or PYUSD on ethereum and solana networks. ...
  *
  * Whole-dollar amounts print without cents (matching how quotes read in
  * chat); anything else keeps 2 decimals. Discount/shipping lines appear
@@ -13,7 +13,7 @@
 const usd = (n: number) => (Math.abs(n - Math.round(n)) < 0.005 ? `$${Math.round(n)}` : `$${n.toFixed(2)}`);
 
 export const PAYMENT_BLURB =
-  'We accept USDC or USDT on ethereum and solana networks. Also BTC with a $5 conversion fee. Please let me know what works for you :)';
+  'We accept USDC, USDT, or PYUSD on ethereum and solana networks. Also BTC with a $5 conversion fee. Please let me know what works for you :)';
 
 export function buildOrderQuoteText(
   items: { sku: string; quantity: number; lineTotal: number }[],

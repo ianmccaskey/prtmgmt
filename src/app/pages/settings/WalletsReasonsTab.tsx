@@ -32,6 +32,7 @@ type FreeReason = { id: number; label: string; description: string; is_active: b
 const VALID_COMBOS = [
   { asset: 'USDC', network: 'ethereum' }, { asset: 'USDC', network: 'solana' },
   { asset: 'USDT', network: 'ethereum' }, { asset: 'USDT', network: 'solana' },
+  { asset: 'PYUSD', network: 'ethereum' }, { asset: 'PYUSD', network: 'solana' },
   { asset: 'ETH', network: 'ethereum' }, { asset: 'SOL', network: 'solana' },
   { asset: 'BTC', network: 'bitcoin' },
 ];
@@ -269,7 +270,7 @@ export function WalletsReasonsTab() {
           </CardTitle>
           <p className="text-xs text-gray-400">
             Speeds up Solana deposit history in the wallet-check drill-down (per-payment on-chain matching for
-            USDC/USDT on Solana). Optional — without it the public Solana RPC is used, which rate-limits quickly.
+            USDC/USDT/PYUSD on Solana). Optional — without it the public Solana RPC is used, which rate-limits quickly.
           </p>
         </CardHeader>
         <CardContent className="flex items-center gap-2 flex-wrap">

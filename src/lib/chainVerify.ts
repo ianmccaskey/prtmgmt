@@ -29,8 +29,8 @@ export async function verifyTxCoversAmount(opts: {
   swapFlowLocation: string;
 }): Promise<ChainCheck> {
   const { asset, network, networkLabel, wallet, requiredUsd, requiredLabel } = opts;
-  if (asset !== 'USDC' && asset !== 'USDT') {
-    return { state: 'error', msg: `Only USDC and USDT can be checked here — verify a ${asset} payment manually on the explorer.` };
+  if (asset !== 'USDC' && asset !== 'USDT' && asset !== 'PYUSD') {
+    return { state: 'error', msg: `Only USDC, USDT, and PYUSD can be checked here — verify a ${asset} payment manually on the explorer.` };
   }
   if (network !== 'ethereum' && network !== 'solana') {
     return { state: 'error', msg: `${networkLabel} can't be checked here — BTC payments verify through the swap flow ${opts.swapFlowLocation}.` };

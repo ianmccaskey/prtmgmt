@@ -20,6 +20,7 @@ import { Trash2 } from 'lucide-react';
 const PAYOUT_COMBOS = [
   { asset: 'USDC', network: 'ethereum' }, { asset: 'USDC', network: 'solana' },
   { asset: 'USDT', network: 'ethereum' }, { asset: 'USDT', network: 'solana' },
+  { asset: 'PYUSD', network: 'ethereum' }, { asset: 'PYUSD', network: 'solana' },
   { asset: 'ETH', network: 'ethereum' }, { asset: 'SOL', network: 'solana' },
   { asset: 'BTC', network: 'bitcoin' },
 ];

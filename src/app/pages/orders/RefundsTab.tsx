@@ -18,6 +18,7 @@ import markRefundSent from '@/actions/orders/markRefundSent';
 import markRefundVerified from '@/actions/orders/markRefundVerified';
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
 import { fmtDate } from '@/lib/fmtDate';
+import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
 
 type RefundTask = {
   id: number; order_number: string; customer_name: string;
@@ -37,12 +38,6 @@ function StatChip({ label, value, highlight }: { label: string; value: string; h
   );
 }
 
-const ASSETS = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
-// Network values must match the order_payments.network CHECK constraint.
-const NETWORKS: Record<string, string[]> = {
-  USDC: ['ethereum', 'solana'], USDT: ['ethereum', 'solana'], ETH: ['ethereum'], SOL: ['solana'], BTC: ['bitcoin'],
-};
-const NETWORK_LABELS: Record<string, string> = { ethereum: 'Ethereum', solana: 'Solana', bitcoin: 'Bitcoin' };
 
 function MarkSentDrawer({ task, open, onClose, onDone }: { task: RefundTask | null; open: boolean; onClose: () => void; onDone: () => void }) {
   const [asset, setAsset] = useState('USDC');
