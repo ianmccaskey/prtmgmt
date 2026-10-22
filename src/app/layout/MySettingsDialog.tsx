@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import getMyLabelReturnAddress from '@/actions/settings/getMyLabelReturnAddress';
 import updateMyLabelReturnAddress from '@/actions/settings/updateMyLabelReturnAddress';

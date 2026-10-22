@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import getFifoStockAction from '@/actions/warehouse/getFifoStock';
 import getActiveRatePlanAction from '@/actions/warehouse/getActiveRatePlan';

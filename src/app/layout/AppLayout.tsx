@@ -42,13 +42,13 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Sales Orders', href: '/orders', icon: ShoppingCart },
   // Sales reps create/pick customers inside the order form but don't get
   // the browsable customer list.
-  { label: 'Customers', href: '/customers', icon: Users, roles: ['admin', 'logistics'] },
+  { label: 'Customers', href: '/customers', icon: Users, roles: ['admin', 'logistics', 'viewer'] },
   { label: 'Products', href: '/products', icon: Package },
   { label: 'Batches', href: '/batches', icon: FlaskConical },
   { label: 'Warehouse', href: '/warehouse', icon: Warehouse },
   { label: 'Logistics', href: '/logistics', icon: Truck },
   { label: 'Reports', href: '/reports', icon: BarChart3 },
-  { label: 'Commissions', href: '/commissions', icon: HandCoins, roles: ['admin', 'logistics'] },
+  { label: 'Commissions', href: '/commissions', icon: HandCoins, roles: ['admin', 'logistics', 'viewer'] },
   { label: 'Settings', href: '/settings', icon: Settings, roles: ['admin'] },
 ];
 
@@ -60,6 +60,7 @@ const BOTTOM_TABS_BY_ROLE: Record<string, string[]> = {
   logistics: ['/', '/orders', '/logistics', '/customers'],
   sales_rep: ['/', '/orders', '/products', '/batches'],
   warehouse: ['/', '/orders', '/warehouse', '/logistics'],
+  viewer: ['/', '/orders', '/products', '/warehouse'],
 };
 
 interface AppLayoutProps {

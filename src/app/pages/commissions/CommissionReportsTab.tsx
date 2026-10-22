@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';

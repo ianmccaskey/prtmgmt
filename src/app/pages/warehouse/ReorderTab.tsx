@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { useNavigate } from 'react-router-dom';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import listReorderSuggestionsAction from '@/actions/warehouse/listReorderSuggestions';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import listParcelTemplates from '@/actions/warehouse/listParcelTemplates';
 import createParcelTemplate from '@/actions/warehouse/createParcelTemplate';
 import deleteParcelTemplate from '@/actions/warehouse/deleteParcelTemplate';

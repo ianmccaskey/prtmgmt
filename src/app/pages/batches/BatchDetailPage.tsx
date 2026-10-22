@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import getBatchDetailAction from '@/actions/batches/getBatchDetail';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';

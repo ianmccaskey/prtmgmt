@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import listWarehousesAction from '@/actions/warehouse/listWarehouses';
 import getWarehouseStatsAction from '@/actions/warehouse/getWarehouseStats';
 import getPerWarehouseBreakdownAction from '@/actions/warehouse/getPerWarehouseBreakdown';

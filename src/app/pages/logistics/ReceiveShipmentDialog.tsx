@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useMutateAction } from '@uibakery/data';
+import { useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';

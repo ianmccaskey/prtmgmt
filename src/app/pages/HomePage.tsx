@@ -1,6 +1,6 @@
 import React from 'react';
 import { rows as asRows } from '@/lib/rows';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import { Link } from 'react-router-dom';
 import {
   ShoppingCart,

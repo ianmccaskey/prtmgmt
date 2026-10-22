@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

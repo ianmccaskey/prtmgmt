@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import getProductDetailAction from '@/actions/products/getProductDetail';
 import listFactoriesAction from '@/actions/products/listFactories';

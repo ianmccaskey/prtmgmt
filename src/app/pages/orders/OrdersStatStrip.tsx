@@ -1,5 +1,5 @@
 import React from 'react';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import getOrdersStatStrip from '@/actions/orders/getOrdersStatStrip';
 import { useAppUser } from '@/app/AppContext';
 

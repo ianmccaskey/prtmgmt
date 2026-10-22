@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ShieldAlert, UserX } from 'lucide-react';
 
-export type AppRole = 'admin' | 'sales_rep' | 'warehouse' | 'logistics';
+export type AppRole = 'admin' | 'sales_rep' | 'warehouse' | 'logistics' | 'viewer';
 
 export interface AppUser {
   /** Effective role driving all access control (from user_profiles, not platform roles). */
@@ -22,6 +22,12 @@ export interface AppUser {
   isWarehouse: boolean;
   /** Admin-level visibility; may only edit inbound shipments + run reports. */
   isLogistics: boolean;
+  /**
+   * Read-only preview account: sees everything except Settings, changes
+   * NOTHING. Write affordances hide behind the readOnly gates, and
+   * src/lib/data.ts refuses every mutation for viewers regardless.
+   */
+  isViewer: boolean;
   /** True when the logged-in platform user has no user_profiles row (bootstrap admin fallback). */
   profileMissing: boolean;
 }
@@ -79,6 +85,7 @@ export function AppUserProvider({ children }: { children: React.ReactNode }) {
         isSalesRep: role === 'sales_rep',
         isWarehouse: role === 'warehouse',
         isLogistics: role === 'logistics',
+        isViewer: role === 'viewer',
         profileMissing: false,
       };
     }
@@ -96,6 +103,7 @@ export function AppUserProvider({ children }: { children: React.ReactNode }) {
       isSalesRep: false,
       isWarehouse: false,
       isLogistics: false,
+      isViewer: false,
       profileMissing: true,
     };
   }, [hasProfile, row, user.name, email]);

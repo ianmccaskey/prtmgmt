@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { rows as asRows } from '@/lib/rows';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ import { StatusBadge, PaymentBadge, SourceBadges, FreeBadge, ChannelBadge } from
 import { Plus, Search, Crown } from 'lucide-react';
 import listOrders from '@/actions/orders/listOrders';
 import updateOrderStatus from '@/actions/orders/updateOrderStatus';
-import { useMutateAction } from '@uibakery/data';
+import { useMutateAction } from '@/lib/data';
 import { usePagination, PaginationFooter } from '@/components/Paginated';
 import { NewOrderForm } from './NewOrderForm';
 import { OrderDetailDrawer } from './OrderDetailDrawer';
@@ -45,8 +45,8 @@ const PAYMENT_OPTIONS = ['', 'unpaid', 'partial_paid', 'paid', 'refunded'];
 const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
 
 export function AllOrdersTab() {
-  const { isWarehouse, isLogistics, isSalesRep, profileId } = useAppUser();
-  const readOnlyOrders = isWarehouse || isLogistics;
+  const { isWarehouse, isLogistics, isViewer, isSalesRep, profileId } = useAppUser();
+  const readOnlyOrders = isWarehouse || isLogistics || isViewer;
   // Sales reps see only their OWN orders, and delivered ones only for a
   // month after delivery (the data stays; only their view narrows).
   const repScope = isSalesRep && profileId != null ? String(profileId) : null;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useMutateAction } from '@uibakery/data';
+import { useMutateAction } from '@/lib/data';
 import updateBatchQcStatusAction from '@/actions/batches/updateBatchQcStatus';
 import rollupBatchQcAction from '@/actions/batches/rollupBatchQc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

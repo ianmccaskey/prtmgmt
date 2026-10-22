@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

@@ -1,7 +1,7 @@
 import React from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { useNavigate } from 'react-router-dom';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import getBatchOrdersAction from '@/actions/batches/getBatchOrders';
 import getBatchWriteoffsAction from '@/actions/batches/getBatchWriteoffs';
 import getBatchInboundShipmentsAction from '@/actions/batches/getBatchInboundShipments';

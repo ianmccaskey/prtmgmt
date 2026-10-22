@@ -1,7 +1,7 @@
 import React from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { fmtDate } from '@/lib/fmtDate';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import listBatchTestsAction from '@/actions/batches/listBatchTests';
 import getBatchInventoryAction from '@/actions/batches/getBatchInventory';
 import getBatchOrdersAction from '@/actions/batches/getBatchOrders';

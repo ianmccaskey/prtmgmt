@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import { rows, firstRow } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
@@ -82,8 +82,8 @@ const PAYMENT_ISSUE_TYPES = ['underpaid', 'overpaid', 'wrong_asset', 'wrong_netw
 const SHIP_CARRIERS = ['USPS', 'UPS', 'FedEx', 'DHL', 'other'];
 
 function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: { orderId: number; orderTotal: number; division: string; reload: () => void }) {
-  const { isLogistics, isWarehouse, isAdmin } = useAppUser();
-  const readOnlyRole = isLogistics || isWarehouse;
+  const { isLogistics, isWarehouse, isViewer, isAdmin } = useAppUser();
+  const readOnlyRole = isLogistics || isWarehouse || isViewer;
   const { profileId } = useAppUser();
   const [payments, loading, , reloadPay] = useLoadAction(getOrderPayments, [orderId], { orderId });
   const [verifyPayment, verifying] = useMutateAction(markPaymentVerified);
@@ -1173,9 +1173,9 @@ function CancelOrderDialog({ orderId, open, onClose, onDone }: {
 }
 
 export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDetailDrawerProps) {
-  const { profileId, isAdmin, isLogistics, isWarehouse } = useAppUser();
+  const { profileId, isAdmin, isLogistics, isWarehouse, isViewer } = useAppUser();
   // Orders are read-only for warehouse and logistics roles (access matrix).
-  const readOnlyRole = isLogistics || isWarehouse;
+  const readOnlyRole = isLogistics || isWarehouse || isViewer;
   const [cancelOpen, setCancelOpen] = useState(false);
   // Print-label outcome the user must act on — popup blocked, or a legacy
   // PDF that needs a manual print — shown in the tracking hero.

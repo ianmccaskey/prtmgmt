@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { useLoadAction } from '@uibakery/data';
+import { useAppUser } from '@/app/AppContext';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import { Button } from '@/components/ui/button';
 import { Upload, Loader2 } from 'lucide-react';
@@ -30,8 +31,16 @@ export function FileUpload({ accept, label, onUploaded, disabled }: {
   const [error, setError] = useState('');
   const [setting, settingLoading] = useLoadAction(getAppSetting, [], { key: 's3_presign_endpoint' });
   const endpoint = (((setting as { value: string }[]) || [])[0]?.value || '').trim();
+  // Uploads write to S3 DIRECTLY (presign + PUT), bypassing the
+  // useMutateAction read-only choke point — so the viewer gate must live
+  // here, in front of both network calls, not in each caller's edit UI.
+  const { isViewer } = useAppUser();
 
   const handleFile = async (file: File) => {
+    if (isViewer) {
+      setError('This preview account is read-only — uploads are disabled.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -77,7 +86,7 @@ export function FileUpload({ accept, label, onUploaded, disabled }: {
       />
       {/* Disabled until the endpoint setting resolves — otherwise a quick
           upload could inline a file that should have gone to S3. */}
-      <Button type="button" size="sm" variant="outline" disabled={disabled || busy || settingLoading} onClick={() => inputRef.current?.click()}>
+      <Button type="button" size="sm" variant="outline" disabled={disabled || busy || settingLoading || isViewer} onClick={() => inputRef.current?.click()}>
         {busy || settingLoading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
         {busy ? 'Uploading…' : settingLoading ? 'Loading…' : (label || 'Upload file')}
       </Button>

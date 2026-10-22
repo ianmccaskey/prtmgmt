@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { useAppUser } from '@/app/AppContext';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import listBatchTestsAction from '@/actions/batches/listBatchTests';
 import createBatchTestsBulkAction from '@/actions/batches/createBatchTestsBulk';
 import rollupBatchQcAction from '@/actions/batches/rollupBatchQc';

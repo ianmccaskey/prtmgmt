@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import listBatchTestsByProductAction from '@/actions/batches/listBatchTestsByProduct';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

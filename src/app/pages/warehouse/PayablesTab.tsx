@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import { useNavigate } from 'react-router-dom';
 import { useAppUser } from '@/app/AppContext';
 import listWarehouseBalances from '@/actions/commissions/listWarehouseBalances';

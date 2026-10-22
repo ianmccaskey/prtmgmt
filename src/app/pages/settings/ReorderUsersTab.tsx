@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { rows as asRows } from '@/lib/rows';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +31,9 @@ type Warehouse = { id: number; name: string; is_active: boolean };
 type AppSetting = { key: string; value: string };
 type PayoutAddress = { id: number; user_profile_id: number; asset: string; network: string; address: string; label: string | null };
 
-const ROLES = ['admin', 'sales_rep', 'warehouse', 'logistics'];
+// 'viewer' = read-only preview account: sees everything but Settings,
+// every write is refused (src/lib/data.ts) and write UI is hidden.
+const ROLES = ['admin', 'sales_rep', 'warehouse', 'logistics', 'viewer'];
 const PAYOUT_COMBOS = [
   { asset: 'USDC', network: 'ethereum' }, { asset: 'USDC', network: 'solana' },
   { asset: 'USDT', network: 'ethereum' }, { asset: 'USDT', network: 'solana' },

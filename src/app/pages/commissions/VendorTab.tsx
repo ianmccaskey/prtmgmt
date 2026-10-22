@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import getVendorBalance from '@/actions/commissions/getVendorBalance';
 import listVendorPayments from '@/actions/commissions/listVendorPayments';

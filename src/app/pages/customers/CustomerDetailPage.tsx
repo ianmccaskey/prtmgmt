@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -148,7 +148,7 @@ function BlockDialog({ customer, open, onClose, onDone }: {
 export function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isAdmin, isSalesRep, isLogistics } = useAppUser();
+  const { isAdmin, isSalesRep, isLogistics, isViewer } = useAppUser();
   const canSeeInternalNotes = isAdmin || isSalesRep || isLogistics;
   const customerId = Number(id);
 
@@ -245,10 +245,12 @@ export function CustomerDetailPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => navigate(`/orders?customerId=${customerId}`)}>
-            <ShoppingCart className="h-4 w-4 mr-1" /> New Order
-          </Button>
-          {isLogistics ? null : !editing ? (
+          {!isViewer && (
+            <Button size="sm" onClick={() => navigate(`/orders?customerId=${customerId}`)}>
+              <ShoppingCart className="h-4 w-4 mr-1" /> New Order
+            </Button>
+          )}
+          {isLogistics || isViewer ? null : !editing ? (
             <Button size="sm" variant="outline" onClick={startEdit}><Pencil className="h-4 w-4 mr-1" /> Edit</Button>
           ) : (
             <>
@@ -446,7 +448,7 @@ export function CustomerDetailPage() {
 
         {/* ---- NOTES ---- */}
         <TabsContent value="notes" className="pt-4">
-          <NotesPanel customerId={customerId} readOnly={isLogistics} />
+          <NotesPanel customerId={customerId} readOnly={isLogistics || isViewer} />
         </TabsContent>
       </Tabs>
 

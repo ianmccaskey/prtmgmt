@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import getBatchInventoryAction from '@/actions/batches/getBatchInventory';
 import warehouseWriteoffAtomicAction from '@/actions/warehouse/warehouseWriteoffAtomic';

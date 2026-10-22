@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@/lib/data';
 import { rows, firstRow } from '@/lib/rows';
 import { dbText } from '@/lib/dbText';
 import { useAppUser } from '@/app/AppContext';

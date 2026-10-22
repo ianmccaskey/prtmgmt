@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { useAppUser } from '@/app/AppContext';
 import { useNavigate } from 'react-router-dom';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
