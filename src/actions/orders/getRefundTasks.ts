@@ -10,10 +10,14 @@ export function getRefundTasks() {
         c.full_name AS customer_name,
         assignee.display_name AS assignee_name,
         creator.display_name AS creator_name,
-        CURRENT_DATE - rt.due_date AS days_overdue
+        CURRENT_DATE - rt.due_date AS days_overdue,
+        -- The order's money division (its primary rep's) — picks which
+        -- receive wallets a refund can be sent from.
+        COALESCE(rep.division, 'us') AS division
       FROM refund_tasks rt
       JOIN sales_orders so ON so.id = rt.sales_order_id
       JOIN customers c ON c.id = so.customer_id
+      LEFT JOIN user_profiles rep ON rep.id = so.sales_rep_user_profile_id
       LEFT JOIN user_profiles assignee ON assignee.id = rt.assignee_user_id
       LEFT JOIN user_profiles creator ON creator.id = rt.created_by_user_id
       WHERE

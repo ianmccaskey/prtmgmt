@@ -472,7 +472,7 @@ function OnChainWalletCheck({ division }: { division: string }) {
                                       )}
                                       {rec && (
                                         p.direction === 'refund' ? (
-                                          <Badge variant="outline" className="text-xs text-muted-foreground">refund — outgoing, not matched</Badge>
+                                          <Badge variant="outline" className="text-xs text-muted-foreground">refund sent from this wallet — outgoing, not matched</Badge>
                                         ) : dep ? (
                                           // The TX exists on-chain but may have carried a different
                                           // amount than what was recorded — that mismatch IS the
@@ -631,8 +631,9 @@ function OnChainWalletCheck({ division }: { division: string }) {
           <p className="text-xs text-muted-foreground px-4 pb-3 pt-2">
             Expected = verified payments assigned to each wallet this cycle (stablecoins compared 1 token ≈ $1;
             a positive difference usually means funds left from before, unrecorded income, or pending payments
-            not yet verified). Refunds aren&apos;t tied to a wallet, so they appear in the unassigned line rather
-            than reducing a specific wallet. Settlements empty the wallets, so both sides reset each cycle.
+            not yet verified). A refund sent from one of these wallets reduces that wallet&apos;s expected figure;
+            one sent from anywhere else appears in the unassigned line. Settlements empty the wallets, so both
+            sides reset each cycle.
           </p>
         )}
       </CardContent>

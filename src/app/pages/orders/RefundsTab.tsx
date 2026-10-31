@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
 import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
@@ -17,6 +17,7 @@ import getRefundStats from '@/actions/orders/getRefundStats';
 import markRefundSent from '@/actions/orders/markRefundSent';
 import markRefundVerified from '@/actions/orders/markRefundVerified';
 import recomputePaymentStatus from '@/actions/orders/recomputePaymentStatus';
+import getReceiveWallets from '@/actions/orders/getReceiveWallets';
 import { fmtDate } from '@/lib/fmtDate';
 import { ASSETS, NETWORKS, NETWORK_LABELS } from '@/lib/cryptoAssets';
 
@@ -25,7 +26,10 @@ type RefundTask = {
   amount_usd_owed: string; reason: string; assignee_name: string;
   due_date: string; status: string; days_overdue: number;
   sent_at: string; verified_at: string; linked_payment_id: number | null;
+  division: string;
 };
+
+type ReceiveWallet = { id: number; asset: string; network: string; address: string; label: string; division: string };
 
 type Stats = { owed_count: string; owed_usd: string; overdue_count: string; sent_this_week: string; verified_this_week: string };
 
@@ -46,15 +50,46 @@ function MarkSentDrawer({ task, open, onClose, onDone }: { task: RefundTask | nu
   const [amountAssetStr, setAmountAssetStr] = useState('');
   const [txHash, setTxHash] = useState('');
   const [doSend, sending] = useMutateAction(markRefundSent);
+  // Which wallet the refund left from. Linking our receive wallet lets its
+  // on-chain check net the outflow; a refund sent from anywhere else stays
+  // unlinked and shows on the check's unassigned line. Defaults to the
+  // receive wallet matching the asset/network in the order's division.
+  const [sentFrom, setSentFrom] = useState<'receive' | 'other'>('receive');
+  const division = task?.division || 'us';
+  const [walletsRaw, walletsLoading, walletsErr, reloadWallets] = useLoadAction(getReceiveWallets, [open ? 1 : 0, division], { division }, { enabled: open && task != null });
+  // A failed load must not read as "no matching wallet" — that would
+  // silently record a receive-wallet refund as sent from elsewhere, so
+  // submitting waits for a successful load. Rows left over from another
+  // division's load never qualify either.
+  const fromWallet = walletsErr || walletsLoading ? null
+    : asRows<ReceiveWallet>(walletsRaw).find(w => w.asset === asset && w.network === network && w.division === division) || null;
+  const linkWallet = sentFrom === 'receive' && fromWallet != null;
+  const [sendErr, setSendErr] = useState('');
+
+  // The drawer stays mounted between tasks: every task starts from the
+  // defaults, so one task's "Another wallet" never carries into the next.
+  useEffect(() => {
+    setAsset('USDC'); setNetwork('ethereum'); setSentFrom('receive'); setSpot(''); setAmountAssetStr(''); setTxHash(''); setSendErr('');
+  }, [task?.id]);
 
   const amountUsd = task ? Number(task.amount_usd_owed) : 0;
   const computedAmountAsset = spot && Number(spot) > 0 ? (amountUsd / Number(spot)).toFixed(6) : '';
 
   const submit = async () => {
     if (!task) return;
-    await doSend({ taskId: task.id, asset, network, spotRateUsd: Number(spot), amountAsset: Number(amountAssetStr || computedAmountAsset), amountUsd, txHash });
+    setSendErr('');
+    const res = await doSend({ taskId: task.id, asset, network, walletId: linkWallet ? fromWallet.id : null, spotRateUsd: Number(spot), amountAsset: Number(amountAssetStr || computedAmountAsset), amountUsd, txHash }) as unknown[];
+    if (!res || res.length === 0) {
+      // The server refused: the chosen wallet stopped qualifying (made
+      // inactive, or no longer this asset/network/division) since the list
+      // loaded. Nothing was saved — refresh the list and let them re-pick.
+      setSendErr(linkWallet
+        ? `${fromWallet.label} is no longer an active receive wallet for this order — nothing was saved. Check Sent From and try again.`
+        : 'This refund task could not be updated — nothing was saved. Reload the list and try again.');
+      reloadWallets();
+      return;
+    }
     onDone(); onClose();
-    setAsset('USDC'); setNetwork('ethereum'); setSpot(''); setAmountAssetStr(''); setTxHash('');
   };
 
   return (
@@ -88,6 +123,27 @@ function MarkSentDrawer({ task, open, onClose, onDone }: { task: RefundTask | nu
             </div>
           </div>
           <div>
+            <Label>Sent From</Label>
+            <Select value={fromWallet ? sentFrom : 'other'} onValueChange={v => setSentFrom(v === 'other' ? 'other' : 'receive')} disabled={walletsLoading || !fromWallet}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {fromWallet && <SelectItem value="receive">{fromWallet.label} ({fromWallet.address.slice(0, 6)}…{fromWallet.address.slice(-4)})</SelectItem>}
+                <SelectItem value="other">Another wallet</SelectItem>
+              </SelectContent>
+            </Select>
+            {walletsErr && !walletsLoading ? (
+              <p className="text-xs text-red-600 mt-1">
+                Couldn&apos;t load the receive wallets.{' '}
+                <button type="button" className="underline font-medium" onClick={() => { reloadWallets(); }}>Retry</button>
+              </p>
+            ) : <p className="text-xs text-muted-foreground mt-1">
+              {walletsLoading ? 'Loading receive wallets…'
+                : !fromWallet ? `No active ${asset} · ${NETWORK_LABELS[network] || network} receive wallet — the refund will show on the wallet check's unassigned line.`
+                : linkWallet ? `Counts against ${fromWallet.label} in the on-chain wallet check.`
+                : "Not one of our receive wallets — the refund will show on the wallet check's unassigned line."}
+            </p>}
+          </div>
+          <div>
             <Label>Spot Rate (USD per {asset})</Label>
             <div className="flex gap-2 items-center">
               <Input type="number" min={0} step={0.01} value={spot} onChange={e => setSpot(e.target.value)} />
@@ -104,9 +160,10 @@ function MarkSentDrawer({ task, open, onClose, onDone }: { task: RefundTask | nu
           </div>
         </div>
         <Separator className="my-4" />
+        {sendErr && <p className="text-xs text-red-600 mb-3">{sendErr}</p>}
         <div className="flex gap-2 justify-end">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} disabled={sending || !spot || !txHash}>
+          <Button onClick={submit} disabled={sending || walletsLoading || walletsErr != null || !spot || !txHash}>
             <Send className="h-4 w-4 mr-1" /> Mark Sent
           </Button>
         </div>

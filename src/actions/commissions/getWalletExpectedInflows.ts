@@ -5,9 +5,9 @@ import { action } from '@uibakery/data';
  * cycle: verified payments assigned to it (refunds negative) since the
  * last settlement. Settlements empty the wallets, so expected resets to
  * zero each cycle — matching the Vendor Owed card. A final NULL-id row
- * carries verified activity with no wallet link (refund rows never carry
- * one) so per-wallet totals + unassigned always reconcile to the cycle's
- * collections.
+ * carries verified activity with no wallet link (refunds sent from outside
+ * our receive wallets carry none) so per-wallet totals + unassigned always
+ * reconcile to the cycle's collections.
  */
 function getWalletExpectedInflows() {
   return action('getWalletExpectedInflows', 'SQL', {
@@ -33,10 +33,11 @@ function getWalletExpectedInflows() {
       GROUP BY rw.id, rw.asset, rw.network, rw.address, rw.label
       UNION ALL
       -- Reconciliation bucket: this division's verified activity that has
-      -- no wallet link (refunds never carry one) OR sits on a wallet of the
-      -- OTHER division (pre-division data, Fix Wallet repoints). Wallet
-      -- rows + this row always sum to the division's cycle collections.
-      SELECT NULL::bigint, 'UNASSIGNED', '', '', 'Not tied to a division wallet (incl. refunds & cross-division)',
+      -- no wallet link (refunds sent from elsewhere, older refunds) OR sits
+      -- on a wallet of the OTHER division (pre-division data, Fix Wallet
+      -- repoints). Wallet rows + this row always sum to the division's
+      -- cycle collections.
+      SELECT NULL::bigint, 'UNASSIGNED', '', '', 'Not tied to a division wallet (incl. unlinked refunds & cross-division)',
         COALESCE(SUM(CASE WHEN op.direction = 'refund' THEN -op.amount_usd ELSE op.amount_usd END), 0)::numeric(14,2),
         COUNT(op.id)::int
       FROM order_payments op
