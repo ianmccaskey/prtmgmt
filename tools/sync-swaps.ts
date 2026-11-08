@@ -5,12 +5,12 @@
  *  - SUCCESS → writes the delivery TX hash + ACTUAL USDC amount, verifies
  *    the payment, and recomputes the order's payment status
  *  - INCOMPLETE_DEPOSIT / REFUNDED / FAILED → flags the payment for review
- *  - no deposit by the deadline → marks it EXPIRED
+ *  - no deposit by the time the address closes → marks it EXPIRED
  *  - otherwise → records the latest state so the drawer shows progress
  *
- * EXPIRED rows keep being polled for a week, because nothing else would
- * notice money arriving at an address past its deadline. Old Chainflip rows
- * are ignored: they are all finished.
+ * Every unresolved row is checked on every run. An address that never saw
+ * money is dropped a week after it closes; a row with money in it is
+ * checked until it resolves. Old Chainflip rows are ignored: all finished.
  *
  * Runs from .github/workflows/swaps-sync.yml (cron-job.org, hourly); safe to
  * run locally too. Setup: DATABASE_URL in the environment (or .env.local).
@@ -31,6 +31,11 @@ const sql = new SQL(url);
 const apiBase = process.env.ONECLICK_API_BASE || undefined;
 
 const LATE_POLL_DAYS = 7;
+
+// Notes this job writes start with this, so it can replace or clear its own
+// notes without touching one a person wrote. completeSwapPayment.ts clears
+// the same prefix.
+const AUTO = 'Swap check: ';
 
 type Row = { id: number; sales_order_id: number; swap_deposit_address: string; swap_state: string | null; swap_expires_at: string | null };
 
@@ -64,15 +69,12 @@ async function recompute(orderId: number) {
     WHERE so.id = sub.id`;
 }
 
-/**
- * Moves the row to `state` and records the issue. An earlier automatic note
- * is replaced, but a note a rep wrote by hand is kept.
- */
+/** Moves the row to `state` and records the issue, unless a person already wrote a note. */
 async function flag(id: number, state: string, issueType: string, note: string) {
   await sql`
     UPDATE order_payments SET
-      issue_type = CASE WHEN swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN ${issueType} ELSE COALESCE(issue_type, ${issueType}) END,
-      issue_notes = CASE WHEN swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN ${note} ELSE COALESCE(NULLIF(issue_notes, ''), ${note}) END,
+      issue_type = CASE WHEN COALESCE(issue_notes, '') = '' OR issue_notes LIKE 'Swap check:%' THEN ${issueType} ELSE issue_type END,
+      issue_notes = CASE WHEN COALESCE(issue_notes, '') = '' OR issue_notes LIKE 'Swap check:%' THEN ${AUTO + note} ELSE issue_notes END,
       swap_state = ${state}
     WHERE id = ${id} AND verification_status = 'pending'`;
 }
@@ -86,19 +88,25 @@ function refundNote(st: OneClickStatus, heading: string) {
 /** Returns which counter this row should bump, or null for no change. */
 async function settle(r: Row): Promise<'completed' | 'flagged' | 'updated' | null> {
   const st = await getOneClickStatus(r.swap_deposit_address, apiBase);
-  const pastDeadline = !!r.swap_expires_at && Date.parse(r.swap_expires_at) < Date.now();
+  const closed = !!r.swap_expires_at && Date.parse(r.swap_expires_at) < Date.now();
 
   switch (st.state) {
     case 'NOT_FOUND':
-      // Not proof that nothing was sent, so never expire a row on this.
-      console.warn(`payment ${r.id}: 1Click doesn't know this address`);
-      return null;
+      // Not proof that nothing was sent, so this never reads as "no deposit".
+      // Once the address should have closed, a person has to look.
+      if (!closed || r.swap_state === 'EXPIRED') {
+        console.warn(`payment ${r.id}: 1Click doesn't know this address`);
+        return null;
+      }
+      await flag(r.id, 'EXPIRED', 'other',
+        '1Click has no record of this deposit address. Search it on the NEAR Intents Explorer and a block explorer before telling the customer anything.');
+      return 'flagged';
 
     case 'SUCCESS': {
       if (!st.egressTx || st.egressUsdc == null) {
         if (r.swap_state === 'SUCCESS') return null;
         await flag(r.id, 'SUCCESS', 'other',
-          'Swap finished, but its delivery record needs checking by hand: expected exactly one Ethereum TX and an amount. Search the deposit address on the NEAR Intents Explorer, then correct and verify this payment.');
+          'Swap finished, but its delivery record needs checking by hand: expected exactly one Ethereum TX and an amount. Find the delivery on the NEAR Intents Explorer, then an admin adds the TX hash, corrects the amount, and marks the payment verified.');
         return 'flagged';
       }
       const done = await sql`
@@ -107,8 +115,8 @@ async function settle(r: Row): Promise<'completed' | 'flagged' | 'updated' | nul
           amount_usd = ROUND(${st.egressUsdc}::numeric, 2),
           verification_status = 'verified',
           verified_at = NOW(),
-          issue_type = CASE WHEN swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN NULL ELSE issue_type END,
-          issue_notes = CASE WHEN swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN NULL ELSE issue_notes END,
+          issue_type = CASE WHEN issue_notes LIKE 'Swap check:%' THEN NULL ELSE issue_type END,
+          issue_notes = CASE WHEN issue_notes LIKE 'Swap check:%' THEN NULL ELSE issue_notes END,
           swap_state = 'COMPLETED'
         WHERE id = ${r.id} AND verification_status = 'pending' AND swap_channel_id IS NOT NULL
         RETURNING id` as { id: number }[];
@@ -128,11 +136,11 @@ async function settle(r: Row): Promise<'completed' | 'flagged' | 'updated' | nul
     case 'INCOMPLETE_DEPOSIT':
       if (r.swap_state === 'INCOMPLETE_DEPOSIT') return null;
       await flag(r.id, 'INCOMPLETE_DEPOSIT', 'underpaid',
-        'Deposit is below the minimum, so it has not been swapped. The customer may be able to top up to the same address before the deadline; otherwise 1Click refunds it to the refund address after the deadline.');
+        'Deposit is below the minimum, so it has not been swapped. The customer may be able to top up to the same address before the deadline; otherwise 1Click refunds it to the refund address.');
       return 'flagged';
 
     case 'PENDING_DEPOSIT':
-      if (!pastDeadline || r.swap_state === 'EXPIRED') return null;
+      if (!closed || r.swap_state === 'EXPIRED') return null;
       await flag(r.id, 'EXPIRED', 'other',
         'Deposit address EXPIRED with nothing received. Tell the customer not to send to it, and open a new one if they still intend to pay.');
       return 'flagged';
@@ -141,7 +149,7 @@ async function settle(r: Row): Promise<'completed' | 'flagged' | 'updated' | nul
       // KNOWN_DEPOSIT_TX, PROCESSING, or a status added later.
       if (r.swap_state === 'EXPIRED') {
         await flag(r.id, st.state, 'other',
-          'A deposit arrived AFTER the address deadline. Search the deposit address on the NEAR Intents Explorer, and contact 1Click if it doesn\'t complete.');
+          'A deposit arrived AFTER the address closed. Search the deposit address on the NEAR Intents Explorer, and contact 1Click if it doesn\'t complete.');
         return 'flagged';
       }
       if (st.state === r.swap_state) return null;
@@ -157,9 +165,9 @@ async function main() {
     WHERE op.swap_provider = 'oneclick'
       AND op.verification_status = 'pending'
       AND op.swap_state NOT IN ('REFUNDED', 'FAILED')
-      AND op.swap_expires_at > NOW() - make_interval(days => ${LATE_POLL_DAYS})
+      AND (op.swap_state NOT IN ('PENDING_DEPOSIT', 'EXPIRED')
+           OR op.swap_expires_at > NOW() - make_interval(days => ${LATE_POLL_DAYS}))
     ORDER BY op.id
-    LIMIT 100
   ` as Row[];
   console.log(`${rows.length} pending swap payment(s)`);
 
@@ -173,6 +181,24 @@ async function main() {
       console.error(`payment ${r.id}: ${e instanceof Error ? e.message : e}`);
     }
   }
+
+  // A swap verified here or in the drawer whose follow-up recompute failed
+  // would leave its order unpaid with nothing to retry it. Recomputing every
+  // order with a recently verified swap is idempotent and catches that.
+  const recent = await sql`
+    SELECT DISTINCT sales_order_id FROM order_payments
+    WHERE swap_provider = 'oneclick' AND verification_status = 'verified'
+      AND verified_at > NOW() - make_interval(days => ${LATE_POLL_DAYS})
+  ` as { sales_order_id: number }[];
+  for (const o of recent) {
+    try {
+      await recompute(o.sales_order_id);
+    } catch (e) {
+      counts.errors++;
+      console.error(`order ${o.sales_order_id} recompute: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
   console.log(`completed=${counts.completed} flagged=${counts.flagged} state_updates=${counts.updated} errors=${counts.errors}`);
 }
 

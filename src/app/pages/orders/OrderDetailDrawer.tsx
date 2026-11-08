@@ -134,6 +134,11 @@ function SwapDepositCard({ p, canCheck, checking, onCheck }: { p: Payment; canCh
           </p>
         </>
       )}
+      {p.swap_refund_address && (
+        <p className="text-xs text-amber-700 break-all">
+          Refunds go to {r.networkLabel} address <code>{String(p.swap_refund_address)}</code>
+        </p>
+      )}
       {canCheck && (
         <div className="flex gap-2">
           {!closed && !late && !depositArrived && (
@@ -342,13 +347,21 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
     setSwapBusy(true); setAddErr('');
     try {
       const dep = await openOneClickDeposit(swapQuote);
-      await createSwapPay({
-        orderId, walletId: usdcWallet.id,
+      const saved = await createSwapPay({
+        orderId, walletId: usdcWallet.id, destAddress: dep.destAddress,
         estUsdc: Number(dep.estUsdc.toFixed(2)),
         srcAsset: dep.route, srcAmount: dep.srcAmount, minSrcAmount: dep.minSrcAmount,
         depositAddress: dep.depositAddress, expiresAt: dep.expiresAt, refundAddress: dep.refundAddress,
         correlationId: dep.correlationId, signature: dep.signature,
-      });
+      }) as unknown[];
+      if (!saved || saved.length === 0) {
+        // The server refused: the USDC/Ethereum wallet was edited or
+        // deactivated in Settings since the quote. The address was never
+        // shown to anyone, so nothing is lost by abandoning it.
+        clearSwapQuote();
+        setAddErr('The USDC/Ethereum wallet changed in Settings since this quote, so nothing was saved. Get a new quote.');
+        return;
+      }
       await recomputePayment({ orderId });
       setAddOpen(false); setSwapUsd(''); setSwapRefund(null); clearSwapQuote(); setAddMode('direct');
       reloadPay();
@@ -502,7 +515,11 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
           )}
           {p.issue_type && <p className="text-xs text-red-600">Issue: {String(p.issue_type)} — {String(p.issue_notes)}</p>}
           {!readOnlyRole && <div className="flex gap-2 pt-1">
-            {p.verification_status !== 'verified' && p.swap_channel_id == null && (
+            {/* Swap rows settle themselves. The exception is a finished swap
+                the sync couldn't read cleanly: an admin adds the delivery TX
+                and amount by hand, then verifies it here. */}
+            {p.verification_status !== 'verified'
+              && (p.swap_channel_id == null || (isAdmin && p.swap_state === 'SUCCESS' && !!p.tx_hash)) && (
               <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => doVerify(Number(p.id))} disabled={verifying}>
                 <Check className="h-3 w-3 mr-1" /> Mark Verified
               </Button>

@@ -138,19 +138,37 @@ function bech32Polymod(values: number[]): number {
   return chk >>> 0;
 }
 
-/** bc1 segwit address: bech32 for witness v0, bech32m for v1 and up. */
-function isBech32Btc(addr: string): boolean {
-  if (!/^bc1[a-z0-9]{8,87}$/.test(addr)) return false;
+/**
+ * bc1 segwit address per BIP-173/350: a single case, witness version 0–16,
+ * bech32 checksum for v0 and bech32m for v1+, and a witness program of a
+ * legal length with zero padding.
+ */
+function isSegwitBtc(input: string): boolean {
+  if (input !== input.toLowerCase() && input !== input.toUpperCase()) return false;
+  const addr = input.toLowerCase();
+  if (!addr.startsWith('bc1') || addr.length > 90) return false;
   const data = [...addr.slice(3)].map(c => BECH32.indexOf(c));
-  if (data.includes(-1)) return false;
+  if (data.length < 7 || data.includes(-1)) return false; // version + 6-char checksum
+  const version = data[0];
+  if (version > 16) return false;
   const hrp = [3, 3, 0, 2, 3]; // "bc", expanded per BIP-173
-  const expected = data[0] === 0 ? 1 : 0x2bc830a3;
-  return bech32Polymod([...hrp, ...data]) === expected;
+  if (bech32Polymod([...hrp, ...data]) !== (version === 0 ? 1 : 0x2bc830a3)) return false;
+  // Regroup the program's 5-bit values into bytes; leftover bits are
+  // padding, which must be under 5 bits and all zero.
+  let acc = 0, bits = 0, bytes = 0;
+  for (const v of data.slice(1, -6)) {
+    acc = ((acc << 5) | v) & 0xfff;
+    bits += 5;
+    if (bits >= 8) { bits -= 8; bytes++; }
+  }
+  if (bits >= 5 || (acc & ((1 << bits) - 1)) !== 0) return false;
+  if (bytes < 2 || bytes > 40) return false;
+  return version !== 0 || bytes === 20 || bytes === 32;
 }
 
 async function isValidAddress(route: SwapRoute, address: string): Promise<boolean> {
   if (route === 'USDT_TRON') return (await base58CheckVersion(address)) === 0x41;
-  if (address.startsWith('bc1')) return isBech32Btc(address);
+  if (/^bc1/i.test(address)) return isSegwitBtc(address);
   const v = await base58CheckVersion(address);
   return v === 0x00 || v === 0x05;
 }
@@ -236,6 +254,7 @@ async function flexCoveringOwed(t: QuoteTarget, ask: bigint, dry: boolean, deadl
   const owed = usdToUnits(t.owedUsd);
   let res = await postQuote(quoteBody(t, 'FLEX_INPUT', ask, dry, deadline));
   let minOut = BigInt(res.quote.minAmountOut);
+  if (minOut <= 0n) throw new Error('1Click returned an unusable quote. Try again in a minute.');
   if (minOut < owed) {
     ask = roundUpAsk((ask * owed) / minOut + 1n, SWAP_ROUTES[t.route]);
     res = await postQuote(quoteBody(t, 'FLEX_INPUT', ask, dry, deadline));
@@ -302,8 +321,14 @@ export async function openOneClickDeposit(q: OneClickQuote): Promise<OneClickDep
   const echo = res.quoteRequest ?? {};
   const matches = echo.recipient === q.destAddress && echo.refundTo === q.refundAddress
     && echo.originAsset === r.assetId && echo.destinationAsset === DEST_ASSET
-    && echo.swapType === 'FLEX_INPUT' && String(echo.amount) === ask.toString();
+    && echo.swapType === 'FLEX_INPUT' && String(echo.amount) === ask.toString()
+    && echo.depositType === 'ORIGIN_CHAIN' && echo.refundType === 'ORIGIN_CHAIN'
+    && echo.recipientType === 'DESTINATION_CHAIN';
   if (!matches) throw new Error('1Click\'s response didn\'t match this quote, so no address was saved. Get a new quote.');
+  const swapsUntilMs = Date.parse(String(echo.deadline ?? ''));
+  if (!(swapsUntilMs >= Date.now() + SEND_WINDOW_HOURS * 3_600_000)) {
+    throw new Error(`1Click would stop swapping this deposit within ${SEND_WINDOW_HOURS} hours, which is shorter than the time customers are given. Get a new quote.`);
+  }
 
   const { depositAddress, depositMemo } = res.quote;
   if (!depositAddress || !(await isValidAddress(q.route, depositAddress))) {
@@ -311,9 +336,10 @@ export async function openOneClickDeposit(q: OneClickQuote): Promise<OneClickDep
   }
   if (depositMemo) throw new Error('1Click wants a memo on this deposit, which this flow doesn\'t support. Take USDC or USDT directly.');
 
+  // When the address itself closes: normally 72h after swaps stop.
   const expiresMs = Date.parse(res.quote.deadline ?? '');
-  if (!(expiresMs > Date.now() + SEND_WINDOW_HOURS * 3_600_000)) {
-    throw new Error(`1Click would close this address within ${SEND_WINDOW_HOURS} hours, which is shorter than the time customers are given. Get a new quote.`);
+  if (!(expiresMs >= swapsUntilMs)) {
+    throw new Error('1Click would close this address before it stops swapping, which shouldn\'t happen. Get a new quote.');
   }
 
   return {

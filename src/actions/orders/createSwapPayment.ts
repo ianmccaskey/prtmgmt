@@ -7,6 +7,11 @@ import { action } from '@uibakery/data';
  * drawer's Check Swap button) completes it with the real delivery TX and
  * amount. swap_channel_id holds the deposit address, which is how 1Click
  * identifies the swap. Callers chain recomputePaymentStatus after.
+ *
+ * Inserts nothing (empty RETURNING) unless the wallet row still is the
+ * active USDC/Ethereum wallet at the address the swap delivers to: a wallet
+ * edited in Settings after the quote would otherwise leave this record
+ * pointing at a different address from the money.
  */
 export function createSwapPayment() {
   return action('createSwapPayment', 'SQL', {
@@ -18,12 +23,13 @@ export function createSwapPayment() {
         swap_provider, swap_channel_id, swap_deposit_address, swap_expires_at, swap_state,
         swap_src_asset, swap_src_amount, swap_min_src_amount, swap_refund_address,
         swap_correlation_id, swap_signature
-      ) VALUES (
+      )
+      SELECT
         {{params.orderId}}::bigint,
         'incoming',
         'USDC',
         'ethereum',
-        {{params.walletId}}::bigint,
+        rw.id,
         NOW(),
         -- amount_asset means "amount in THIS row's asset" (USDC); the source
         -- side lives in the swap_src columns, not here. NULL avoids displays
@@ -42,7 +48,10 @@ export function createSwapPayment() {
         {{params.refundAddress}},
         NULLIF({{params.correlationId}}, ''),
         NULLIF({{params.signature}}, '')
-      )
+      FROM receive_wallets rw
+      WHERE rw.id = {{params.walletId}}::bigint
+        AND rw.address = {{params.destAddress}}
+        AND rw.asset = 'USDC' AND rw.network = 'ethereum' AND rw.is_active
       RETURNING id, sales_order_id
     `,
   });

@@ -5,9 +5,9 @@ import { action } from '@uibakery/data';
  * delivery TX hash and the ACTUAL delivered amount replace the estimate, and
  * the payment verifies. Refuses (0 rows) unless the payment is still the
  * pending swap it claims to be, so the sync and the drawer button can't
- * double-settle. A "too small" or "expired" note written earlier by the sync
- * is cleared, because a top-up or late swap has now resolved it. Callers
- * chain recomputePaymentStatus after.
+ * double-settle. Notes the sync wrote (they start "Swap check:") are
+ * cleared, because the swap has now resolved them; a note a person wrote is
+ * kept. Callers chain recomputePaymentStatus after.
  *
  * Trust model: like every money action in this browser-only app (Correct
  * Amount, Fix Wallet, Mark Verified), the values come from staff's
@@ -25,8 +25,8 @@ export function completeSwapPayment() {
           verification_status = 'verified',
           verified_at = NOW(),
           verified_by_user_id = {{params.userId}}::bigint,
-          issue_type = CASE WHEN op.swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN NULL ELSE op.issue_type END,
-          issue_notes = CASE WHEN op.swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN NULL ELSE op.issue_notes END,
+          issue_type = CASE WHEN op.issue_notes LIKE 'Swap check:%' THEN NULL ELSE op.issue_type END,
+          issue_notes = CASE WHEN op.issue_notes LIKE 'Swap check:%' THEN NULL ELSE op.issue_notes END,
           swap_state = 'COMPLETED'
       WHERE op.id = {{params.paymentId}}::bigint
         AND op.swap_channel_id IS NOT NULL
