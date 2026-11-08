@@ -71,6 +71,8 @@ export function ChannelBadge({ channel }: { channel?: string }) {
     discord: 'bg-violet-50 text-violet-700 border-violet-200',
     whatsapp: 'bg-green-50 text-green-700 border-green-200',
     root: 'bg-amber-50 text-amber-700 border-amber-200',
+    // written only by the P² Collective store (p2collective.app) once a payment verified on-chain; never by New Order
+    storefront: 'bg-yellow-50 text-yellow-800 border-yellow-300',
     other: 'bg-gray-50 text-gray-600 border-gray-200',
   };
   if (!channel) return null;

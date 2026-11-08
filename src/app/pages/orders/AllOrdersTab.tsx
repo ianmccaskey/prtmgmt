@@ -42,7 +42,7 @@ const FOCUS_LABELS: Record<string, string> = {
 
 const STATUS_OPTIONS = ['', 'quote', 'confirmed', 'partially_shipped', 'shipped', 'delivered', 'cancelled'];
 const PAYMENT_OPTIONS = ['', 'unpaid', 'partial_paid', 'paid', 'refunded'];
-const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
+const CHANNEL_OPTIONS = ['', 'telegram', 'signal', 'discord', 'whatsapp', 'root', 'storefront', 'other'];
 
 export function AllOrdersTab() {
   const { isWarehouse, isLogistics, isViewer, isSalesRep, profileId } = useAppUser();
