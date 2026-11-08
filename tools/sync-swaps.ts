@@ -138,17 +138,33 @@ async function settle(r: Row): Promise<Outcome> {
         return flagged(await flag(r, 'SUCCESS', 'other',
           'Swap finished, but its delivery record needs checking by hand: expected exactly one Ethereum TX and an amount. An admin finds the delivery on the NEAR Intents Explorer and records it with "Record delivery by hand".'));
       }
+      // One receipt can't pay twice: refuse a delivery TX already credited to
+      // another live incoming payment (e.g. a rep also entered it as a direct
+      // payment). completeSwapPayment.ts applies the same rule.
+      const dup = await sql`
+        SELECT id FROM order_payments
+        WHERE id <> ${r.id} AND direction = 'incoming' AND verification_status <> 'failed'
+          AND LOWER(tx_hash) = LOWER(${st.egressTx})
+        LIMIT 1` as { id: number }[];
+      if (dup.length) {
+        return flagged(await flag(r, 'SUCCESS', 'other',
+          `Swap finished, but its delivery TX is already recorded on payment #${dup[0].id}. Check whether that record is a duplicate of this swap before crediting anything.`));
+      }
       const done = await sql`
-        UPDATE order_payments SET
+        UPDATE order_payments op SET
           tx_hash = ${st.egressTx},
           amount_usd = ROUND(${st.egressUsdc}::numeric, 2),
           verification_status = 'verified',
           verified_at = NOW(),
-          issue_type = CASE WHEN issue_notes LIKE 'Swap check:%' THEN NULL ELSE issue_type END,
-          issue_notes = CASE WHEN issue_notes LIKE 'Swap check:%' THEN NULL ELSE issue_notes END,
+          issue_type = CASE WHEN op.issue_notes LIKE 'Swap check:%' THEN NULL ELSE op.issue_type END,
+          issue_notes = CASE WHEN op.issue_notes LIKE 'Swap check:%' THEN NULL ELSE op.issue_notes END,
           swap_state = 'COMPLETED'
-        WHERE id = ${r.id} AND verification_status = 'pending' AND swap_channel_id IS NOT NULL
-        RETURNING id` as { id: number }[];
+        WHERE op.id = ${r.id} AND op.verification_status = 'pending' AND op.swap_channel_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM order_payments o2
+            WHERE o2.id <> op.id AND o2.direction = 'incoming' AND o2.verification_status <> 'failed'
+              AND LOWER(o2.tx_hash) = LOWER(${st.egressTx}))
+        RETURNING op.id` as { id: number }[];
       if (!done.length) return null;
       await recompute(r.sales_order_id);
       return 'completed';

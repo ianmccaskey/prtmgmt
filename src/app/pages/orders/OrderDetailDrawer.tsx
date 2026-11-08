@@ -390,7 +390,12 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
     try {
       const st = await getOneClickStatus(String(p.swap_deposit_address));
       if (st.state === 'SUCCESS' && st.egressTx && st.egressUsdc != null) {
-        await completeSwapPay({ paymentId: Number(p.id), egressTx: st.egressTx, egressUsdc: st.egressUsdc, userId: profileId });
+        const res = await completeSwapPay({ paymentId: Number(p.id), egressTx: st.egressTx, egressUsdc: st.egressUsdc, userId: profileId }) as unknown[];
+        if (!res || res.length === 0) {
+          alert('Not settled: this delivery TX is already recorded on another payment, or this payment changed meanwhile. Check for a duplicate record before doing anything else.');
+          reloadPay();
+          return;
+        }
         await recomputePayment({ orderId });
         reloadPay();
         parentReload();
@@ -419,14 +424,18 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
         txHash: tx, requiredUsd: amt, requiredLabel: 'amount entered',
         swapFlowLocation: 'in Add Payment',
       });
-      if (check.state === 'error') {
-        if (!window.confirm(`The on-chain check couldn't run: ${check.msg}\n\nVerify this payment anyway?`)) return;
-      } else if (check.state !== 'ok') {
-        setRecErr(`${check.msg} Enter exactly what the TX delivered.`);
+      // No override: an unchecked amount must never become verified revenue.
+      if (check.state !== 'ok') {
+        setRecErr(check.state === 'error'
+          ? `The on-chain check couldn't run, so nothing was saved: ${check.msg}`
+          : `${check.msg} Enter exactly what this TX delivered.`);
         return;
       }
       const res = await completeSwapPay({ paymentId: Number(p.id), egressTx: tx, egressUsdc: amt, userId: profileId }) as unknown[];
-      if (!res || res.length === 0) { setRecErr('This payment was settled or changed meanwhile. Close the drawer and reopen it.'); return; }
+      if (!res || res.length === 0) {
+        setRecErr('Not saved: this TX is already recorded on another payment, or this payment changed meanwhile. Check for a duplicate record.');
+        return;
+      }
       await recomputePayment({ orderId });
       setRecoverId(null); setRecTx(''); setRecAmount('');
       reloadPay();
@@ -568,6 +577,8 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                 <p className="text-xs text-muted-foreground">
                   Find this swap&apos;s delivery on the NEAR Intents Explorer (search the deposit address), then enter its
                   Ethereum TX and the USDC it delivered. Both are checked on-chain before the payment verifies.
+                  If the delivery came in several TXs, record one here and add each of the others with
+                  Add Payment → Direct crypto. A TX can only ever be credited once.
                 </p>
                 <Input placeholder="0x… delivery TX hash" value={recTx} onChange={e => { setRecTx(e.target.value); setRecErr(''); }}
                   className="h-8 font-mono text-xs" />

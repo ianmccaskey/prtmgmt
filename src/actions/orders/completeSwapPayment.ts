@@ -5,7 +5,9 @@ import { action } from '@uibakery/data';
  * delivery TX hash and the ACTUAL delivered amount replace the estimate, and
  * the payment verifies. Refuses (0 rows) unless the payment is still the
  * pending swap it claims to be, so the sync and the drawer button can't
- * double-settle. Notes the sync wrote (they start "Swap check:") are
+ * double-settle, and also refuses a delivery TX already credited to another
+ * live incoming payment, so one receipt can't pay twice (e.g. a rep also
+ * entered it as a direct payment). Notes the sync wrote (they start "Swap check:") are
  * cleared, because the swap has now resolved them; a note a person wrote is
  * kept. Callers chain recomputePaymentStatus after.
  *
@@ -31,6 +33,12 @@ export function completeSwapPayment() {
       WHERE op.id = {{params.paymentId}}::bigint
         AND op.swap_channel_id IS NOT NULL
         AND op.verification_status = 'pending'
+        AND NOT EXISTS (
+          SELECT 1 FROM order_payments o2
+          WHERE o2.id <> op.id AND o2.direction = 'incoming'
+            AND o2.verification_status <> 'failed'
+            AND LOWER(o2.tx_hash) = LOWER({{params.egressTx}})
+        )
       RETURNING op.id, op.sales_order_id, op.amount_usd
     `,
   });
