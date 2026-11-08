@@ -8,9 +8,11 @@
  *  - no deposit by the time the address closes → marks it EXPIRED
  *  - otherwise → records the latest state so the drawer shows progress
  *
- * Every unresolved row is checked on every run. An address that never saw
- * money is dropped a week after it closes; a row with money in it is
- * checked until it resolves. Old Chainflip rows are ignored: all finished.
+ * Once a deposit has been seen, a row never goes back to EXPIRED: it is
+ * checked until it resolves. An address that never saw money is dropped a
+ * week after it closes. Rows are checked in random order within a time
+ * budget, so slow ones can't starve the rest. Old Chainflip rows are
+ * ignored: they are all finished.
  *
  * Runs from .github/workflows/swaps-sync.yml (cron-job.org, hourly); safe to
  * run locally too. Setup: DATABASE_URL in the environment (or .env.local).
@@ -31,18 +33,29 @@ const sql = new SQL(url);
 const apiBase = process.env.ONECLICK_API_BASE || undefined;
 
 const LATE_POLL_DAYS = 7;
+const CONCURRENCY = 4;
+// The workflow is killed at 10 minutes; leave room for the repair pass.
+const POLL_BUDGET_MS = 6 * 60_000;
 
 // Notes this job writes start with this, so it can replace or clear its own
 // notes without touching one a person wrote. completeSwapPayment.ts clears
-// the same prefix.
+// the same prefix, and the drawer's Flag Issue strips it when a person saves.
 const AUTO = 'Swap check: ';
+const isAuto = (n: string | null) => !!n && n.startsWith('Swap check:');
 
-type Row = { id: number; sales_order_id: number; swap_deposit_address: string; swap_state: string | null; swap_expires_at: string | null };
+type Row = {
+  id: number; sales_order_id: number; swap_deposit_address: string;
+  swap_state: string | null; swap_expires_at: string | null; issue_notes: string | null;
+};
 
-async function recompute(orderId: number) {
-  // Same derivation as src/actions/orders/recomputePaymentStatus.ts. Keep
-  // the two identical.
-  await sql`
+/**
+ * Re-derives payment_status: for one order, or (orderId null) for every
+ * order with a verified 1Click swap. Same derivation as
+ * src/actions/orders/recomputePaymentStatus.ts; keep the two identical.
+ * Writes only where the stored status is stale.
+ */
+async function recompute(orderId: number | null) {
+  const fixed = await sql`
     UPDATE sales_orders so
     SET payment_status = sub.derived
     FROM (
@@ -65,18 +78,29 @@ async function recompute(orderId: number) {
         GROUP BY sales_order_id
       ) p ON p.sales_order_id = o.id
       WHERE o.id = ${orderId}
+         OR (${orderId}::bigint IS NULL AND o.id IN (
+              SELECT sales_order_id FROM order_payments
+              WHERE swap_provider = 'oneclick' AND verification_status = 'verified'))
     ) sub
-    WHERE so.id = sub.id`;
+    WHERE so.id = sub.id AND so.payment_status IS DISTINCT FROM sub.derived
+    RETURNING so.id` as { id: number }[];
+  return fixed.length;
 }
 
-/** Moves the row to `state` and records the issue, unless a person already wrote a note. */
-async function flag(id: number, state: string, issueType: string, note: string) {
+/**
+ * Moves the row to `state` and records the issue, unless a person already
+ * wrote a note. Returns false when nothing would change.
+ */
+async function flag(r: Row, state: string, issueType: string, note: string): Promise<boolean> {
+  const staffNote = !!r.issue_notes && !isAuto(r.issue_notes);
+  if (r.swap_state === state && (r.issue_notes === AUTO + note || staffNote)) return false;
   await sql`
     UPDATE order_payments SET
       issue_type = CASE WHEN COALESCE(issue_notes, '') = '' OR issue_notes LIKE 'Swap check:%' THEN ${issueType} ELSE issue_type END,
       issue_notes = CASE WHEN COALESCE(issue_notes, '') = '' OR issue_notes LIKE 'Swap check:%' THEN ${AUTO + note} ELSE issue_notes END,
       swap_state = ${state}
-    WHERE id = ${id} AND verification_status = 'pending'`;
+    WHERE id = ${r.id} AND verification_status = 'pending'`;
+  return true;
 }
 
 function refundNote(st: OneClickStatus, heading: string) {
@@ -85,29 +109,34 @@ function refundNote(st: OneClickStatus, heading: string) {
   return `${heading}${amount}${reason} Check the refund address on this payment, then re-collect from the customer if needed.`;
 }
 
-/** Returns which counter this row should bump, or null for no change. */
-async function settle(r: Row): Promise<'completed' | 'flagged' | 'updated' | null> {
+type Outcome = 'completed' | 'flagged' | 'updated' | null;
+const flagged = (changed: boolean): Outcome => (changed ? 'flagged' : null);
+
+async function settle(r: Row): Promise<Outcome> {
   const st = await getOneClickStatus(r.swap_deposit_address, apiBase);
   const closed = !!r.swap_expires_at && Date.parse(r.swap_expires_at) < Date.now();
+  // Only an address that never saw money can be called EXPIRED.
+  const neverFunded = r.swap_state === 'PENDING_DEPOSIT';
 
   switch (st.state) {
     case 'NOT_FOUND':
       // Not proof that nothing was sent, so this never reads as "no deposit".
-      // Once the address should have closed, a person has to look.
       if (!closed || r.swap_state === 'EXPIRED') {
         console.warn(`payment ${r.id}: 1Click doesn't know this address`);
         return null;
       }
-      await flag(r.id, 'EXPIRED', 'other',
-        '1Click has no record of this deposit address. Search it on the NEAR Intents Explorer and a block explorer before telling the customer anything.');
-      return 'flagged';
+      if (neverFunded) {
+        return flagged(await flag(r, 'EXPIRED', 'other',
+          '1Click has no record of this deposit address. Search it on the NEAR Intents Explorer and a block explorer before telling the customer anything.'));
+      }
+      // Funded earlier: keep the state, so the row stays watched.
+      return flagged(await flag(r, String(r.swap_state), 'other',
+        '1Click no longer recognises this deposit address, although a deposit was seen earlier. Search it on the NEAR Intents Explorer and contact 1Click.'));
 
     case 'SUCCESS': {
       if (!st.egressTx || st.egressUsdc == null) {
-        if (r.swap_state === 'SUCCESS') return null;
-        await flag(r.id, 'SUCCESS', 'other',
-          'Swap finished, but its delivery record needs checking by hand: expected exactly one Ethereum TX and an amount. Find the delivery on the NEAR Intents Explorer, then an admin adds the TX hash, corrects the amount, and marks the payment verified.');
-        return 'flagged';
+        return flagged(await flag(r, 'SUCCESS', 'other',
+          'Swap finished, but its delivery record needs checking by hand: expected exactly one Ethereum TX and an amount. An admin finds the delivery on the NEAR Intents Explorer and records it with "Record delivery by hand".'));
       }
       const done = await sql`
         UPDATE order_payments SET
@@ -126,31 +155,25 @@ async function settle(r: Row): Promise<'completed' | 'flagged' | 'updated' | nul
     }
 
     case 'REFUNDED':
-      await flag(r.id, 'REFUNDED', 'other', refundNote(st, 'Swap REFUNDED: the deposit went back to the refund address.'));
-      return 'flagged';
+      return flagged(await flag(r, 'REFUNDED', 'other', refundNote(st, 'Swap REFUNDED: the deposit went back to the refund address.')));
 
     case 'FAILED':
-      await flag(r.id, 'FAILED', 'other', refundNote(st, 'Swap FAILED: 1Click reports an error.'));
-      return 'flagged';
+      return flagged(await flag(r, 'FAILED', 'other', refundNote(st, 'Swap FAILED: 1Click reports an error.')));
 
     case 'INCOMPLETE_DEPOSIT':
-      if (r.swap_state === 'INCOMPLETE_DEPOSIT') return null;
-      await flag(r.id, 'INCOMPLETE_DEPOSIT', 'underpaid',
-        'Deposit is below the minimum, so it has not been swapped. The customer may be able to top up to the same address before the deadline; otherwise 1Click refunds it to the refund address.');
-      return 'flagged';
+      return flagged(await flag(r, 'INCOMPLETE_DEPOSIT', 'underpaid',
+        'Deposit is below the minimum, so it has not been swapped. The customer may be able to top up to the same address before the deadline; otherwise 1Click refunds it to the refund address.'));
 
     case 'PENDING_DEPOSIT':
-      if (!closed || r.swap_state === 'EXPIRED') return null;
-      await flag(r.id, 'EXPIRED', 'other',
-        'Deposit address EXPIRED with nothing received. Tell the customer not to send to it, and open a new one if they still intend to pay.');
-      return 'flagged';
+      if (!closed || !neverFunded) return null;
+      return flagged(await flag(r, 'EXPIRED', 'other',
+        'Deposit address EXPIRED with nothing received. Tell the customer not to send to it, and open a new one if they still intend to pay.'));
 
     default:
       // KNOWN_DEPOSIT_TX, PROCESSING, or a status added later.
       if (r.swap_state === 'EXPIRED') {
-        await flag(r.id, st.state, 'other',
-          'A deposit arrived AFTER the address closed. Search the deposit address on the NEAR Intents Explorer, and contact 1Click if it doesn\'t complete.');
-        return 'flagged';
+        return flagged(await flag(r, st.state, 'other',
+          'A deposit arrived AFTER the address closed. Search the deposit address on the NEAR Intents Explorer, and contact 1Click if it doesn\'t complete.'));
       }
       if (st.state === r.swap_state) return null;
       await sql`UPDATE order_payments SET swap_state = ${st.state} WHERE id = ${r.id} AND verification_status = 'pending'`;
@@ -159,47 +182,47 @@ async function settle(r: Row): Promise<'completed' | 'flagged' | 'updated' | nul
 }
 
 async function main() {
+  const counts = { completed: 0, flagged: 0, updated: 0, errors: 0, repaired: 0 };
+
+  // First, so it runs even if polling uses the whole budget: a swap verified
+  // here or in the drawer whose follow-up recompute failed would otherwise
+  // leave its order showing unpaid.
+  try { counts.repaired += await recompute(null); }
+  catch (e) { counts.errors++; console.error(`repair pass: ${e instanceof Error ? e.message : e}`); }
+
   const rows = await sql`
-    SELECT op.id, op.sales_order_id, op.swap_deposit_address, op.swap_state, op.swap_expires_at
+    SELECT op.id, op.sales_order_id, op.swap_deposit_address, op.swap_state, op.swap_expires_at, op.issue_notes
     FROM order_payments op
     WHERE op.swap_provider = 'oneclick'
       AND op.verification_status = 'pending'
       AND op.swap_state NOT IN ('REFUNDED', 'FAILED')
       AND (op.swap_state NOT IN ('PENDING_DEPOSIT', 'EXPIRED')
            OR op.swap_expires_at > NOW() - make_interval(days => ${LATE_POLL_DAYS}))
-    ORDER BY op.id
+    ORDER BY random()
   ` as Row[];
   console.log(`${rows.length} pending swap payment(s)`);
 
-  const counts = { completed: 0, flagged: 0, updated: 0, errors: 0 };
-  for (const r of rows) {
-    try {
-      const outcome = await settle(r);
-      if (outcome) counts[outcome]++;
-    } catch (e) {
-      counts.errors++;
-      console.error(`payment ${r.id}: ${e instanceof Error ? e.message : e}`);
+  const started = Date.now();
+  let next = 0;
+  const worker = async () => {
+    while (next < rows.length && Date.now() - started < POLL_BUDGET_MS) {
+      const r = rows[next++];
+      try {
+        const outcome = await settle(r);
+        if (outcome) counts[outcome]++;
+      } catch (e) {
+        counts.errors++;
+        console.error(`payment ${r.id}: ${e instanceof Error ? e.message : e}`);
+      }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  if (next < rows.length) console.warn(`${rows.length - next} swap(s) not checked within the time budget; the next run picks them up`);
 
-  // A swap verified here or in the drawer whose follow-up recompute failed
-  // would leave its order unpaid with nothing to retry it. Recomputing every
-  // order with a recently verified swap is idempotent and catches that.
-  const recent = await sql`
-    SELECT DISTINCT sales_order_id FROM order_payments
-    WHERE swap_provider = 'oneclick' AND verification_status = 'verified'
-      AND verified_at > NOW() - make_interval(days => ${LATE_POLL_DAYS})
-  ` as { sales_order_id: number }[];
-  for (const o of recent) {
-    try {
-      await recompute(o.sales_order_id);
-    } catch (e) {
-      counts.errors++;
-      console.error(`order ${o.sales_order_id} recompute: ${e instanceof Error ? e.message : e}`);
-    }
-  }
+  try { counts.repaired += await recompute(null); }
+  catch (e) { counts.errors++; console.error(`repair pass: ${e instanceof Error ? e.message : e}`); }
 
-  console.log(`completed=${counts.completed} flagged=${counts.flagged} state_updates=${counts.updated} errors=${counts.errors}`);
+  console.log(`completed=${counts.completed} flagged=${counts.flagged} state_updates=${counts.updated} orders_repaired=${counts.repaired} errors=${counts.errors}`);
 }
 
 main().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });

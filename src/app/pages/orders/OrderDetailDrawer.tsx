@@ -108,9 +108,14 @@ function SwapDepositCard({ p, canCheck, checking, onCheck }: { p: Payment; canCh
         {!closed && ` · send by ${sendBy.toLocaleString()}`}
       </p>
       {closed ? (
-        <p className="text-xs text-amber-800">
-          This address is closed, so the customer must not send to it. Open a new one if they still want to pay.
-        </p>
+        <>
+          <p className="text-xs text-amber-800">
+            This address is closed, so the customer must not send to it. Open a new one if they still want to pay.
+          </p>
+          <p className="text-xs text-amber-700 break-all">
+            Deposit address, for looking the swap up only: <code>{address}</code>
+          </p>
+        </>
       ) : (
         <>
           <p className="text-xs text-amber-800">
@@ -195,6 +200,14 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const clearSwapQuote = () => { swapSeqRef.current++; setSwapQuote(null); };
   const [swapBusy, setSwapBusy] = useState(false);
   const [checkingSwap, setCheckingSwap] = useState<number | null>(null);
+  // Record delivery by hand: for a finished swap the sync couldn't read
+  // cleanly. An admin enters the delivery TX and the amount it ACTUALLY
+  // delivered; both are checked on-chain before the payment verifies.
+  const [recoverId, setRecoverId] = useState<number | null>(null);
+  const [recTx, setRecTx] = useState('');
+  const [recAmount, setRecAmount] = useState('');
+  const [recBusy, setRecBusy] = useState(false);
+  const [recErr, setRecErr] = useState('');
   const [payAsset, setPayAsset] = useState('USDC');
   const [payNetwork, setPayNetwork] = useState('ethereum');
   const [payTx, setPayTx] = useState('');
@@ -248,7 +261,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   };
   // Chain-verify API keys — needed by both the Add Payment form and the
   // fix dialog (declared here, AFTER fixOpen exists).
-  const chainKeysNeeded = addOpen || fixOpen != null;
+  const chainKeysNeeded = addOpen || fixOpen != null || recoverId != null;
   const [moralisRaw] = useLoadAction(getAppSetting, [chainKeysNeeded ? 1 : 0], { key: 'moralis_api_key' }, { enabled: chainKeysNeeded });
   const moralisKey = String(rows<{ value: string }>(moralisRaw)[0]?.value ?? '');
   const [heliusRaw] = useLoadAction(getAppSetting, [chainKeysNeeded ? 1 : 0], { key: 'helius_api_key' }, { enabled: chainKeysNeeded });
@@ -390,6 +403,40 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       setCheckingSwap(null);
     }
   };
+  const doRecoverSwap = async (p: Payment) => {
+    const tx = recTx.trim();
+    const amt = Number(recAmount);
+    if (!/^0x[0-9a-fA-F]{64}$/.test(tx)) { setRecErr('Enter the Ethereum delivery TX hash: 0x followed by 64 hex characters.'); return; }
+    if (!(amt > 0)) { setRecErr('Enter the USDC amount that TX actually delivered.'); return; }
+    setRecBusy(true); setRecErr('');
+    try {
+      // Checked against the wallet this payment already records (joined
+      // even if that wallet has since been deactivated), never a different one.
+      const check = await verifyTxCoversAmount({
+        moralisKey, heliusKey: heliusKey || null,
+        asset: 'USDC', network: 'ethereum', networkLabel: 'Ethereum',
+        wallet: { address: String(p.wallet_address ?? ''), label: 'this payment\'s receive wallet' },
+        txHash: tx, requiredUsd: amt, requiredLabel: 'amount entered',
+        swapFlowLocation: 'in Add Payment',
+      });
+      if (check.state === 'error') {
+        if (!window.confirm(`The on-chain check couldn't run: ${check.msg}\n\nVerify this payment anyway?`)) return;
+      } else if (check.state !== 'ok') {
+        setRecErr(`${check.msg} Enter exactly what the TX delivered.`);
+        return;
+      }
+      const res = await completeSwapPay({ paymentId: Number(p.id), egressTx: tx, egressUsdc: amt, userId: profileId }) as unknown[];
+      if (!res || res.length === 0) { setRecErr('This payment was settled or changed meanwhile. Close the drawer and reopen it.'); return; }
+      await recomputePayment({ orderId });
+      setRecoverId(null); setRecTx(''); setRecAmount('');
+      reloadPay();
+      parentReload();
+    } catch (e: unknown) {
+      setRecErr(e instanceof Error ? e.message : 'Failed to record the delivery');
+    } finally {
+      setRecBusy(false);
+    }
+  };
 
   const doVerify = async (payId: number) => {
     await verifyPayment({ paymentId: payId, userId: profileId });
@@ -401,7 +448,9 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
 
   const doFlag = async () => {
     if (!flagOpen) return;
-    await flagPayment({ paymentId: flagOpen, issueType, issueNotes });
+    // A note a person saves is theirs, even if it started as the swap sync's
+    // automatic note: dropping the prefix stops the sync replacing it.
+    await flagPayment({ paymentId: flagOpen, issueType, issueNotes: issueNotes.replace(/^Swap check:\s*/, '') });
     setFlagOpen(null); setIssueType(''); setIssueNotes('');
     reloadPay();
   };
@@ -513,13 +562,36 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
               <p className="text-xs text-muted-foreground italic">BTC auto-swap expired, nothing received</p>
             )
           )}
+          {isAdmin && p.swap_provider === 'oneclick' && p.verification_status === 'pending' && p.swap_state === 'SUCCESS' && (
+            recoverId === Number(p.id) ? (
+              <div className="border rounded p-2 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Find this swap&apos;s delivery on the NEAR Intents Explorer (search the deposit address), then enter its
+                  Ethereum TX and the USDC it delivered. Both are checked on-chain before the payment verifies.
+                </p>
+                <Input placeholder="0x… delivery TX hash" value={recTx} onChange={e => { setRecTx(e.target.value); setRecErr(''); }}
+                  className="h-8 font-mono text-xs" />
+                <Input type="number" min={0} step="0.01" placeholder="USDC delivered" value={recAmount}
+                  onChange={e => { setRecAmount(e.target.value); setRecErr(''); }} className="h-8" />
+                {recErr && <p className="text-xs text-red-600">{recErr}</p>}
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setRecoverId(null)} disabled={recBusy}>Cancel</Button>
+                  <Button size="sm" className="h-7 text-xs" onClick={() => doRecoverSwap(p)} disabled={recBusy}>
+                    {recBusy ? 'Checking…' : 'Check and verify'}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                setRecoverId(Number(p.id)); setRecTx(''); setRecAmount(''); setRecErr('');
+              }}>
+                <Pencil className="h-3 w-3 mr-1" /> Record delivery by hand
+              </Button>
+            )
+          )}
           {p.issue_type && <p className="text-xs text-red-600">Issue: {String(p.issue_type)} — {String(p.issue_notes)}</p>}
           {!readOnlyRole && <div className="flex gap-2 pt-1">
-            {/* Swap rows settle themselves. The exception is a finished swap
-                the sync couldn't read cleanly: an admin adds the delivery TX
-                and amount by hand, then verifies it here. */}
-            {p.verification_status !== 'verified'
-              && (p.swap_channel_id == null || (isAdmin && p.swap_state === 'SUCCESS' && !!p.tx_hash)) && (
+            {p.verification_status !== 'verified' && p.swap_channel_id == null && (
               <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => doVerify(Number(p.id))} disabled={verifying}>
                 <Check className="h-3 w-3 mr-1" /> Mark Verified
               </Button>
@@ -527,7 +599,9 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setFlagOpen(Number(p.id)); setIssueType(String(p.issue_type || '')); setIssueNotes(String(p.issue_notes || '')); }}>
               <Flag className="h-3 w-3 mr-1" /> Flag Issue
             </Button>
-            {isAdmin && (
+            {/* A pending swap's wallet and TX are set by the swap itself (or by
+                Record delivery by hand), never repointed. */}
+            {isAdmin && !(p.swap_provider === 'oneclick' && p.verification_status === 'pending') && (
               <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
                 const a = String(p.asset); const n = String(p.network);
                 const tx = dbText(p.tx_hash as string | null) || String(p.tx_hash || '');
@@ -718,7 +792,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                     moralisKey, heliusKey: heliusKey || null,
                     asset: payAsset, network: payNetwork, networkLabel: NETWORK_LABELS[payNetwork] || payNetwork,
                     wallet: selectedWallet, txHash: payTx, requiredUsd: Number(payAmount), requiredLabel: 'payment amount',
-                    swapFlowLocation: 'via the BTC → USDC auto-swap mode above',
+                    swapFlowLocation: 'via the BTC or USDT (Tron) auto-swap modes above',
                   });
                   if (checkSeqRef.current !== seq) return; // inputs changed mid-flight — stale
                   setChainCheck(res.state === 'over'
@@ -869,7 +943,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                       moralisKey, heliusKey: heliusKey || null,
                       asset: fixAsset, network: fixNetwork, networkLabel: NETWORK_LABELS[fixNetwork] || fixNetwork,
                       wallet: fixWallet, txHash: fixTx, requiredUsd: amt, requiredLabel: 'payment amount',
-                      swapFlowLocation: 'via the BTC → USDC auto-swap mode in Add Payment',
+                      swapFlowLocation: 'via the BTC or USDT (Tron) auto-swap modes in Add Payment',
                     });
                     if (fixSeqRef.current !== seq) return;
                     setFixCheck(res);
