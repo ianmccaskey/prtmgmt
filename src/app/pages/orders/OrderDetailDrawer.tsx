@@ -305,11 +305,15 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
     if (!(amt > 0)) { setAddErr('Enter the payment amount in USD.'); return; }
     setAddSaving(true); setAddErr('');
     try {
-      await createPayment({
+      const saved = await createPayment({
         orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id,
         spotRateUsd: null, amountAsset: null, amountUsd: amt,
         txHash: payTx.trim() || null, verified: payVerified, userId: profileId,
-      });
+      }) as unknown[];
+      if (!saved || saved.length === 0) {
+        setAddErr(`Not saved: this TX is already credited to another ${payAsset} payment, possibly an auto-swap that recorded itself. Check the order's payments before entering it again.`);
+        return;
+      }
       // Insert is single-statement; the payment-status rollup chains here.
       await recomputePayment({ orderId });
       setAddOpen(false); setPayTx(''); setPayNetNote(''); setPayAmount(''); setPayVerified(true);
@@ -578,7 +582,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
                   Find this swap&apos;s delivery on the NEAR Intents Explorer (search the deposit address), then enter its
                   Ethereum TX and the USDC it delivered. Both are checked on-chain before the payment verifies.
                   If the delivery came in several TXs, record one here and add each of the others with
-                  Add Payment → Direct crypto. A TX can only ever be credited once.
+                  Add Payment → Direct crypto. Each TX can be credited only once.
                 </p>
                 <Input placeholder="0x… delivery TX hash" value={recTx} onChange={e => { setRecTx(e.target.value); setRecErr(''); }}
                   className="h-8 font-mono text-xs" />

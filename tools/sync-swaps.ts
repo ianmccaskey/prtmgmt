@@ -139,11 +139,13 @@ async function settle(r: Row): Promise<Outcome> {
           'Swap finished, but its delivery record needs checking by hand: expected exactly one Ethereum TX and an amount. An admin finds the delivery on the NEAR Intents Explorer and records it with "Record delivery by hand".'));
       }
       // One receipt can't pay twice: refuse a delivery TX already credited to
-      // another live incoming payment (e.g. a rep also entered it as a direct
-      // payment). completeSwapPayment.ts applies the same rule.
+      // another live incoming USDC/Ethereum payment (e.g. a rep also entered
+      // it as a direct payment). completeSwapPayment.ts and
+      // createOrderPayment.ts apply the same rule.
       const dup = await sql`
         SELECT id FROM order_payments
         WHERE id <> ${r.id} AND direction = 'incoming' AND verification_status <> 'failed'
+          AND asset = 'USDC' AND network = 'ethereum'
           AND LOWER(tx_hash) = LOWER(${st.egressTx})
         LIMIT 1` as { id: number }[];
       if (dup.length) {
@@ -163,6 +165,7 @@ async function settle(r: Row): Promise<Outcome> {
           AND NOT EXISTS (
             SELECT 1 FROM order_payments o2
             WHERE o2.id <> op.id AND o2.direction = 'incoming' AND o2.verification_status <> 'failed'
+              AND o2.asset = op.asset AND o2.network = op.network
               AND LOWER(o2.tx_hash) = LOWER(${st.egressTx}))
         RETURNING op.id` as { id: number }[];
       if (!done.length) return null;
