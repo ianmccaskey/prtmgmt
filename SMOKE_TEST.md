@@ -29,6 +29,12 @@ warning banner.
 ## 4. Payments
 - [ ] Add payment (pending) → payment_status unchanged. Mark Verified → recomputes (partial_paid or paid).
 - [ ] Refund task → Mark Sent → Mark Verified → task verified; over-refund flips order to refunded when net ≤ 0.
+- [ ] Settings → Wallets & Config: a mistyped refund address is refused; a real BTC and Tron address both save.
+- [ ] Add Payment → BTC auto-swap → Get Quote shows customer sends, minimum and USDC received; editing the amount or refund address clears the quote.
+- [ ] USDT (Tron) auto-swap at $100 or less shows 1Click's minimum message (while that limit lasts).
+- [ ] Open Deposit Address → pending card with amount, network, address and send-by time; Copy for customer pastes all four.
+- [ ] Send a real deposit → Check swap now settles it: USDC amount and Ethereum hash recorded, payment verified, order payment status updated.
+- [ ] That hash passes the wallet check. An old expired Chainflip payment shows "BTC auto-swap expired, nothing received" with no address.
 
 ## 5. QC roll-up
 - [ ] Add passing HPLC + mass-spec tests → batch flips to passed, purity denormalized.

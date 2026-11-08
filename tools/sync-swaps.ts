@@ -1,18 +1,23 @@
 /**
- * Settles pending Chainflip auto-swap payments (customer sent plain BTC to
- * a deposit channel; the protocol swaps and delivers USDC to our Ethereum
- * wallet). For each pending swap payment, polls the swap status and:
- *  - COMPLETED → writes the destination egress TX hash + ACTUAL USDC
- *    amount, verifies the payment, and recomputes the order's payment
- *    status (same china-aware rollup the app uses)
- *  - FAILED / refunded → flags the payment for review (issue note)
+ * Settles pending 1Click auto-swap payments (customer sent BTC or USDT on
+ * Tron to a one-time address; 1Click delivers USDC to our Ethereum wallet).
+ * There are no webhooks, so each pending swap's status is polled and:
+ *  - SUCCESS → writes the delivery TX hash + ACTUAL USDC amount, verifies
+ *    the payment, and recomputes the order's payment status
+ *  - INCOMPLETE_DEPOSIT / REFUNDED / FAILED → flags the payment for review
+ *  - no deposit by the deadline → marks it EXPIRED
  *  - otherwise → records the latest state so the drawer shows progress
  *
- * Runs from .github/workflows/swaps-sync.yml (cron-job.org, hourly); safe to run
- * locally too. Setup: DATABASE_URL in the environment (or .env.local).
- * No API key needed — Chainflip's swapping service is public.
+ * EXPIRED rows keep being polled for a week, because nothing else would
+ * notice money arriving at an address past its deadline. Old Chainflip rows
+ * are ignored: they are all finished.
+ *
+ * Runs from .github/workflows/swaps-sync.yml (cron-job.org, hourly); safe to
+ * run locally too. Setup: DATABASE_URL in the environment (or .env.local).
+ * No API key needed.
  */
 import { SQL } from 'bun';
+import { getOneClickStatus, OneClickStatus } from '../src/lib/oneClick';
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -22,108 +27,153 @@ if (!url) {
 }
 const sql = new SQL(url);
 
-const SWAP_API = 'https://chainflip-swap.chainflip.io';
+// Test hook: points the status call at a mock instead of the real API.
+const apiBase = process.env.ONECLICK_API_BASE || undefined;
 
-type Row = { id: number; sales_order_id: number; swap_channel_id: string; swap_state: string | null; swap_expires_at: string | null };
+const LATE_POLL_DAYS = 7;
 
-async function getStatus(channelId: string): Promise<{ state: string; egressTx: string | null; egressUsdc: number | null } | null> {
-  const res = await fetch(`${SWAP_API}/v2/swaps/${encodeURIComponent(channelId)}`);
-  if (res.status === 404) return null; // nothing witnessed yet
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const s = await res.json() as { state?: string; swapEgress?: { txRef?: string; amount?: string } };
-  // Strip any colon prefix and prefer a canonical 0x hash — tx_hash must
-  // equal the on-chain USDC deposit hash for the wallet audit to match.
-  const cleanTx = (t?: string | null) => {
-    if (!t) return null;
-    const stripped = t.slice(t.lastIndexOf(':') + 1);
-    return /^0x[0-9a-fA-F]{64}$/.test(stripped) ? stripped : t;
-  };
-  return {
-    state: String(s.state ?? 'WAITING'),
-    egressTx: cleanTx(s.swapEgress?.txRef),
-    egressUsdc: s.swapEgress?.amount != null ? Number(s.swapEgress.amount) / 1e6 : null,
-  };
-}
+type Row = { id: number; sales_order_id: number; swap_deposit_address: string; swap_state: string | null; swap_expires_at: string | null };
 
 async function recompute(orderId: number) {
-  // Mirrors recomputePaymentStatus: china reps' orders read paid; otherwise
-  // derived from verified payments vs total.
+  // Same derivation as src/actions/orders/recomputePaymentStatus.ts. Keep
+  // the two identical.
   await sql`
-    UPDATE sales_orders so SET payment_status = (
-      CASE
-        WHEN (SELECT rp.division FROM user_profiles rp WHERE rp.id = so.sales_rep_user_profile_id) = 'china' THEN 'paid'
-        WHEN COALESCE((SELECT SUM(CASE WHEN op.direction = 'refund' THEN -op.amount_usd ELSE op.amount_usd END)
-                       FROM order_payments op WHERE op.sales_order_id = so.id
-                         AND op.verification_status = 'verified'), 0) >= so.total_usd THEN 'paid'
-        WHEN COALESCE((SELECT SUM(CASE WHEN op.direction = 'refund' THEN -op.amount_usd ELSE op.amount_usd END)
-                       FROM order_payments op WHERE op.sales_order_id = so.id
-                         AND op.verification_status = 'verified'), 0) > 0 THEN 'partial_paid'
-        ELSE 'unpaid'
-      END)
-    WHERE so.id = ${orderId}`;
+    UPDATE sales_orders so
+    SET payment_status = sub.derived
+    FROM (
+      SELECT o.id,
+        CASE
+          WHEN rp.division = 'china' THEN 'paid'
+          WHEN COALESCE(p.refund_cnt, 0) > 0 AND COALESCE(p.net, 0) <= 0 THEN 'refunded'
+          WHEN COALESCE(p.net, 0) >= o.total_usd THEN 'paid'
+          WHEN COALESCE(p.net, 0) > 0 THEN 'partial_paid'
+          ELSE 'unpaid'
+        END AS derived
+      FROM sales_orders o
+      LEFT JOIN user_profiles rp ON rp.id = o.sales_rep_user_profile_id
+      LEFT JOIN (
+        SELECT sales_order_id,
+          SUM(CASE WHEN direction = 'incoming' THEN amount_usd ELSE -amount_usd END) AS net,
+          COUNT(*) FILTER (WHERE direction = 'refund') AS refund_cnt
+        FROM order_payments
+        WHERE verification_status = 'verified'
+        GROUP BY sales_order_id
+      ) p ON p.sales_order_id = o.id
+      WHERE o.id = ${orderId}
+    ) sub
+    WHERE so.id = sub.id`;
+}
+
+/**
+ * Moves the row to `state` and records the issue. An earlier automatic note
+ * is replaced, but a note a rep wrote by hand is kept.
+ */
+async function flag(id: number, state: string, issueType: string, note: string) {
+  await sql`
+    UPDATE order_payments SET
+      issue_type = CASE WHEN swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN ${issueType} ELSE COALESCE(issue_type, ${issueType}) END,
+      issue_notes = CASE WHEN swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN ${note} ELSE COALESCE(NULLIF(issue_notes, ''), ${note}) END,
+      swap_state = ${state}
+    WHERE id = ${id} AND verification_status = 'pending'`;
+}
+
+function refundNote(st: OneClickStatus, heading: string) {
+  const amount = st.refundedAmount ? ` Refunded amount: ${st.refundedAmount}.` : '';
+  const reason = st.refundReason ? ` Reason: ${st.refundReason}.` : '';
+  return `${heading}${amount}${reason} Check the refund address on this payment, then re-collect from the customer if needed.`;
+}
+
+/** Returns which counter this row should bump, or null for no change. */
+async function settle(r: Row): Promise<'completed' | 'flagged' | 'updated' | null> {
+  const st = await getOneClickStatus(r.swap_deposit_address, apiBase);
+  const pastDeadline = !!r.swap_expires_at && Date.parse(r.swap_expires_at) < Date.now();
+
+  switch (st.state) {
+    case 'NOT_FOUND':
+      // Not proof that nothing was sent, so never expire a row on this.
+      console.warn(`payment ${r.id}: 1Click doesn't know this address`);
+      return null;
+
+    case 'SUCCESS': {
+      if (!st.egressTx || st.egressUsdc == null) {
+        if (r.swap_state === 'SUCCESS') return null;
+        await flag(r.id, 'SUCCESS', 'other',
+          'Swap finished, but its delivery record needs checking by hand: expected exactly one Ethereum TX and an amount. Search the deposit address on the NEAR Intents Explorer, then correct and verify this payment.');
+        return 'flagged';
+      }
+      const done = await sql`
+        UPDATE order_payments SET
+          tx_hash = ${st.egressTx},
+          amount_usd = ROUND(${st.egressUsdc}::numeric, 2),
+          verification_status = 'verified',
+          verified_at = NOW(),
+          issue_type = CASE WHEN swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN NULL ELSE issue_type END,
+          issue_notes = CASE WHEN swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN NULL ELSE issue_notes END,
+          swap_state = 'COMPLETED'
+        WHERE id = ${r.id} AND verification_status = 'pending' AND swap_channel_id IS NOT NULL
+        RETURNING id` as { id: number }[];
+      if (!done.length) return null;
+      await recompute(r.sales_order_id);
+      return 'completed';
+    }
+
+    case 'REFUNDED':
+      await flag(r.id, 'REFUNDED', 'other', refundNote(st, 'Swap REFUNDED: the deposit went back to the refund address.'));
+      return 'flagged';
+
+    case 'FAILED':
+      await flag(r.id, 'FAILED', 'other', refundNote(st, 'Swap FAILED: 1Click reports an error.'));
+      return 'flagged';
+
+    case 'INCOMPLETE_DEPOSIT':
+      if (r.swap_state === 'INCOMPLETE_DEPOSIT') return null;
+      await flag(r.id, 'INCOMPLETE_DEPOSIT', 'underpaid',
+        'Deposit is below the minimum, so it has not been swapped. The customer may be able to top up to the same address before the deadline; otherwise 1Click refunds it to the refund address after the deadline.');
+      return 'flagged';
+
+    case 'PENDING_DEPOSIT':
+      if (!pastDeadline || r.swap_state === 'EXPIRED') return null;
+      await flag(r.id, 'EXPIRED', 'other',
+        'Deposit address EXPIRED with nothing received. Tell the customer not to send to it, and open a new one if they still intend to pay.');
+      return 'flagged';
+
+    default:
+      // KNOWN_DEPOSIT_TX, PROCESSING, or a status added later.
+      if (r.swap_state === 'EXPIRED') {
+        await flag(r.id, st.state, 'other',
+          'A deposit arrived AFTER the address deadline. Search the deposit address on the NEAR Intents Explorer, and contact 1Click if it doesn\'t complete.');
+        return 'flagged';
+      }
+      if (st.state === r.swap_state) return null;
+      await sql`UPDATE order_payments SET swap_state = ${st.state} WHERE id = ${r.id} AND verification_status = 'pending'`;
+      return 'updated';
+  }
 }
 
 async function main() {
   const rows = await sql`
-    SELECT op.id, op.sales_order_id, op.swap_channel_id, op.swap_state, op.swap_expires_at
+    SELECT op.id, op.sales_order_id, op.swap_deposit_address, op.swap_state, op.swap_expires_at
     FROM order_payments op
-    WHERE op.swap_channel_id IS NOT NULL
+    WHERE op.swap_provider = 'oneclick'
       AND op.verification_status = 'pending'
-      AND op.swap_state IS DISTINCT FROM 'EXPIRED'
+      AND op.swap_state NOT IN ('REFUNDED', 'FAILED')
+      AND op.swap_expires_at > NOW() - make_interval(days => ${LATE_POLL_DAYS})
     ORDER BY op.id
     LIMIT 100
   ` as Row[];
   console.log(`${rows.length} pending swap payment(s)`);
 
-  let completed = 0, failed = 0, updated = 0, errors = 0;
+  const counts = { completed: 0, flagged: 0, updated: 0, errors: 0 };
   for (const r of rows) {
     try {
-      const st = await getStatus(r.swap_channel_id);
-      const noDeposit = !st || st.state === 'WAITING';
-      if (noDeposit && r.swap_expires_at && Date.parse(r.swap_expires_at) < Date.now()) {
-        // Channel expired with nothing sent — the customer never paid.
-        // Flag for review instead of sitting pending forever.
-        await sql`
-          UPDATE order_payments SET
-            swap_state = 'EXPIRED',
-            issue_type = COALESCE(issue_type, 'other'),
-            issue_notes = COALESCE(NULLIF(issue_notes, ''),
-              'Auto-swap channel EXPIRED with no BTC received — the customer never sent. Open a new deposit channel if they still intend to pay.')
-          WHERE id = ${r.id} AND verification_status = 'pending'`;
-        failed++;
-        continue;
-      }
-      if (!st) continue; // channel open, nothing sent yet
-      if (st.state === 'COMPLETED' && st.egressTx && st.egressUsdc != null) {
-        const done = await sql`
-          UPDATE order_payments SET
-            tx_hash = ${st.egressTx},
-            amount_usd = ROUND(${st.egressUsdc}::numeric, 2),
-            verification_status = 'verified',
-            verified_at = NOW(),
-            swap_state = 'COMPLETED'
-          WHERE id = ${r.id} AND verification_status = 'pending' AND swap_channel_id IS NOT NULL
-          RETURNING id` as { id: number }[];
-        if (done.length) { await recompute(r.sales_order_id); completed++; }
-      } else if (st.state === 'FAILED') {
-        await sql`
-          UPDATE order_payments SET
-            swap_state = 'FAILED',
-            issue_type = COALESCE(issue_type, 'other'),
-            issue_notes = COALESCE(NULLIF(issue_notes, ''),
-              'Auto-swap FAILED: the Chainflip swap did not complete (BTC may have been refunded to the customer). Review the channel and re-collect if needed.')
-          WHERE id = ${r.id} AND verification_status = 'pending'`;
-        failed++;
-      } else if (st.state !== r.swap_state) {
-        await sql`UPDATE order_payments SET swap_state = ${st.state} WHERE id = ${r.id} AND verification_status = 'pending'`;
-        updated++;
-      }
+      const outcome = await settle(r);
+      if (outcome) counts[outcome]++;
     } catch (e) {
-      errors++;
-      console.error(`payment ${r.id} (channel ${r.swap_channel_id}): ${e instanceof Error ? e.message : e}`);
+      counts.errors++;
+      console.error(`payment ${r.id}: ${e instanceof Error ? e.message : e}`);
     }
   }
-  console.log(`completed=${completed} failed=${failed} state_updates=${updated} errors=${errors}`);
+  console.log(`completed=${counts.completed} flagged=${counts.flagged} state_updates=${counts.updated} errors=${counts.errors}`);
 }
 
 main().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });

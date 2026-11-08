@@ -25,6 +25,7 @@ import deleteFreeOrderReason from '@/actions/settings/deleteFreeOrderReason';
 import updateFreeOrderReasonActive from '@/actions/settings/updateFreeOrderReasonActive';
 import getAppSetting from '@/actions/settings/getAppSetting';
 import upsertAppSetting from '@/actions/settings/upsertAppSetting';
+import { SWAP_ROUTES, SwapRoute, refundAddressError } from '@/lib/oneClick';
 
 type Wallet = { id: number; asset: string; network: string; address: string; label: string; is_active: boolean; notes: string; division: string | null; is_used: boolean };
 type FreeReason = { id: number; label: string; description: string; is_active: boolean; is_used: boolean };
@@ -36,6 +37,45 @@ const VALID_COMBOS = [
   { asset: 'ETH', network: 'ethereum' }, { asset: 'SOL', network: 'solana' },
   { asset: 'BTC', network: 'bitcoin' },
 ];
+
+/** Default refund wallet for one auto-swap route (reps can override per payment). */
+function SwapRefundField({ route }: { route: SwapRoute }) {
+  const r = SWAP_ROUTES[route];
+  const [raw, , , reload] = useLoadAction(getAppSetting, [], { key: r.refundSettingKey });
+  const saved = String(asRows<{ value: string }>(raw)[0]?.value ?? '');
+  const [doSave] = useMutateAction(upsertAppSetting);
+  const [input, setInput] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const value = input ?? saved;
+  const save = async () => {
+    setSaving(true); setErr('');
+    try {
+      const problem = await refundAddressError(route, value);
+      if (problem) { setErr(problem); return; }
+      await doSave({ key: r.refundSettingKey, value: value.trim() });
+      setInput(null);
+      reload();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">{r.networkLabel}</Label>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Input value={value} onChange={e => { setInput(e.target.value); setErr(''); }}
+          placeholder={r.refundPlaceholder} className="max-w-md font-mono" />
+        <Button size="sm" onClick={save} disabled={saving || value.trim() === saved}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+      </div>
+      {err && <p className="text-xs text-red-600">{err}</p>}
+    </div>
+  );
+}
 
 export function WalletsReasonsTab() {
   // Moralis API key (on-chain balance checks on Commissions → Vendor Owed).
@@ -313,6 +353,21 @@ export function WalletsReasonsTab() {
           {accumarkConfigured && (
             <Button size="sm" variant="outline" onClick={() => saveAccumark(true)} disabled={accumarkSaving}>Remove</Button>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Refund wallets for 1Click auto-swaps */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2"><Wallet className="h-4 w-4" /> Swap Refund Addresses</CardTitle>
+          <p className="text-xs text-gray-400">
+            A failed BTC or USDT (Tron) auto-swap returns here by default, so use wallets we control.
+            Every swap needs one, and reps can override it per payment.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <SwapRefundField route="BTC" />
+          <SwapRefundField route="USDT_TRON" />
         </CardContent>
       </Card>
 

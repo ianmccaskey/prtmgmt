@@ -1,6 +1,7 @@
-# Settles pending Chainflip auto-swap payments (plain-BTC deposit channels
-# delivering USDC to the receive wallet) hourly via cron-job.org — the automation
-# that lets heavy payment influx run without anyone monitoring swaps.
+# Settles pending 1Click auto-swap payments (BTC or USDT on Tron sent to a
+# one-time address, delivering USDC to the receive wallet) hourly via
+# cron-job.org — the automation that lets heavy payment influx run without
+# anyone monitoring swaps.
 #
 # Secrets required: DATABASE_URL (shared with tracking-sync).
 name: swaps-sync

@@ -1,16 +1,17 @@
 import { action } from '@uibakery/data';
 
 /**
- * Settles a completed Chainflip swap payment with the on-chain truth: the
- * destination (Ethereum USDC) egress TX hash and the ACTUAL delivered
- * amount replace the estimate, and the payment verifies. Refuses (0 rows)
- * unless the payment is still the pending swap it claims to be —
- * idempotent against the sync and the drawer button racing. Callers chain
- * recomputePaymentStatus after.
+ * Settles a completed swap payment with the on-chain truth: the Ethereum
+ * delivery TX hash and the ACTUAL delivered amount replace the estimate, and
+ * the payment verifies. Refuses (0 rows) unless the payment is still the
+ * pending swap it claims to be, so the sync and the drawer button can't
+ * double-settle. A "too small" or "expired" note written earlier by the sync
+ * is cleared, because a top-up or late swap has now resolved it. Callers
+ * chain recomputePaymentStatus after.
  *
  * Trust model: like every money action in this browser-only app (Correct
  * Amount, Fix Wallet, Mark Verified), the values come from staff's
- * browser — here fetched from Chainflip's status API by the drawer. The
+ * browser, here fetched from 1Click's status API by the drawer. The
  * cron sync settles the same rows server-side; the wallet audit catches
  * any record whose hash doesn't match a real deposit.
  */
@@ -24,6 +25,8 @@ export function completeSwapPayment() {
           verification_status = 'verified',
           verified_at = NOW(),
           verified_by_user_id = {{params.userId}}::bigint,
+          issue_type = CASE WHEN op.swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN NULL ELSE op.issue_type END,
+          issue_notes = CASE WHEN op.swap_state IN ('INCOMPLETE_DEPOSIT', 'EXPIRED') THEN NULL ELSE op.issue_notes END,
           swap_state = 'COMPLETED'
       WHERE op.id = {{params.paymentId}}::bigint
         AND op.swap_channel_id IS NOT NULL
