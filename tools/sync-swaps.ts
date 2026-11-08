@@ -146,7 +146,7 @@ async function settle(r: Row): Promise<Outcome> {
         SELECT id FROM order_payments
         WHERE id <> ${r.id} AND direction = 'incoming' AND verification_status <> 'failed'
           AND asset = 'USDC' AND network = 'ethereum'
-          AND LOWER(tx_hash) = LOWER(${st.egressTx})
+          AND LOWER(BTRIM(tx_hash)) = LOWER(${st.egressTx})
         LIMIT 1` as { id: number }[];
       if (dup.length) {
         return flagged(await flag(r, 'SUCCESS', 'other',
@@ -166,7 +166,7 @@ async function settle(r: Row): Promise<Outcome> {
             SELECT 1 FROM order_payments o2
             WHERE o2.id <> op.id AND o2.direction = 'incoming' AND o2.verification_status <> 'failed'
               AND o2.asset = op.asset AND o2.network = op.network
-              AND LOWER(o2.tx_hash) = LOWER(${st.egressTx}))
+              AND LOWER(BTRIM(o2.tx_hash)) = LOWER(${st.egressTx}))
         RETURNING op.id` as { id: number }[];
       if (!done.length) return null;
       await recompute(r.sales_order_id);

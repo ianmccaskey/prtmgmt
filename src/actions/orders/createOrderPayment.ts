@@ -8,7 +8,9 @@ import { action } from '@uibakery/data';
  * another live incoming payment of the same asset and network: one receipt
  * can't pay twice, e.g. a delivery a swap already settled. Asset and network
  * are part of the identity because one TX can legitimately move several
- * tokens. A payment without a hash is never refused.
+ * tokens. A payment without a hash is never refused. Hashes are stored
+ * trimmed and compared trimmed and case-insensitively, the same identity the
+ * order_payments_receipt_uniq index enforces against concurrent writers.
  */
 export function createOrderPayment() {
   return action('createOrderPayment', 'SQL', {
@@ -29,7 +31,7 @@ export function createOrderPayment() {
         {{params.spotRateUsd}}::numeric,
         {{params.amountAsset}}::numeric,
         {{params.amountUsd}}::numeric,
-        {{params.txHash}},
+        NULLIF(BTRIM({{params.txHash}}), ''),
         CASE WHEN {{params.verified}}::boolean THEN 'verified' ELSE 'pending' END,
         CASE WHEN {{params.verified}}::boolean THEN NOW() ELSE NULL END,
         CASE WHEN {{params.verified}}::boolean THEN {{params.userId}}::bigint ELSE NULL END
@@ -37,7 +39,7 @@ export function createOrderPayment() {
         SELECT 1 FROM order_payments o2
         WHERE o2.direction = 'incoming' AND o2.verification_status <> 'failed'
           AND o2.asset = {{params.asset}} AND o2.network = {{params.network}}
-          AND LOWER(o2.tx_hash) = LOWER(NULLIF({{params.txHash}}, ''))
+          AND LOWER(BTRIM(o2.tx_hash)) = LOWER(NULLIF(BTRIM({{params.txHash}}), ''))
       )
       RETURNING id, sales_order_id
     `,

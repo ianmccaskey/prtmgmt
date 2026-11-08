@@ -682,7 +682,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
     // payment on a quote (later cancelled) poisons wallet reconciliation and
     // commission accruals. Verify from the order drawer once it's real.
     if (addPay && total > 0 && selectedWallet && orderDivision !== 'china') {
-      const paid = await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: null, amountAsset: null, amountUsd: total, txHash: payTx || null, verified: s === 'confirmed' && payVerified, userId: profileId }) as unknown[];
+      const paid = await doPayment({ orderId, asset: payAsset, network: payNetwork, walletId: selectedWallet.id, spotRateUsd: null, amountAsset: null, amountUsd: total, txHash: payTx.trim() || null, verified: s === 'confirmed' && payVerified, userId: profileId }) as unknown[];
       if (!paid || paid.length === 0) {
         // Refused as a duplicate receipt. The order itself is saved; say so
         // rather than let the missing payment pass unnoticed.

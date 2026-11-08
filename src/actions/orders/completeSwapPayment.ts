@@ -39,7 +39,7 @@ export function completeSwapPayment() {
           WHERE o2.id <> op.id AND o2.direction = 'incoming'
             AND o2.verification_status <> 'failed'
             AND o2.asset = op.asset AND o2.network = op.network
-            AND LOWER(o2.tx_hash) = LOWER({{params.egressTx}})
+            AND LOWER(BTRIM(o2.tx_hash)) = LOWER(BTRIM({{params.egressTx}}))
         )
       RETURNING op.id, op.sales_order_id, op.amount_usd
     `,

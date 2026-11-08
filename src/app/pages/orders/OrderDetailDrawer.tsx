@@ -84,6 +84,20 @@ const PAYMENT_ISSUE_TYPES = ['underpaid', 'overpaid', 'wrong_asset', 'wrong_netw
 // Must match the shipments_outbound.carrier CHECK constraint.
 const SHIP_CARRIERS = ['USPS', 'UPS', 'FedEx', 'DHL', 'other'];
 
+/**
+ * Error text for a payment save. The order_payments_receipt_uniq index is
+ * the database's last line of defence against crediting one on-chain
+ * receipt twice (e.g. two people saving it at the same moment); its raw
+ * error becomes words here.
+ */
+function paymentSaveError(e: unknown, fallback: string): string {
+  const msg = e instanceof Error ? e.message : '';
+  if (/order_payments_receipt_uniq/.test(msg)) {
+    return 'Not saved: this TX is already credited to another payment of the same asset and network.';
+  }
+  return msg || fallback;
+}
+
 /** A pending 1Click payment: what the customer must do, and where it stands. */
 function SwapDepositCard({ p, canCheck, checking, onCheck }: { p: Payment; canCheck: boolean; checking: boolean; onCheck: () => void }) {
   const [copied, setCopied] = useState(false);
@@ -321,7 +335,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       reloadPay();
       parentReload();
     } catch (e: unknown) {
-      setAddErr(e instanceof Error ? e.message : 'Failed to record payment');
+      setAddErr(paymentSaveError(e, 'Failed to record payment'));
     } finally {
       setAddSaving(false);
     }
@@ -407,7 +421,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
         alert(describeSwapStatus(st));
       }
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to check swap status');
+      alert(paymentSaveError(e, 'Failed to check swap status'));
     } finally {
       setCheckingSwap(null);
     }
@@ -445,7 +459,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       reloadPay();
       parentReload();
     } catch (e: unknown) {
-      setRecErr(e instanceof Error ? e.message : 'Failed to record the delivery');
+      setRecErr(paymentSaveError(e, 'Failed to record the delivery'));
     } finally {
       setRecBusy(false);
     }
@@ -521,7 +535,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
       reloadPay();
       parentReload();
     } catch (e: unknown) {
-      setFixErr(e instanceof Error ? e.message : 'Failed to update payment');
+      setFixErr(paymentSaveError(e, 'Failed to update payment'));
     } finally {
       setFixSaving(false);
     }
