@@ -26,8 +26,8 @@ export function WarehouseThroughputSection({ range }: Props) {
   // Warehouse role only sees its own warehouse; internal costs are admin-only.
   const scopedWarehouseId = isWarehouse ? assignedWarehouseId : null;
   const params = { date_from: range.from || null, date_to: range.to || null, warehouse_id: scopedWarehouseId };
-  const [throughput] = useLoadAction(getWarehouseThroughput, [range.from, range.to, scopedWarehouseId], params);
-  const [summary] = useLoadAction(getWarehouseThroughputSummary, [range.from, range.to, scopedWarehouseId], params);
+  const [throughput] = useLoadAction(getWarehouseThroughput, [], params);
+  const [summary] = useLoadAction(getWarehouseThroughputSummary, [], params);
 
   const rows = asRows<ThroughputRow>(throughput);
   const summaryRows = asRows<SummaryRow>(summary);

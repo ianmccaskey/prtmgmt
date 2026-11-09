@@ -179,7 +179,7 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   const { isLogistics, isWarehouse, isViewer, isAdmin } = useAppUser();
   const readOnlyRole = isLogistics || isWarehouse || isViewer;
   const { profileId } = useAppUser();
-  const [payments, loading, , reloadPay] = useLoadAction(getOrderPayments, [orderId], { orderId });
+  const [payments, loading, , reloadPay] = useLoadAction(getOrderPayments, [], { orderId });
   const [verifyPayment, verifying] = useMutateAction(markPaymentVerified);
   const [flagPayment, flagging] = useMutateAction(flagPaymentIssue);
   const [recomputePayment] = useMutateAction(recomputePaymentStatus);
@@ -200,8 +200,8 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   // to a customer who believes they paid. swapRefund is the per-payment
   // override, for when the customer's own address is preferred.
   const [swapRefund, setSwapRefund] = useState<string | null>(null);
-  const [btcRefundRaw] = useLoadAction(getAppSetting, [addOpen ? 1 : 0], { key: SWAP_ROUTES.BTC.refundSettingKey }, { enabled: addOpen });
-  const [tronRefundRaw] = useLoadAction(getAppSetting, [addOpen ? 1 : 0], { key: SWAP_ROUTES.USDT_TRON.refundSettingKey }, { enabled: addOpen });
+  const [btcRefundRaw] = useLoadAction(getAppSetting, [], { key: SWAP_ROUTES.BTC.refundSettingKey }, { enabled: addOpen });
+  const [tronRefundRaw] = useLoadAction(getAppSetting, [], { key: SWAP_ROUTES.USDT_TRON.refundSettingKey }, { enabled: addOpen });
   const refundDefaults: Record<SwapRoute, string> = {
     BTC: String(rows<{ value: string }>(btcRefundRaw)[0]?.value ?? ''),
     USDT_TRON: String(rows<{ value: string }>(tronRefundRaw)[0]?.value ?? ''),
@@ -276,15 +276,15 @@ function PaymentsPanel({ orderId, orderTotal, division, reload: parentReload }: 
   // Chain-verify API keys — needed by both the Add Payment form and the
   // fix dialog (declared here, AFTER fixOpen exists).
   const chainKeysNeeded = addOpen || fixOpen != null || recoverId != null;
-  const [moralisRaw] = useLoadAction(getAppSetting, [chainKeysNeeded ? 1 : 0], { key: 'moralis_api_key' }, { enabled: chainKeysNeeded });
+  const [moralisRaw] = useLoadAction(getAppSetting, [], { key: 'moralis_api_key' }, { enabled: chainKeysNeeded });
   const moralisKey = String(rows<{ value: string }>(moralisRaw)[0]?.value ?? '');
-  const [heliusRaw] = useLoadAction(getAppSetting, [chainKeysNeeded ? 1 : 0], { key: 'helius_api_key' }, { enabled: chainKeysNeeded });
+  const [heliusRaw] = useLoadAction(getAppSetting, [], { key: 'helius_api_key' }, { enabled: chainKeysNeeded });
   const heliusKey = String(rows<{ value: string }>(heliusRaw)[0]?.value ?? '');
 
   // Wallets are scoped to the order's division (the rep's division): a
   // China order can only record/repoint payments onto China wallets.
   const walletsNeeded = addOpen || fixOpen != null;
-  const [walletsRaw] = useLoadAction(getReceiveWallets, [walletsNeeded ? 1 : 0, division], { division }, { enabled: walletsNeeded });
+  const [walletsRaw] = useLoadAction(getReceiveWallets, [], { division }, { enabled: walletsNeeded });
   const walletList = rows<{ id: number; asset: string; network: string; address: string; label: string }>(walletsRaw);
   const selectedWallet = walletList.find(w => w.asset === payAsset && w.network === payNetwork);
   const fixWallet = walletList.find(w => w.asset === fixAsset && w.network === fixNetwork);
@@ -1368,12 +1368,12 @@ export function OrderDetailDrawer({ orderId, open, onClose, onRefresh }: OrderDe
   const [doUpdateStatus, updatingStatus] = useMutateAction(updateOrderStatus);
   const [doAudit] = useMutateAction(insertAuditLog);
 
-  const [detail, detailLoading, , reloadDetail] = useLoadAction(getOrderDetail, [orderId], { orderId }, { enabled: !!orderId });
-  const [items, itemsLoading, , reloadItems] = useLoadAction(getOrderItems, [orderId], { orderId }, { enabled: !!orderId });
-  const [shipments, shipmentsLoading, , reloadShipments] = useLoadAction(getOrderShipments, [orderId], { orderId }, { enabled: !!orderId });
-  const [auditLog, auditLoading] = useLoadAction(getOrderAuditLog, [orderId], { orderId }, { enabled: !!orderId && (isAdmin || isLogistics) });
-  const [allocationsRaw, , , reloadAllocations] = useLoadAction(getOrderItemAllocations, [orderId], { orderId }, { enabled: !!orderId });
-  const [notificationsRaw] = useLoadAction(getOrderNotifications, [orderId], { orderId }, { enabled: !!orderId });
+  const [detail, detailLoading, , reloadDetail] = useLoadAction(getOrderDetail, [], { orderId }, { enabled: !!orderId });
+  const [items, itemsLoading, , reloadItems] = useLoadAction(getOrderItems, [], { orderId }, { enabled: !!orderId });
+  const [shipments, shipmentsLoading, , reloadShipments] = useLoadAction(getOrderShipments, [], { orderId }, { enabled: !!orderId });
+  const [auditLog, auditLoading] = useLoadAction(getOrderAuditLog, [], { orderId }, { enabled: !!orderId && (isAdmin || isLogistics) });
+  const [allocationsRaw, , , reloadAllocations] = useLoadAction(getOrderItemAllocations, [], { orderId }, { enabled: !!orderId });
+  const [notificationsRaw] = useLoadAction(getOrderNotifications, [], { orderId }, { enabled: !!orderId });
   const [salesReps] = useLoadAction(listSalesReps, []);
   const [doUpdateRep] = useMutateAction(updateOrderSalesRep);
   // Rep changes can change the order's division, which drives the derived

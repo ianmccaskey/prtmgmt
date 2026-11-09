@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { useReloadOnOpen } from '@/hooks/use-reload-on-open';
 import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import { Button } from '@/components/ui/button';
@@ -56,7 +57,8 @@ function MarkSentDrawer({ task, open, onClose, onDone }: { task: RefundTask | nu
   // receive wallet matching the asset/network in the order's division.
   const [sentFrom, setSentFrom] = useState<'receive' | 'other'>('receive');
   const division = task?.division || 'us';
-  const [walletsRaw, walletsLoading, walletsErr, reloadWallets] = useLoadAction(getReceiveWallets, [open ? 1 : 0, division], { division }, { enabled: open && task != null });
+  const [walletsRaw, walletsLoading, walletsErr, reloadWallets] = useLoadAction(getReceiveWallets, [], { division }, { enabled: open && task != null });
+  useReloadOnOpen(open && task != null, reloadWallets);
   // A failed load must not read as "no matching wallet" — that would
   // silently record a receive-wallet refund as sent from elsewhere, so
   // submitting waits for a successful load. Rows left over from another
@@ -185,7 +187,7 @@ const STATUS_OPTIONS = ['', 'owed', 'sent', 'verified'];
 export function RefundsTab() {
   const { profileId, isLogistics } = useAppUser();
   const [statusFilter, setStatusFilter] = useState('owed');
-  const [tasks, loading, , reload] = useLoadAction(getRefundTasks, [statusFilter], { status: statusFilter || null });
+  const [tasks, loading, , reload] = useLoadAction(getRefundTasks, [], { status: statusFilter || null });
   const [stats] = useLoadAction(getRefundStats, []);
   const [selectedTask, setSelectedTask] = useState<RefundTask | null>(null);
   const [sentOpen, setSentOpen] = useState(false);

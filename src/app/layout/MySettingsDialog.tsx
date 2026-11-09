@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { useReloadOnOpen } from '@/hooks/use-reload-on-open';
 import { dbText } from '@/lib/dbText';
 import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
@@ -42,7 +43,7 @@ const EMPTY = { name: '', line1: '', line2: '', city: '', state: '', postal: '',
  */
 export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { profileId, displayName } = useAppUser();
-  const [raw, loading, , reload] = useLoadAction(getMyLabelReturnAddress, [profileId, open ? 1 : 0], { user_id: profileId }, { enabled: open && profileId != null });
+  const [raw, loading, , reload] = useLoadAction(getMyLabelReturnAddress, [], { user_id: profileId }, { enabled: open && profileId != null });
   const [doSave] = useMutateAction(updateMyLabelReturnAddress);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -70,7 +71,8 @@ export function MySettingsDialog({ open, onClose }: { open: boolean; onClose: ()
 
   // My payout addresses — self-service (payments to you show these with a
   // Copy button wherever admins record your payouts).
-  const [payoutRaw, payoutLoading, , reloadPayout] = useLoadAction(listUserPayoutAddresses, [profileId, open ? 1 : 0], { user_profile_id: profileId ?? 0 }, { enabled: open && profileId != null });
+  const [payoutRaw, payoutLoading, , reloadPayout] = useLoadAction(listUserPayoutAddresses, [], { user_profile_id: profileId ?? 0 }, { enabled: open && profileId != null });
+  useReloadOnOpen(open && profileId != null, reload, reloadPayout);
   const payoutAddresses = asRows<PayoutAddress>(payoutRaw);
   const [doAddPayout] = useMutateAction(createUserPayoutAddress);
   const [doDeletePayout] = useMutateAction(deleteUserPayoutAddress);

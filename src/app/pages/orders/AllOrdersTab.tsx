@@ -84,7 +84,7 @@ export function AllOrdersTab() {
     focus: focus || null,
   };
 
-  const [orders, loading, , reload] = useLoadAction(listOrders, [search, statusFilter, paymentFilter, channelFilter, divisionFilter, dateFrom, dateTo, repScope, focus], params);
+  const [orders, loading, , reload] = useLoadAction(listOrders, [], params);
 
   const pg = usePagination(asRows<Order>(orders));
   const openDetail = (id: number) => { setSelectedOrderId(id); setDrawerOpen(true); };

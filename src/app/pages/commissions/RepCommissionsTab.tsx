@@ -47,7 +47,7 @@ type WalletReceipt = {
 function RepWalletReceipts({ division }: { division: string }) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [raw, loading] = useLoadAction(listRepWalletReceipts, [dateFrom, dateTo, division], { date_from: dateFrom, date_to: dateTo, division });
+  const [raw, loading] = useLoadAction(listRepWalletReceipts, [], { date_from: dateFrom, date_to: dateTo, division });
   const receipts = asRows<WalletReceipt>(raw);
 
   const combos = [...new Map(receipts.map(r => [`${r.asset}|${r.network}`, { asset: r.asset, network: r.network }])).values()]
@@ -128,7 +128,7 @@ export function RepCommissionsTab({ division }: { division: string }) {
   const { profileId, isAdmin } = useAppUser();
   const [payDialogRep, setPayDialogRep] = useState<RepBalance | null>(null);
   // Payee's crypto payout addresses (managed in Settings → Users).
-  const [payoutRaw] = useLoadAction(listUserPayoutAddresses, [payDialogRep?.sales_rep_user_profile_id], { user_profile_id: payDialogRep?.sales_rep_user_profile_id ?? 0 }, { enabled: !!payDialogRep });
+  const [payoutRaw] = useLoadAction(listUserPayoutAddresses, [], { user_profile_id: payDialogRep?.sales_rep_user_profile_id ?? 0 }, { enabled: !!payDialogRep });
   const payoutAddresses = asRows<{ id: number; asset: string; network: string; address: string; label: string | null }>(payoutRaw);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const copyAddr = (pa: { id: number; address: string }) => {
@@ -142,8 +142,8 @@ export function RepCommissionsTab({ division }: { division: string }) {
   const [error, setError] = useState('');
   const [selectedRepId, setSelectedRepId] = useState<number | null>(null);
 
-  const [balances, , , reloadBalances] = useLoadAction(listRepBalances, [division], { division });
-  const [orders] = useLoadAction(listRepCommissionOrders, [selectedRepId, division], {
+  const [balances, , , reloadBalances] = useLoadAction(listRepBalances, [], { division });
+  const [orders] = useLoadAction(listRepCommissionOrders, [], {
     sales_rep_user_profile_id: selectedRepId, date_from: null, date_to: null, division,
   }, { enabled: selectedRepId !== null });
   const [doPay] = useMutateAction(recordCommissionPayment);

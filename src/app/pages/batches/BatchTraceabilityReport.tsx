@@ -54,12 +54,12 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
  */
 export function BatchTraceabilityReport({ batch, onClose }: { batch: Batch; onClose: () => void }) {
   const batchId = batch.id;
-  const [tests] = useLoadAction(listBatchTestsAction, [batchId], { batch_id: batchId, test_type: '' });
-  const [inventory] = useLoadAction(getBatchInventoryAction, [batchId], { batch_id: batchId });
-  const [orders] = useLoadAction(getBatchOrdersAction, [batchId], { batch_id: batchId });
-  const [writeoffs] = useLoadAction(getBatchWriteoffsAction, [batchId], { batch_id: batchId });
-  const [inbound] = useLoadAction(getBatchInboundShipmentsAction, [batchId], { batch_id: batchId });
-  const [transfers] = useLoadAction(getBatchTransfersAction, [batchId], { batch_id: batchId });
+  const [tests] = useLoadAction(listBatchTestsAction, [], { batch_id: batchId, test_type: '' });
+  const [inventory] = useLoadAction(getBatchInventoryAction, [], { batch_id: batchId });
+  const [orders] = useLoadAction(getBatchOrdersAction, [], { batch_id: batchId });
+  const [writeoffs] = useLoadAction(getBatchWriteoffsAction, [], { batch_id: batchId });
+  const [inbound] = useLoadAction(getBatchInboundShipmentsAction, [], { batch_id: batchId });
+  const [transfers] = useLoadAction(getBatchTransfersAction, [], { batch_id: batchId });
 
   const testRows = asRows<Row>(tests);
   const invRows = asRows<Row>(inventory);

@@ -88,7 +88,7 @@ export function ReorderUsersTab() {
   const [paAddress, setPaAddress] = useState('');
   const [paLabel, setPaLabel] = useState('');
   const [paSaving, setPaSaving] = useState(false);
-  const [payoutRaw, , , reloadPayouts] = useLoadAction(listUserPayoutAddresses, [editUser?.id], { user_profile_id: editUser?.id ?? 0 }, { enabled: !!editUser });
+  const [payoutRaw, , , reloadPayouts] = useLoadAction(listUserPayoutAddresses, [], { user_profile_id: editUser?.id ?? 0 }, { enabled: !!editUser });
   const payoutList = asRows<PayoutAddress>(payoutRaw);
   const [doCreatePayout] = useMutateAction(createUserPayoutAddress);
   const [doDeletePayout] = useMutateAction(deleteUserPayoutAddress);

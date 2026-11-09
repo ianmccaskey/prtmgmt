@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { useReloadOnOpen } from '@/hooks/use-reload-on-open';
 import { dbText } from '@/lib/dbText';
 import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
@@ -120,10 +121,11 @@ export function ShipmentDetailPage() {
   const [items, itemsLoading, , reloadItems] = useLoadAction(listShipmentItems, [], { shipment_id: id });
   const [docs, , , reloadDocs] = useLoadAction(listShipmentDocuments, [], { shipment_id: id });
   // Picker data is only needed while the Add Line dialog is open.
-  const [products] = useLoadAction(listProducts, [showAddLine], {}, { enabled: showAddLine });
-  const [allBatches] = useLoadAction(listBatches, [showAddLine], {}, { enabled: showAddLine });
-  const [pickWarehouses] = useLoadAction(listWarehouses, [showAddLine], {}, { enabled: showAddLine });
-  const [receiveAddresses] = useLoadAction(listReceiveAddresses, [showAddLine], {}, { enabled: showAddLine });
+  const [products, , , reloadProducts] = useLoadAction(listProducts, [], {}, { enabled: showAddLine });
+  const [allBatches, , , reloadBatches] = useLoadAction(listBatches, [], {}, { enabled: showAddLine });
+  const [pickWarehouses, , , reloadPickWarehouses] = useLoadAction(listWarehouses, [], {}, { enabled: showAddLine });
+  const [receiveAddresses, , , reloadReceiveAddresses] = useLoadAction(listReceiveAddresses, [], {}, { enabled: showAddLine });
+  useReloadOnOpen(showAddLine, reloadProducts, reloadBatches, reloadPickWarehouses, reloadReceiveAddresses);
 
   const [createDoc] = useMutateAction(createShipmentDocument);
   const [updateStatus] = useMutateAction(updateShipmentStatus);

@@ -40,7 +40,7 @@ export function CustomersPage() {
     isBlocked: isBlocked === 'true' ? true : isBlocked === 'false' ? false : null,
   };
 
-  const [customers, loading, , reload] = useLoadAction(listCustomers, [search, channel, isVip, isBlocked], params);
+  const [customers, loading, , reload] = useLoadAction(listCustomers, [], params);
   const pgCust = usePagination(asRows<Customer>(customers));
 
   const exportCSV = () => {

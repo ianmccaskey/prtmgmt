@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { useReloadOnOpen } from '@/hooks/use-reload-on-open';
 import { dbText } from '@/lib/dbText';
 import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
@@ -85,11 +86,13 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [addProductId, setAddProductId] = useState('');
   const [addQty, setAddQty] = useState('1');
   const [addPrice, setAddPrice] = useState('');
-  const [products] = useLoadAction(searchProducts, [addOpen], { q: '' }, { enabled: addOpen });
+  const [products, , , reloadProducts] = useLoadAction(searchProducts, [], { q: '' }, { enabled: addOpen });
+  useReloadOnOpen(addOpen, reloadProducts);
   const productOptions = asRows<ProductOption>(products);
   // Quotes also need availability for the per-line warehouse selector.
   const isQuote = String(order.status) === 'quote';
-  const [whAvailRaw] = useLoadAction(listWarehouseAvailability, [addOpen || isQuote ? 1 : 0], {}, { enabled: addOpen || isQuote });
+  const [whAvailRaw, , , reloadWhAvail] = useLoadAction(listWarehouseAvailability, [], {}, { enabled: addOpen || isQuote });
+  useReloadOnOpen(addOpen || isQuote, reloadWhAvail);
   const whAvailability = asRows<{ product_id: number; warehouse_id: number; warehouse_name: string; available: number }>(whAvailRaw);
   const [doLineWarehouse] = useMutateAction(updateOrderItemWarehouse);
   const [lineWhBusy, setLineWhBusy] = useState<number | null>(null);
@@ -128,7 +131,7 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
 
   // Split-across-warehouses: move part of a line's reservations elsewhere.
   type ResRow = { product_id: number; warehouse_id: number; warehouse_name: string; quantity: number };
-  const [resRaw, , , reloadRes] = useLoadAction(listOrderReservations, [orderId], { orderId });
+  const [resRaw, , , reloadRes] = useLoadAction(listOrderReservations, [], { orderId });
   const resList = asRows<ResRow>(resRaw);
   const [doMoveRes] = useMutateAction(moveLineReservationAtomic);
   const [moveFor, setMoveFor] = useState<OrderItemRow | null>(null);
@@ -138,7 +141,9 @@ export function OrderItemsEditor({ orderId, order, items, allocations, isReadOnl
   const [moveBusy, setMoveBusy] = useState(false);
   const [moveErr, setMoveErr] = useState('');
   const [resFixBusy, setResFixBusy] = useState(false);
-  const [moveWhAvailRaw] = useLoadAction(listWarehouseAvailability, [moveFor ? 1 : 0], {}, { enabled: !!moveFor });
+  const [moveWhAvailRaw, , , reloadMoveWhAvail] = useLoadAction(listWarehouseAvailability, [], {}, { enabled: !!moveFor });
+  // Each line's Move reads availability again (moving straight to another line too).
+  useReloadOnOpen(moveFor, reloadMoveWhAvail);
   const moveWhAvail = asRows<{ product_id: number; warehouse_id: number; warehouse_name: string; available: number }>(moveWhAvailRaw);
 
   const openMove = (item: OrderItemRow) => {

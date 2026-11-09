@@ -37,7 +37,7 @@ const CHANNELS = ['telegram', 'signal', 'discord', 'whatsapp', 'root', 'other'];
 
 function NotesPanel({ customerId, readOnly }: { customerId: number; readOnly?: boolean }) {
   const { profileId } = useAppUser();
-  const [notes, loading, , reload] = useLoadAction(getCustomerNotes, [customerId], { customerId });
+  const [notes, loading, , reload] = useLoadAction(getCustomerNotes, [], { customerId });
   const [newText, setNewText] = useState('');
   const [editId, setEditId] = useState<number | null>(null);
   const [editText, setEditText] = useState('');
@@ -152,8 +152,8 @@ export function CustomerDetailPage() {
   const canSeeInternalNotes = isAdmin || isSalesRep || isLogistics;
   const customerId = Number(id);
 
-  const [detail, detailLoading, , reloadDetail] = useLoadAction(getCustomerDetail, [customerId], { customerId });
-  const [orders, ordersLoading, , reloadOrders] = useLoadAction(getCustomerOrders, [customerId], { customerId });
+  const [detail, detailLoading, , reloadDetail] = useLoadAction(getCustomerDetail, [], { customerId });
+  const [orders, ordersLoading, , reloadOrders] = useLoadAction(getCustomerOrders, [], { customerId });
 
   // Order drawer opened in place — same full-detail modal as the Sales
   // Orders page, instead of bouncing to /orders.

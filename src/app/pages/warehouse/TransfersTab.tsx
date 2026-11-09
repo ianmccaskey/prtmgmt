@@ -54,7 +54,7 @@ export function TransfersTab({ warehouseId, warehouseList }: Props) {
   const [newSaving, setNewSaving] = useState(false);
   const [newError, setNewError] = useState('');
 
-  const [sourceInventory] = useLoadAction(listInventoryAction, [newForm.source_warehouse_id], { warehouse_id: newForm.source_warehouse_id });
+  const [sourceInventory] = useLoadAction(listInventoryAction, [], { warehouse_id: newForm.source_warehouse_id });
   const sourceRows: InventoryRow[] = asRows(sourceInventory);
 
   const [createTransfer] = useMutateAction(createTransferAtomicAction);

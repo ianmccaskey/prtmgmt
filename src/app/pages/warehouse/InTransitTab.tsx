@@ -24,7 +24,7 @@ type Props = { warehouseId: string; warehouseList: { id: number; name: string }[
 
 export function InTransitTab({ warehouseId }: Props) {
   const { isAdmin, isWarehouse } = useAppUser();
-  const [items, loading, , reload] = useLoadAction(listInTransitInboundAction, [warehouseId], { warehouse_id: warehouseId });
+  const [items, loading, , reload] = useLoadAction(listInTransitInboundAction, [], { warehouse_id: warehouseId });
   const rows: InTransitRow[] = asRows(items);
   // Receiving happens HERE, at the destination warehouse (not in Logistics):
   // warehouse users receive their own inbound lines; admins can too.

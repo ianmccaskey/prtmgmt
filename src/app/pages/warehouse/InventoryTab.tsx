@@ -52,7 +52,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
   const [productId, setProductId] = useState('');
   const [batchId, setBatchId] = useState('');
 
-  const [inventory, loading, , reloadInv] = useLoadAction(listInventoryAction, [warehouseId, search, category, qcStatus, productId, batchId], {
+  const [inventory, loading, , reloadInv] = useLoadAction(listInventoryAction, [], {
     warehouse_id: warehouseId, search, category, qc_status: qcStatus, product_id: productId, batch_id: batchId,
   });
   const allRows: InventoryRow[] = asRows(inventory);
@@ -89,7 +89,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
   // everywhere already subtracts reserved, so a hold protects stock from
   // order reservation and allocation automatically.
   const { profileId } = useAppUser();
-  const [holdsRaw, , , reloadHolds] = useLoadAction(listStockHolds, [warehouseId], { warehouse_id: warehouseId });
+  const [holdsRaw, , , reloadHolds] = useLoadAction(listStockHolds, [], { warehouse_id: warehouseId });
   const holds = asRows<StockHold>(holdsRaw);
   const [doHold] = useMutateAction(createStockHold);
   const [doReleaseHold] = useMutateAction(releaseStockHold);
@@ -134,7 +134,7 @@ export function InventoryTab({ warehouseId, warehouseList }: Props) {
 
   const [products] = useLoadAction(listProductsAction, [], {});
   const productList = asRows<{ id: number; name: string; sku: string }>(products);
-  const [batches] = useLoadAction(listBatchesAction, [productId], { product_id: productId || null });
+  const [batches] = useLoadAction(listBatchesAction, [], { product_id: productId || null });
   const batchList = asRows<{ id: number; batch_number: string }>(batches);
   const [catsRaw] = useLoadAction(listProductCategories, [], {});
   const categoryNames = asRows<{ name: string }>(catsRaw).map(c => c.name);

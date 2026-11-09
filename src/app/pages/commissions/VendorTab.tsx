@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { useReloadOnOpen } from '@/hooks/use-reload-on-open';
 import { useLoadAction, useMutateAction } from '@/lib/data';
 import { useAppUser } from '@/app/AppContext';
 import getVendorBalance from '@/actions/commissions/getVendorBalance';
@@ -130,7 +131,7 @@ function OnChainWalletCheck({ division }: { division: string }) {
   // public RPC, but Helius is far less rate-limited.
   const [heliusRaw] = useLoadAction(getAppSetting, [], { key: 'helius_api_key' });
   const heliusKey = String(asRows<{ value: string }>(heliusRaw)[0]?.value ?? '');
-  const [inflowsRaw, inflowsLoading, , reloadInflows] = useLoadAction(getWalletExpectedInflows, [division], { division });
+  const [inflowsRaw, inflowsLoading, , reloadInflows] = useLoadAction(getWalletExpectedInflows, [], { division });
   const allInflows = asRows<WalletInflow>(inflowsRaw);
   const wallets = allInflows.filter(w => w.id != null);
   const unassigned = allInflows.find(w => w.id == null) || null;
@@ -142,11 +143,14 @@ function OnChainWalletCheck({ division }: { division: string }) {
   // expected figure, auto-matched against on-chain deposits (EVM only).
   const [openWalletId, setOpenWalletId] = useState<number | null>(null);
   const openWallet = wallets.find(w => Number(w.id) === openWalletId) || null;
-  const [cycleRaw, cycleLoading, , reloadCycle] = useLoadAction(listWalletCyclePayments, [openWalletId], { wallet_id: openWalletId ?? 0 }, { enabled: openWalletId != null });
+  const [cycleRaw, cycleLoading, , reloadCycle] = useLoadAction(listWalletCyclePayments, [], { wallet_id: openWalletId ?? 0 }, { enabled: openWalletId != null });
   const cyclePayments = asRows<CyclePayment>(cycleRaw);
-  // Keyed by wallet id so every expand refetches the cycle start (a
-  // settlement while a row sat open would otherwise leave it stale).
-  const [balForCycle] = useLoadAction(getVendorBalance, [openWalletId ?? 0, division], { division }, { enabled: openWalletId != null });
+  // Every expand refetches the cycle start (a settlement while a row sat
+  // open would otherwise leave it stale). The read's params are the
+  // division only, so the wallet id re-reads it through useReloadOnOpen:
+  // useLoadAction's second argument is the while-loading value, not a key.
+  const [balForCycle, , , reloadBalForCycle] = useLoadAction(getVendorBalance, [], { division }, { enabled: openWalletId != null });
+  useReloadOnOpen(openWalletId, reloadBalForCycle);
   // Wallet ids belong to one division — an expanded row must not survive a
   // division switch.
   useEffect(() => { setOpenWalletId(null); }, [division]);
@@ -649,9 +653,9 @@ function OnChainWalletCheck({ division }: { division: string }) {
  */
 function OperatingExpensesCard({ division, onChanged }: { division: string; onChanged: () => void }) {
   const { profileId, isAdmin } = useAppUser();
-  const [expRaw, expLoading, , reloadExp] = useLoadAction(listOperatingExpenses, [division], { division });
-  const [reimbRaw, , , reloadReimb] = useLoadAction(listExpenseReimbursements, [division], { division });
-  const [expBalRaw, , , reloadExpBal] = useLoadAction(listExpenseBalances, [division], { division });
+  const [expRaw, expLoading, , reloadExp] = useLoadAction(listOperatingExpenses, [], { division });
+  const [reimbRaw, , , reloadReimb] = useLoadAction(listExpenseReimbursements, [], { division });
+  const [expBalRaw, , , reloadExpBal] = useLoadAction(listExpenseBalances, [], { division });
   const [profilesRaw] = useLoadAction(listUserProfiles, [], {});
   const allExpenses = asRows<OperatingExpense>(expRaw);
   const allReimbs = asRows<ExpenseReimbursement>(reimbRaw);
@@ -984,8 +988,8 @@ function OperatingExpensesCard({ division, onChanged }: { division: string; onCh
  */
 export function VendorTab({ division }: { division: string }) {
   const { profileId, isAdmin } = useAppUser();
-  const [balRaw, balLoading, , reloadBal] = useLoadAction(getVendorBalance, [division], { division });
-  const [payRaw, payLoading, , reloadPay] = useLoadAction(listVendorPayments, [division], { division });
+  const [balRaw, balLoading, , reloadBal] = useLoadAction(getVendorBalance, [], { division });
+  const [payRaw, payLoading, , reloadPay] = useLoadAction(listVendorPayments, [], { division });
   const [doPay] = useMutateAction(recordCommissionPayment);
   const bal = asRows<VendorBalance>(balRaw)[0];
   const payments = asRows<VendorPayment>(payRaw);
@@ -1003,16 +1007,16 @@ export function VendorTab({ division }: { division: string }) {
   const [settling, setSettling] = useState(false);
   const [settleErr, setSettleErr] = useState('');
   const [doSettle] = useMutateAction(executeSettlementAtomic);
-  const [settlementsRaw, , , reloadSettlements] = useLoadAction(listSettlements, [division], { division });
+  const [settlementsRaw, , , reloadSettlements] = useLoadAction(listSettlements, [], { division });
   const settlements = asRows<Settlement>(settlementsRaw);
   // Drill-down: payouts recorded by the expanded settlement.
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [detailRaw, detailLoading] = useLoadAction(listSettlementPayments, [expandedId], { settlement_id: expandedId ?? 0 }, { enabled: expandedId != null });
+  const [detailRaw, detailLoading] = useLoadAction(listSettlementPayments, [], { settlement_id: expandedId ?? 0 }, { enabled: expandedId != null });
   const detailRows = asRows<SettlementPayment>(detailRaw);
   // Preview: what the stamp will contain (same source actions as the tabs).
-  const [repBalRaw, , , reloadRepBal] = useLoadAction(listRepBalances, [settleOpen ? 1 : 0, division], { division }, { enabled: settleOpen });
+  const [repBalRaw, , , reloadRepBal] = useLoadAction(listRepBalances, [], { division }, { enabled: settleOpen });
   // Warehouses live only in the US pipeline — a China settlement never pays them.
-  const [whBalRaw, , , reloadWhBal] = useLoadAction(listWarehouseBalances, [settleOpen ? 1 : 0, division], { warehouse_id: '' }, { enabled: settleOpen && division === 'us' });
+  const [whBalRaw, , , reloadWhBal] = useLoadAction(listWarehouseBalances, [], { warehouse_id: '' }, { enabled: settleOpen && division === 'us' });
   const repRows = asRows<{ sales_rep_user_profile_id: number; display_name: string; balance_owed_usd: number }>(repBalRaw)
     .filter(r => Math.abs(Number(r.balance_owed_usd)) > 0.004);
   const whRows = asRows<{ warehouse_id: number; warehouse_name: string; balance_owed_usd: number }>(whBalRaw)
@@ -1022,7 +1026,10 @@ export function VendorTab({ division }: { division: string }) {
   // Per-user expense balances — the gate sums POSITIVE balances only,
   // mirroring exp_out in executeSettlementAtomic (one user's overpayment
   // must not offset another's unpaid).
-  const [expBalSettleRaw, , , reloadExpBalSettle] = useLoadAction(listExpenseBalances, [settleOpen ? 1 : 0, division], { division }, { enabled: settleOpen });
+  const [expBalSettleRaw, , , reloadExpBalSettle] = useLoadAction(listExpenseBalances, [], { division }, { enabled: settleOpen });
+  // The settlement dialog reads every balance fresh each time it opens.
+  useReloadOnOpen(settleOpen, reloadRepBal, reloadExpBalSettle);
+  useReloadOnOpen(settleOpen && division === 'us', reloadWhBal);
   const expBalRows = asRows<ExpenseBalance>(expBalSettleRaw).filter(b => Math.abs(Number(b.balance_owed_usd)) > 0.004);
   const expOwedTotal = expBalRows.reduce((s, b) => s + Math.max(0, Number(b.balance_owed_usd)), 0);
   // Vendor pays LAST — everything above it must read zero first.
@@ -1079,7 +1086,7 @@ export function VendorTab({ division }: { division: string }) {
   // A pending payout dialog must not survive a division switch.
   useEffect(() => { setPayoutTarget(null); }, [division]);
   const [payeeAddrRaw, payeeAddrLoading] = useLoadAction(listPayoutAddressesForPayee,
-    [payoutTarget?.payee.sales_rep_user_profile_id ?? 0, payoutTarget?.payee.warehouse_id ?? 0],
+    [],
     {
       user_profile_id: payoutTarget?.payee.sales_rep_user_profile_id ?? null,
       warehouse_id: payoutTarget?.payee.warehouse_id ?? null,

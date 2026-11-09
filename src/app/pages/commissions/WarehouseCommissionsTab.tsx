@@ -34,7 +34,7 @@ export function WarehouseCommissionsTab() {
   const { profileId, isAdmin } = useAppUser();
   const [payDialogWh, setPayDialogWh] = useState<WarehouseBalance | null>(null);
   // Payout addresses of users assigned to this warehouse (Settings → Users).
-  const [payoutRaw] = useLoadAction(listWarehousePayoutAddresses, [payDialogWh?.warehouse_id], { warehouse_id: payDialogWh?.warehouse_id ?? 0 }, { enabled: !!payDialogWh });
+  const [payoutRaw] = useLoadAction(listWarehousePayoutAddresses, [], { warehouse_id: payDialogWh?.warehouse_id ?? 0 }, { enabled: !!payDialogWh });
   const payoutAddresses = asRows<{ id: number; asset: string; network: string; address: string; label: string | null; display_name: string }>(payoutRaw);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const copyAddr = (pa: { id: number; address: string }) => {
@@ -49,7 +49,7 @@ export function WarehouseCommissionsTab() {
   const [selectedWhId, setSelectedWhId] = useState<number | null>(null);
 
   const [balances, , , reloadBalances] = useLoadAction(listWarehouseBalances, [], { warehouse_id: '' });
-  const [shipments] = useLoadAction(listWarehouseCommissionShipments, [selectedWhId], {
+  const [shipments] = useLoadAction(listWarehouseCommissionShipments, [], {
     warehouse_id: selectedWhId, date_from: null, date_to: null,
   }, { enabled: selectedWhId !== null });
   const [doPay] = useMutateAction(recordCommissionPayment);

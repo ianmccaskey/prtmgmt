@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLoadAction, useMutateAction } from '@/lib/data';
 import { rows, firstRow } from '@/lib/rows';
+import { useReloadOnOpen } from '@/hooks/use-reload-on-open';
 import { dbText } from '@/lib/dbText';
 import { useAppUser } from '@/app/AppContext';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -149,7 +150,8 @@ function ProductCombo({ onAdd }: { onAdd: (p: Product) => void }) {
   // Loads all active products the moment the popover opens (empty q matches
   // everything server-side); each keystroke narrows via SKU/name ILIKE. The
   // server does the filtering, so cmdk's own filter is off.
-  const [res, loading] = useLoadAction(searchProducts, [open, q], { q }, { enabled: open });
+  const [res, loading, , reloadProducts] = useLoadAction(searchProducts, [], { q }, { enabled: open });
+  useReloadOnOpen(open, reloadProducts);
   // modal: see CustomerSearch — required for scrollability inside the Sheet.
   return (
     <Popover open={open} onOpenChange={setOpen} modal>
@@ -299,7 +301,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // the batch picker only when its product has stock in 2+ batches. When a
   // fulfillment warehouse is chosen, only that warehouse's batches are
   // pinnable — a pin must be fulfillable where the order fulfills.
-  const [batchStockRaw] = useLoadAction(listBatchStock, [open], {}, { enabled: open });
+  const [batchStockRaw, , , reloadBatchStock] = useLoadAction(listBatchStock, [], {}, { enabled: open });
   const batchesFor = (productId: number, warehouseId: number | null) => {
     const agg = new Map<number, BatchStock>();
     for (const b of rows<BatchStock>(batchStockRaw)) {
@@ -312,7 +314,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   };
   // Per-product per-warehouse availability for the fulfillment-warehouse
   // suggestion and override.
-  const [whAvailRaw] = useLoadAction(listWarehouseAvailability, [open], {}, { enabled: open });
+  const [whAvailRaw, , , reloadWhAvail] = useLoadAction(listWarehouseAvailability, [], {}, { enabled: open });
   const whAvail = rows<{ product_id: number; warehouse_id: number; warehouse_name: string; available: number }>(whAvailRaw);
 
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -325,7 +327,7 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // order's payment (China reps' money never lands in US wallets).
   const orderDivision = rows<{ id: number; division?: string | null }>(salesReps)
     .find(r => String(r.id) === salesRepId)?.division || 'us';
-  const [wallets] = useLoadAction(getReceiveWallets, [orderDivision], { division: orderDivision });
+  const [wallets] = useLoadAction(getReceiveWallets, [], { division: orderDivision });
   const [isFree, setIsFree] = useState(false);
   const [freeReasonId, setFreeReasonId] = useState('');
   const [freeNote, setFreeNote] = useState('');
@@ -429,7 +431,9 @@ export function NewOrderForm({ open, onClose, onSaved, prefillCustomer }: NewOrd
   // Quantity price tiers, applied automatically while the line is on
   // list/tier pricing. A manual price edit (price_mode 'manual') or a free
   // order always wins — tiers never overwrite an explicit override.
-  const [tiersRaw] = useLoadAction(listAllPriceTiers, [open ? 1 : 0], {}, { enabled: open });
+  const [tiersRaw, , , reloadTiers] = useLoadAction(listAllPriceTiers, [], {}, { enabled: open });
+  // Stock, availability and price tiers are read fresh on every opening.
+  useReloadOnOpen(open, reloadBatchStock, reloadWhAvail, reloadTiers);
   const tierPriceFor = (productId: number, qty: number): number | null => {
     const best = rows<{ product_id: number; min_quantity: number; unit_price: number }>(tiersRaw)
       .filter(t => Number(t.product_id) === productId && Number(t.min_quantity) <= qty)

@@ -63,7 +63,7 @@ function FullScreenNotice({ icon, title, body }: { icon: React.ReactNode; title:
 export function AppUserProvider({ children }: { children: React.ReactNode }) {
   const user = useUser();
   const email = user.email || '';
-  const [rows, loading, error, reload] = useLoadAction(getMyProfile, [email], { email });
+  const [rows, loading, error, reload] = useLoadAction(getMyProfile, [], { email });
 
   const row = firstRow<ProfileRow>(rows);
   const hasProfile = !!row?.id;

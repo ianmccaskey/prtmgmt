@@ -34,10 +34,10 @@ export function PayablesTab({ warehouseId }: { warehouseId: string }) {
   // Follows the page's warehouse switcher ('' = all). Warehouse users are
   // scoped automatically — their switcher is locked to their warehouse.
   const whParam = warehouseId;
-  const [balancesRaw, loading] = useLoadAction(listWarehouseBalances, [whParam], { warehouse_id: whParam });
+  const [balancesRaw, loading] = useLoadAction(listWarehouseBalances, [], { warehouse_id: whParam });
   const rows: Balance[] = asRows<Balance>(balancesRaw).filter(r => Number(r.commission_earned_usd) > 0 || Number(r.paid_total_usd) > 0);
   const [expanded, setExpanded] = useState<number | null>(null);
-  const [shipmentsRaw, shipmentsLoading] = useLoadAction(listWarehouseCommissionShipments, [expanded], { warehouse_id: expanded, date_from: null, date_to: null }, { enabled: expanded !== null });
+  const [shipmentsRaw, shipmentsLoading] = useLoadAction(listWarehouseCommissionShipments, [], { warehouse_id: expanded, date_from: null, date_to: null }, { enabled: expanded !== null });
   const shipmentRows: ShipmentRow[] = asRows(shipmentsRaw);
 
   const totalBalance = rows.reduce((s, r) => s + Number(r.balance_owed_usd), 0);

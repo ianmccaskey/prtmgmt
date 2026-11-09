@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { rows as asRows } from '@/lib/rows';
+import { useReloadOnOpen } from '@/hooks/use-reload-on-open';
 import { useLoadAction, useMutateAction } from '@/lib/data';
 import listParcelTemplates from '@/actions/warehouse/listParcelTemplates';
 import createParcelTemplate from '@/actions/warehouse/createParcelTemplate';
@@ -26,7 +27,8 @@ const EMPTY = { name: '', length_in: '', width_in: '', height_in: '', default_we
 export function BoxTemplatesDialog({ warehouseId, warehouseName, open, onClose }: {
   warehouseId: string; warehouseName: string; open: boolean; onClose: () => void;
 }) {
-  const [raw, loading, , reload] = useLoadAction(listParcelTemplates, [warehouseId, open ? 1 : 0], { warehouse_id: warehouseId }, { enabled: open && !!warehouseId });
+  const [raw, loading, , reload] = useLoadAction(listParcelTemplates, [], { warehouse_id: warehouseId }, { enabled: open && !!warehouseId });
+  useReloadOnOpen(open && !!warehouseId, reload);
   const templates = asRows<ParcelTemplate>(raw);
   const [doCreate] = useMutateAction(createParcelTemplate);
   const [doDelete] = useMutateAction(deleteParcelTemplate);

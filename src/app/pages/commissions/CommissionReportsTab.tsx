@@ -34,10 +34,10 @@ export function CommissionReportsTab({ division }: { division: string }) {
     setRange(r);
   };
 
-  const [summaryRaw] = useLoadAction(getCommissionSummary, [range.from, range.to, division], {
+  const [summaryRaw] = useLoadAction(getCommissionSummary, [], {
     date_from: range.from || null, date_to: range.to || null, division,
   });
-  const [paymentsRaw] = useLoadAction(listCommissionPayments, [range.from, range.to, payeeFilter, division], {
+  const [paymentsRaw] = useLoadAction(listCommissionPayments, [], {
     payee_type: payeeFilter === 'all' ? null : payeeFilter,
     date_from: range.from || null, date_to: range.to || null, division,
   });

@@ -377,7 +377,7 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
   scopeWarehouseName?: string;
 }) {
   const { profileId, displayName, isWarehouse, assignedWarehouseId } = useAppUser();
-  const [stockRaw, stockLoading] = useLoadAction(getFifoStockAction, [order.order_id], { order_id: order.order_id });
+  const [stockRaw, stockLoading] = useLoadAction(getFifoStockAction, [], { order_id: order.order_id });
 
   // Scoped view: each warehouse sees, allocates, packs, and labels ONLY its
   // own portion of a split order — the same membership rule the queue used
@@ -390,7 +390,7 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
   const [planRaw, planLoading] = useLoadAction(getActiveRatePlanAction, [], {});
   // Warehouse users only receive their own warehouse's Shippo key.
   const shipFromScope = isWarehouse && assignedWarehouseId ? String(assignedWarehouseId) : '';
-  const [shipFromRaw] = useLoadAction(listWarehouseShipFromAction, [shipFromScope], { warehouse_id: shipFromScope });
+  const [shipFromRaw] = useLoadAction(listWarehouseShipFromAction, [], { warehouse_id: shipFromScope });
 
   const [createShipment] = useMutateAction(createOutboundShipmentAction);
   const [shipAllocation] = useMutateAction(shipAllocationAtomicAction);
@@ -401,7 +401,7 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
   const [discardLabel] = useMutateAction(discardPurchasedLabelAction);
   // Persisted, still-open label purchases for this order (bought in an
   // earlier visit, never recorded on a shipment) — rehydrated below.
-  const [savedLabelsRaw] = useLoadAction(listPurchasedLabelsAction, [order.order_id], { order_id: order.order_id });
+  const [savedLabelsRaw] = useLoadAction(listPurchasedLabelsAction, [], { order_id: order.order_id });
 
   // Warehouse users only allocate from their own warehouse (access matrix).
   const stock: FifoRow[] = useMemo(() => {
@@ -459,10 +459,10 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
   // The purchasing user's personal label return address (My Settings).
   // Complete (line1 + city + postal) → used as the label's from address;
   // otherwise labels fall back to the warehouse ship-from.
-  const [tplRaw] = useLoadAction(listParcelTemplatesAction, [shipFromScope], { warehouse_id: shipFromScope });
+  const [tplRaw] = useLoadAction(listParcelTemplatesAction, [], { warehouse_id: shipFromScope });
   const parcelTemplates = useMemo(() => asRows<ParcelTemplate>(tplRaw), [tplRaw]);
 
-  const [myRetRaw] = useLoadAction(getMyLabelReturnAddressAction, [profileId], { user_id: profileId }, { enabled: profileId != null });
+  const [myRetRaw] = useLoadAction(getMyLabelReturnAddressAction, [], { user_id: profileId }, { enabled: profileId != null });
   const myReturnAddr: ShippoAddress | null = useMemo(() => {
     const r = asRows<{
       label_return_name: string | null; label_return_line1: string | null; label_return_line2: string | null;
@@ -497,12 +497,14 @@ export function MarkShippedDialog({ order, scopeWarehouseId = '', scopeWarehouse
   const [rehydrated, setRehydrated] = useState(false);
   useEffect(() => {
     if (rehydrated) return;
-    // Shape-check before trusting: mid-load, useLoadAction can hand back
-    // placeholders that aren't rows (rows() only strips nulls). A junk
-    // entry here once rehydrated as "warehouse #NaN (tracking )" and
-    // blocked Confirm on an order with no purchased label at all. Junk is
-    // skipped WITHOUT setting rehydrated, so the real rows (if any) still
-    // restore when they arrive.
+    // Shape-check before trusting: this load once passed [order.order_id]
+    // as useLoadAction's SECOND argument (the value it returns while
+    // loading, not a dependency list), so mid-load the "rows" were that id.
+    // A junk entry here once rehydrated as "warehouse #NaN (tracking )" and
+    // blocked Confirm on an order with no purchased label at all. The load
+    // now passes [] and rows() keeps only objects; the check stays. Junk
+    // and the empty while-loading list are skipped WITHOUT setting
+    // rehydrated, so the real rows (if any) still restore when they arrive.
     const rows = asRows<SavedLabelRow>(savedLabelsRaw).filter(r =>
       typeof r === 'object' && !Array.isArray(r) &&
       Number.isFinite(Number(r.id)) &&
