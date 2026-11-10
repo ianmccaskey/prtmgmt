@@ -157,7 +157,9 @@ export function WarehouseCommissionsTab() {
           </CardTitle>
           <Button
             variant="outline" size="sm" disabled={!shipmentList.length}
-            onClick={() => exportCSV('warehouse_commissions.csv', shipmentList as unknown as Record<string, unknown>[])}
+            // Export the same per-shipment Total the table shows, so the CSV
+            // reconciles to Earned without re-adding rate plan + fee by hand.
+            onClick={() => exportCSV('warehouse_commissions.csv', shipmentList.map(s => ({ ...s, total_usd: shipmentTotal(s).toFixed(2) })))}
           >
             Export CSV
           </Button>
