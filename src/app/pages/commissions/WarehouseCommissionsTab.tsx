@@ -25,10 +25,17 @@ type WarehouseBalance = {
 
 type WarehouseShipment = {
   shipment_id: number; sales_order_id: number; order_number: string; shipped_date: string;
-  carrier: string; internal_shipping_cost_usd: number; warehouse_name: string; total_kits: number;
+  carrier: string; warehouse_name: string; total_kits: number;
+  // Rate-plan cost is NULL on a shipment that only carries a routed fee;
+  // expedited_fee_usd is set only on the order's first warehouse-origin
+  // shipment (see listWarehouseCommissionShipments).
+  internal_shipping_cost_usd: number | string | null;
+  expedited_fee_usd: number | string | null;
 };
 
 const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
+const moneyOrDash = (v: number | string | null | undefined) => (v == null ? '—' : money(v));
+const shipmentTotal = (s: WarehouseShipment) => Number(s.internal_shipping_cost_usd ?? 0) + Number(s.expedited_fee_usd ?? 0);
 
 export function WarehouseCommissionsTab() {
   const { profileId, isAdmin } = useAppUser();
@@ -163,7 +170,9 @@ export function WarehouseCommissionsTab() {
                 <TableHead>Shipped</TableHead>
                 <TableHead>Carrier</TableHead>
                 <TableHead className="text-right">Kits</TableHead>
-                <TableHead className="text-right">Commission</TableHead>
+                <TableHead className="text-right">Rate Plan</TableHead>
+                <TableHead className="text-right">Expedited Fee</TableHead>
+                <TableHead className="text-right">Total</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -173,11 +182,13 @@ export function WarehouseCommissionsTab() {
                   <TableCell>{fmtDate(s.shipped_date)}</TableCell>
                   <TableCell><Badge variant="outline">{s.carrier || '—'}</Badge></TableCell>
                   <TableCell className="text-right">{s.total_kits}</TableCell>
-                  <TableCell className="text-right font-medium">{money(s.internal_shipping_cost_usd)}</TableCell>
+                  <TableCell className="text-right">{moneyOrDash(s.internal_shipping_cost_usd)}</TableCell>
+                  <TableCell className="text-right">{moneyOrDash(s.expedited_fee_usd)}</TableCell>
+                  <TableCell className="text-right font-medium">{money(shipmentTotal(s))}</TableCell>
                 </TableRow>
               ))}
               {shipmentList.length === 0 && (
-                <TableRow><TableCell colSpan={5} className="text-center text-gray-400 py-6">
+                <TableRow><TableCell colSpan={7} className="text-center text-gray-400 py-6">
                   {selectedWhId ? 'No commission shipments found.' : 'Select a warehouse to see shipment-level detail.'}
                 </TableCell></TableRow>
               )}

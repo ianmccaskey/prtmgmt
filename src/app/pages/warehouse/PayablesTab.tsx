@@ -19,8 +19,15 @@ type Balance = {
 };
 type ShipmentRow = {
   shipment_id: number; order_number: string; shipped_date: string;
-  carrier: string; tracking_number?: string; internal_shipping_cost_usd: number; total_kits: number;
+  carrier: string; tracking_number?: string; total_kits: number;
+  // Rate-plan cost is NULL on a shipment that only carries a routed fee;
+  // expedited_fee_usd is set only on the order's first warehouse-origin
+  // shipment (see listWarehouseCommissionShipments).
+  internal_shipping_cost_usd: number | string | null;
+  expedited_fee_usd: number | string | null;
 };
+
+const usdOrDash = (v: number | string | null | undefined) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
 
 /**
  * Read-only ledger view: what each warehouse has earned in shipping costs,
@@ -88,7 +95,9 @@ export function PayablesTab({ warehouseId }: { warehouseId: string }) {
                               <th className="text-left px-4 py-2 font-medium text-slate-500 text-xs">Shipped</th>
                               <th className="text-left px-4 py-2 font-medium text-slate-500 text-xs">Carrier</th>
                               <th className="text-right px-4 py-2 font-medium text-slate-500 text-xs">Kits</th>
-                              <th className="text-right px-4 py-2 font-medium text-slate-500 text-xs">Cost</th>
+                              <th className="text-right px-4 py-2 font-medium text-slate-500 text-xs">Rate Plan</th>
+                              <th className="text-right px-4 py-2 font-medium text-slate-500 text-xs">Expedited Fee</th>
+                              <th className="text-right px-4 py-2 font-medium text-slate-500 text-xs">Total</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -98,10 +107,12 @@ export function PayablesTab({ warehouseId }: { warehouseId: string }) {
                                 <td className="px-4 py-2 text-slate-500">{fmtDate(o.shipped_date)}</td>
                                 <td className="px-4 py-2 text-slate-500">{o.carrier || '—'}{o.tracking_number ? ` · ${dbText(o.tracking_number)}` : ''}</td>
                                 <td className="px-4 py-2 text-right">{o.total_kits}</td>
-                                <td className="px-4 py-2 text-right font-medium">${Number(o.internal_shipping_cost_usd).toFixed(2)}</td>
+                                <td className="px-4 py-2 text-right">{usdOrDash(o.internal_shipping_cost_usd)}</td>
+                                <td className="px-4 py-2 text-right">{usdOrDash(o.expedited_fee_usd)}</td>
+                                <td className="px-4 py-2 text-right font-medium">${(Number(o.internal_shipping_cost_usd ?? 0) + Number(o.expedited_fee_usd ?? 0)).toFixed(2)}</td>
                               </tr>
                             ))}
-                            {shipmentRows.length === 0 && <tr><td colSpan={5} className="text-center py-4 text-slate-400">No shipments</td></tr>}
+                            {shipmentRows.length === 0 && <tr><td colSpan={7} className="text-center py-4 text-slate-400">No shipments</td></tr>}
                           </tbody>
                         </table></div>
                       )}
